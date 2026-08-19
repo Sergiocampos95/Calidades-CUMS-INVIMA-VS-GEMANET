@@ -1,0 +1,40 @@
+{
+  "meta": {
+    "fuente": "Capturas de pantalla del formulario 'Mantenimiento Medicamentos' de Gemma Net, recibidas 2026-08-13",
+    "fidelidad": "aproximada - valores leidos visualmente de screenshots, no de CSS real",
+    "version": "0.1.0"
+  },
+  "color": {
+    "primario": { "valor": "#2A4D8F", "confianza": "aproximada", "uso": "barra superior, texto de titulos" },
+    "primario_hover": { "valor": "#1F3B70", "confianza": "estimada", "uso": "estado hover de botones y enlaces" },
+    "acento_logo": { "valor": "#43A047", "confianza": "aproximada", "uso": "circulo verde del logo 'g'" },
+    "texto_label": { "valor": "#1B3B6F", "confianza": "aproximada", "uso": "etiquetas de formulario" },
+    "texto_titulo": { "valor": "#2A4D8F", "confianza": "aproximada", "uso": "titulo de seccion, ej. 'Mantenimiento Medicamentos'" },
+    "fondo_pagina": { "valor": "#FFFFFF", "confianza": "alta", "uso": "fondo general de la pantalla" },
+    "fondo_input": { "valor": "#F2F3F5", "confianza": "aproximada", "uso": "campos de texto y dropdowns" },
+    "borde_input": { "valor": "#D6D9DE", "confianza": "aproximada", "uso": "borde de inputs" },
+    "fondo_boton": { "valor": "#D6E9F8", "confianza": "aproximada", "uso": "botones de accion (Agregar/Remover/Anterior/Actualizar)" },
+    "texto_boton": { "valor": "#2D6CB5", "confianza": "aproximada", "uso": "texto e icono de botones de accion" },
+    "estado_ok": { "valor": "#2E7D32", "confianza": "estimada, no observada en capturas", "uso": "badge Vigente/Activo" },
+    "estado_alerta": { "valor": "#C62828", "confianza": "estimada, no observada en capturas", "uso": "badge Vencido/rechazo" }
+  },
+  "tipografia": {
+    "familia": "'Segoe UI', Arial, sans-serif",
+    "confianza": "estimada - familia generica, no se identifico el nombre exacto de fuente",
+    "tamano_label_px": 13,
+    "tamano_input_px": 13,
+    "tamano_titulo_px": 16,
+    "peso_label": 400,
+    "peso_titulo": 600
+  },
+  "forma": {
+    "radio_input_px": 4,
+    "radio_boton_px": 999,
+    "confianza": "aproximada"
+  },
+  "espaciado": {
+    "gap_label_input_px": 12,
+    "gap_filas_formulario_px": 10,
+    "confianza": "aproximada"
+  }
+}

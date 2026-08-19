@@ -1,0 +1,306 @@
+# Gemma CUM Loader
+
+Automatiza el cargue y la auditoría de medicamentos **CUM/IUM** entre el catálogo
+oficial de **INVIMA** y la plataforma **Gemma Net** (Pijao Salud EPSI).
+
+El programa responde dos preguntas distintas, y es importante no confundirlas:
+
+| Pregunta | Flujo | Pestaña / comando |
+|---|---|---|
+| ¿Qué medicamentos de INVIMA **me faltan** por cargar? | Candidatos | *Resumen de resolución* / `candidatos` |
+| De lo que **ya está cargado**, ¿qué está mal o desactualizado? | Auditoría | *Auditoría de coherencia* / `auditoria` |
+
+---
+
+## 1. Instalación
+
+Requiere **Python 3.12+**.
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate          # Windows
+pip install -e ".[dev]"
+```
+
+Opcional — token de la API de INVIMA (evita el límite de peticiones anónimas):
+
+```bash
+set INVIMA_SOCRATA_APP_TOKEN=tu_token   # Windows
+```
+
+Se obtiene gratis en <https://www.datos.gov.co> (Sign up → Developer Settings).
+**Sin token el programa funciona igual**, solo con un límite de peticiones más bajo.
+
+---
+
+## 2. Archivos que necesitas
+
+### Obligatorio
+
+**Reporte de Gemma Net** (`.xlsx` o `.txt`) — es la foto de lo que ya está cargado.
+
+> Gemma Net → *Mantenimientos › Básicas Atención › Medicamentos › Crear Masivos › Exportar*
+
+### Catálogo INVIMA — por API o por archivo
+
+La aplicación trae el catálogo vigente **en vivo desde la API** de datos.gov.co; no
+necesitas descargar nada. Si la API está caída (pasa con cierta frecuencia), usa la vía
+de respaldo: descarga el Excel de invima.gov.co → *Consultas, registros y documentos
+asociados* y súbelo a mano.
+
+| Dataset | ID Socrata | ¿Para qué sirve? |
+|---|---|---|
+| Vigentes | `i7cb-raxc` | Base de todo. **Obligatorio.** |
+| Vencidos | `vwwf-4ftk` | Detectar registros vencidos — riesgo alto |
+| Trámite de Renovación | `vgr4-gemg` | Riesgo medio, informativo |
+| Otros Estados | `spzp-dfuc` | Cancelado / Suspendido / Inactivo — riesgo alto |
+
+Los **tres últimos son opcionales e independientes**. Si no los cargas, la auditoría
+corre igual: los códigos que no aparezcan en Vigentes simplemente caen todos en
+"sin correspondencia" sin poder distinguir *por qué*. Nunca se asume nada en silencio.
+
+### Opcional — Estructura de Cargue
+
+`Estructura Cargue Medicamentos ultimo mixto.xlsx`. Solo se usa como referencia para
+completar los campos que **no existen en INVIMA** porque son reglas de negocio propias
+de Pijao Salud: edades, copagos, cuota moderadora, modelo y nivel de servicio.
+
+Sin este archivo el resumen y la cuarentena funcionan igual, pero **no se puede generar
+el Excel de cargue final**.
+
+---
+
+## 3. Uso con interfaz (recomendado)
+
+```bash
+streamlit run ui_revision/app_streamlit.py
+```
+
+Sube los archivos, presiona **Procesar**, y trabaja sobre las 5 pestañas:
+
+1. **Resumen de resolución** — cuántos candidatos nuevos salieron y cómo se resolvieron
+   marca y unidad de medida contra el catálogo interno.
+2. **Bandeja de cuarentena** — lo que el sistema **no** se atrevió a decidir solo.
+   Cada fila trae el motivo, y un botón *"Explicar este caso"* que lo traduce a lenguaje
+   de negocio con IA.
+3. **Cargue a Gemma Net** — genera el Excel final listo para subir a la plataforma.
+4. **Consultar INVIMA** — consulta puntual de un EXPEDIENTE-CONSECUTIVO contra la API.
+5. **Auditoría de coherencia** — el informe de calidad de lo ya cargado (sección 5).
+
+Todas las tablas tienen búsqueda libre y filtros; ninguna se muestra en crudo.
+
+---
+
+## 4. Uso por línea de comandos
+
+Útil para lotes programados o servidores sin navegador.
+
+```bash
+# ¿Qué me falta por cargar?
+gemma-cum-loader candidatos --api \
+    --gemma-net data/LISTADO_MEDICAMENTOS.xlsx \
+    --salida candidatos.xlsx
+
+# Auditoría completa, con los 3 datasets auxiliares
+gemma-cum-loader auditoria \
+    --invima data/ListadoCodigoUnicoVigentes2022.xlsx \
+    --gemma-net data/LISTADO_MEDICAMENTOS.xlsx \
+    --vencidos data/ListadoCodigoUnicoVencidos.xlsx \
+    --renovacion data/ListadoCodigoUnicoRenovacion.xlsx \
+    --otros-estados data/ListadoCodigoUnicoOtrosEstado.xlsx \
+    --salida auditoria.xlsx
+```
+
+`--api` y `--invima` son intercambiables en ambos comandos. La salida es un `.xlsx`
+con **una hoja por estado**, para repartir el trabajo por tipo de hallazgo.
+
+---
+
+## 5. Cómo leer la auditoría
+
+### Estado de vigencia (de mayor a menor riesgo)
+
+Cada código se evalúa en cascada; solo se pasa al siguiente si el anterior no aplicó:
+
+| Estado | Qué significa | Acción |
+|---|---|---|
+| `vencido_en_invima` | El registro sanitario **expiró** | 🔴 Riesgo directo de autorización |
+| `encontrado_en_otro_estado_invima` | Cancelado / Suspendido / Inactivo | 🔴 Ver `ESTADO_INVIMA_DETALLE` |
+| `en_tramite_renovacion_invima` | Renovación en curso | 🟡 Seguimiento, no bloqueante |
+| `con_diferencias` | Existe y coincide, pero algún campo difiere | 🟡 Actualizar el dato |
+| `correcto` | Todo coincide con INVIMA | ✅ |
+| `sin_correspondencia_invima` | No aparece en ningún dataset | Ver abajo |
+
+**"Sin correspondencia" no es un solo problema.** La columna `TIPO_SIN_CORRESPONDENCIA`
+separa dos poblaciones muy distintas:
+
+- **Con formato EXPEDIENTE-CONSECUTIVO pero no encontrado** → posible error de digitación
+  o registro anulado. *Vale la pena revisarlos uno por uno.*
+- **Código legado** (texto libre, sin formato INVIMA) → nunca tuvo expediente asociado.
+  *No hay nada que verificar contra INVIMA.*
+
+### Las 9 dimensiones de calidad
+
+Cada una es un mensaje accionable, no solo un indicador:
+
+| # | Dimensión | Columna | Qué detecta |
+|---|---|---|---|
+| 1 | Exactitud | `CAMPOS_CON_DIFERENCIA`, `PORCENTAJE_CALIDAD` | Campos que no coinciden con INVIMA |
+| 2 | Vigencia | `ESTADO_COHERENCIA`, `ESTADO_INVIMA_DETALLE` | Registro sanitario vencido o irregular |
+| 3 | Consistencia | `INCONSISTENCIA_FECHAS_ACTIVO` | ACTIVO vs FECHA_INICIO/FECHA_FIN no cuadran |
+| 4 | Completitud | `PORCENTAJE_COMPLETITUD_REPORTE` | Cuántos de los 37 campos están diligenciados |
+| 5 | Unicidad | `CODIGO_DUPLICADO_EN_REPORTE` | CODIGO_INTERNO repetido |
+| 6 | Validez de dominio | `VALORES_FUERA_DE_DOMINIO` | CLASIFICADO / POS / ACTIVO con valores inválidos |
+| 7 | Razonabilidad | `INCONSISTENCIA_NUMERICA` | Edades y topes fuera de orden lógico |
+| 8 | Formato | `FORMATO_CODIGO_INTERNO_INVALIDO` | Código vacío o error de fórmula de Excel |
+| 9 | Integridad referencial | `INTEGRIDAD_REFERENCIAL_CATALOGO` | Código de marca/unidad que no existe en el catálogo interno |
+
+`PORCENTAJE_CALIDAD` queda **vacío** (no en 0%) cuando no hay correspondencia con
+INVIMA: no hay nada que comparar, y eso no es lo mismo que "0% de calidad".
+
+### `-999` significa "sin dato"
+
+Gemma Net usa `-999` como centinela de campo vacío. Medido sobre el reporte real de
+producción (199.689 filas):
+
+| Campo | % con `-999` |
+|---|---|
+| `POSOLOGIA` | 99,9 % |
+| `EXPEDIENTE` | 0,8 % |
+| `CONSECUTIVO` | 0,8 % |
+| `CODIGO_ATC` | 0,5 % |
+| `CONCENTRACION` | 0,2 % |
+
+Cuando un campo entero supera el **90 % sin dato**, el programa lo reporta como
+**problema de proceso**, no como miles de hallazgos sueltos:
+
+> ⚠ El campo POSOLOGIA no trae dato real en el 99,9 % de las filas de este reporte —
+> parece no estarse diligenciando en el proceso de origen.
+
+---
+
+## 6. Cómo se decide cargar o no un medicamento
+
+Un candidato pasa por dos etapas independientes.
+
+**Etapa 1 — clasificación del universo INVIMA** (`armado/malla.py`). Solo llegan a
+candidato las filas que superan todos los filtros:
+
+`rol_no_fabricante` · `cum_inactivo` · `registro_no_vigente` · `muestra_medica` → descartadas.
+
+**Etapa 2 — validación por fila** (`validacion/reglas.py`). La columna `accion` del
+reporte toma tres valores:
+
+| Acción | Significado |
+|---|---|
+| `candidato` | Nuevo y listo para cargar |
+| `ya_existe` | Su CODIGO_INTERNO ya está en Gemma Net — no hay nada que hacer |
+| `cuarentena` | **El sistema no decide solo** — requiere criterio humano |
+
+La cuarentena es deliberada. Tres casos reales la disparan:
+
+- **CODIGO_INTERNO inválido** — cuando EXPEDIENTE o CONSECUTIVO traen un error de
+  digitación, pandas los vuelve `NaN` y la llave de la fila se rompe *en silencio*.
+- **Error de fórmula de Excel** (`#N/A`, `#NAME?`) guardado como texto: pasa cualquier
+  chequeo de "campo no vacío" pero no es un dato usable.
+- **CODIGO_INTERNO duplicado entre candidatos** — normalmente un medicamento combinado
+  con varios principios activos. **No se fusionan a ciegas**, porque eso perdería un
+  principio activo; decide negocio.
+
+### Resolución de marca y unidad
+
+Gemma Net guarda marca y unidad como **códigos**, no como texto. La resolución contra
+`config/catalogos/` es una cascada:
+
+**exacto → alias → aproximado (fuzzy) → sin resolver**
+
+Lo que queda en `sin_resolver` no se adivina: la fila llega con sugerencias
+(texto, puntaje y código) para que una persona confirme.
+
+Es 100 % determinística y **nunca depende del modelo de IA** — con 200.000 filas tiene
+que ser exacta y rápida, sin llamadas de red.
+
+---
+
+## 7. El papel de la IA
+
+| | |
+|---|---|
+| **Modelo** | Claude Haiku 4.5 (`claude-haiku-4-5`) |
+| **Qué hace** | Traduce un motivo técnico a lenguaje de negocio |
+| **Qué NO hace** | No resuelve códigos, no decide cargues, no toca la cascada |
+
+El costo se mantiene constante a cualquier volumen porque `explicar_motivo()` se llama
+**una vez por motivo distinto**, no una vez por fila — el vocabulario de motivos es fijo
+y pequeño. `explicar_fila()` sí manda datos de una fila puntual, pero solo cuando el
+usuario presiona *"Explicar este caso"*, nunca en el lote automático.
+
+Si la API de IA falla, se muestra un mensaje de respaldo y **la revisión del resto de la
+bandeja sigue funcionando**. Requiere `ANTHROPIC_API_KEY`; sin ella todo lo demás opera
+con normalidad.
+
+---
+
+## 8. Estructura del proyecto
+
+```
+src/gemma_cum_loader/
+├── ingesta/        Lectura de INVIMA (Excel y API Socrata)
+├── armado/         Candidatos, cruce con Gemma Net, reglas de negocio
+├── catalogos/      Resolución de códigos (cascada) + cliente de IA
+├── validacion/     Motor de reglas: acepta/rechaza/descarta/cuarentena
+├── auditoria/      Coherencia contra INVIMA + 9 dimensiones de calidad
+├── exportacion/    Generación del Excel de cargue
+├── normaliza/      Normalización de texto y códigos
+└── pipeline.py     Orquestación end-to-end
+
+ui_revision/app_streamlit.py    Interfaz
+config/catalogos/               Catálogos internos (CSV)
+tests/                          261 pruebas
+```
+
+Los catálogos internos son editables a mano: `unidad_medida.csv` (59 entradas),
+`marca_medicamento.csv` (894), `modelo_servicio.csv` (60), `alias_unidades.csv`.
+Cuando la auditoría reporta un código huérfano (dimensión 9), el arreglo es agregarlo
+a estos archivos.
+
+---
+
+## 9. Rendimiento real
+
+Medido contra los archivos reales de producción (INVIMA Vigentes 13 MB + Gemma Net
+34 MB) el 2026-08-19:
+
+| Flujo | Filas | Tiempo | Resultado |
+|---|---|---|---|
+| `auditoria` | 199.689 | ~3 min | 156.423 sin correspondencia · 43.266 con diferencias |
+| `candidatos` | 47.767 | ~1 min | 47.766 ya existen · 1 candidato nuevo |
+
+Dos lecturas útiles de esos números:
+
+- **El catálogo ya está prácticamente completo** — de 47.767 filas evaluadas solo 1 era
+  un medicamento nuevo por cargar. El valor del programa hoy está más en la auditoría
+  que en el cargue masivo.
+- **Ninguna fila salió `correcto`**: las 43.266 con correspondencia real en INVIMA
+  tenían al menos un campo distinto. Es el hallazgo de fondo que justifica la auditoría.
+
+Casi todo el tiempo es lectura de Excel, no cómputo. Los archivos pesan decenas de MB y
+`data/` está en `.gitignore` — nunca subas datos de producción al repositorio.
+
+---
+
+## 10. Desarrollo
+
+```bash
+pytest                                    # 261 pruebas
+ruff check src/ tests/ ui_revision/       # lint
+```
+
+Convenciones del código:
+
+- **Comentarios que explican el *porqué*, no el *qué*.** Varios documentan hallazgos
+  reales contra datos de producción (`-999`, hojas de Excel mal nombradas, medicamentos
+  combinados) — son la memoria del proyecto, no ruido.
+- **Degradación explícita, nunca suposición silenciosa.** Si falta un archivo auxiliar,
+  se dice; no se asume un valor.
+- **Sin decisiones a ciegas.** Lo ambiguo va a cuarentena, no se resuelve adivinando.

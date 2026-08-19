@@ -1,0 +1,19 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Archivos reales de INVIMA / Gemma Net: pesan decenas de MB y traen datos
+# de produccion -- nunca al repositorio.
+data/
+
+# Estado local de Claude Code. Las definiciones de .claude/agents/ y
+# .claude/AGENTES.md SI se versionan: son configuracion del proyecto.
+.claude/scheduled_tasks.lock
+
+# Salidas de corridas locales (reportes, cargues, pruebas a mano).
+scratch_*.xlsx
+reporte_*.xlsx
+auditoria_*.xlsx
+cargue_*.xlsx
