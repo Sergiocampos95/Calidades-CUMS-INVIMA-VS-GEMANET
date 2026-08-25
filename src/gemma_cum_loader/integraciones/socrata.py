@@ -17,6 +17,7 @@ from __future__ import annotations
 import datetime as dt
 import os
 from dataclasses import dataclass
+from collections.abc import Iterator
 from typing import Any, Protocol
 
 NOMBRE_VARIABLE_ENTORNO = "INVIMA_SOCRATA_APP_TOKEN"
@@ -186,15 +187,47 @@ def consultar_todo(
     sesion: SesionHTTP | None = None,
     limite_pagina: int = LIMITE_PAGINA,
 ) -> list[dict]:
-    """Pagina sobre todo el dataset con $limit/$offset hasta que una pagina
-    devuelva menos filas que el limite (fin de los datos)."""
+    """Devuelve todo el dataset en memoria.
+
+    Los adaptadores que transforman el resultado a otro formato deben preferir
+    `iterar_paginas()`: asi no mantienen a la vez la lista completa de JSON y
+    su representacion transformada.
+    """
     filas: list[dict] = []
+    for pagina in iterar_paginas(
+        identificador_dataset,
+        parametros=parametros,
+        dominio=dominio,
+        token=token,
+        sesion=sesion,
+        limite_pagina=limite_pagina,
+    ):
+        filas.extend(pagina)
+    return filas
+
+
+def iterar_paginas(
+    identificador_dataset: str,
+    parametros: dict[str, Any] | None = None,
+    dominio: str = "www.datos.gov.co",
+    token: str | None = None,
+    sesion: SesionHTTP | None = None,
+    limite_pagina: int = LIMITE_PAGINA,
+) -> Iterator[list[dict]]:
+    """Pagina un dataset sin acumular sus respuestas en memoria.
+
+    Socrata devuelve JSON por pagina. Quien consume un catalogo grande puede
+    transformar cada pagina antes de pedir la siguiente, en vez de conservar
+    todo el JSON ademas del DataFrame final.
+    """
+    if limite_pagina <= 0:
+        raise ValueError("limite_pagina debe ser mayor que cero")
+
     offset = 0
     while True:
         pagina_parametros = {**(parametros or {}), "$limit": limite_pagina, "$offset": offset}
         pagina = consultar(identificador_dataset, pagina_parametros, dominio, token, sesion)
-        filas.extend(pagina)
+        yield pagina
         if len(pagina) < limite_pagina:
             break
         offset += limite_pagina
-    return filas

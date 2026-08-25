@@ -104,8 +104,9 @@ def leer_catalogo_invima_api(
     rechaza en vez de dejar seguir el pipeline con un catalogo vacio, que
     haria ver TODO lo cargado en Gemma Net como sin vigencia.
     """
-    filas = socrata.consultar_todo(dataset, token=token, sesion=sesion)
-    if not filas:
+    paginas = socrata.iterar_paginas(dataset, token=token, sesion=sesion)
+    primera_pagina = next(paginas)
+    if not primera_pagina:
         raise socrata.ErrorSocrata(
             f"El dataset de INVIMA '{dataset}' respondio 0 filas para una sincronizacion "
             "completa (sin filtro) -- esto no es un resultado valido, INVIMA siempre tiene "
@@ -113,11 +114,14 @@ def leer_catalogo_invima_api(
             "datos.gov.co, no de esta aplicacion. Reintenta en unos minutos; si persiste, usa "
             "el Excel de respaldo mientras tanto."
         )
-    df = pd.DataFrame(filas)
-    if df.empty:
-        df = pd.DataFrame(columns=list(CAMPOS_API.values()))
-    else:
-        df = df.rename(columns={api: excel for api, excel in CAMPOS_API.items() if api in df.columns})
+    # No se llama `consultar_todo()`: mantener 100.000+ diccionarios JSON
+    # mientras pandas ya construyo sus bloques duplicaba memoria durante la
+    # sincronizacion. Los fragmentos son DataFrames y el JSON de cada pagina
+    # queda libre antes de solicitar la siguiente.
+    fragmentos = [pd.DataFrame(primera_pagina)]
+    fragmentos.extend(pd.DataFrame(pagina) for pagina in paginas if pagina)
+    df = pd.concat(fragmentos, ignore_index=True, copy=False)
+    df = df.rename(columns={api: excel for api, excel in CAMPOS_API.items() if api in df.columns})
     df.columns = [normalizar_encabezado(c) for c in df.columns]
 
     if "EXPEDIENTE" in df.columns:

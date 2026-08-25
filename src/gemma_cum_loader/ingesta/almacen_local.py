@@ -22,6 +22,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
+from uuid import uuid4
 
 import pandas as pd
 
@@ -212,8 +213,15 @@ def guardar_descarga(
     # mezclados (numeros y texto en la misma columna) y pyarrow las rechaza.
     # Hallazgo real: to_parquet reventaba con "Could not convert ... with type
     # str: tried to convert to int64".
-    plano = df.astype(str)
-    plano.to_parquet(ruta, index=False)
+    # Escribir directo sobre el snapshot hace que otra corrida pueda leer un
+    # parquet a medio escribir. El archivo temporal queda en el mismo volumen
+    # para que `replace()` sea atomico en Windows.
+    ruta_temporal = ruta.with_name(f".{ruta.name}.{uuid4().hex}.tmp")
+    try:
+        df.astype(str).to_parquet(ruta_temporal, index=False)
+        ruta_temporal.replace(ruta)
+    finally:
+        ruta_temporal.unlink(missing_ok=True)
     return ResultadoSincronizacion(
         ok=True,
         filas=len(df),

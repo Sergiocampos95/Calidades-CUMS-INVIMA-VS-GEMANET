@@ -6,6 +6,8 @@ bloqueo, y habia dos Estructura de Cargue donde la mas nueva no servia.
 Cada prueba fija uno de esos tropiezos.
 """
 
+from datetime import date
+
 from gemma_cum_loader.ingesta.almacen_local import descubrir, descubrir_todo
 
 
@@ -110,3 +112,30 @@ def test_guardar_subida_ignora_un_archivo_vacio(tmp_path):
 
     assert guardar_subida(_ArchivoSubido("vacio.xlsx", b""), "vacio.xlsx", tmp_path) is None
 
+
+def test_guardar_descarga_publica_el_parquet_solo_al_terminar(monkeypatch, tmp_path):
+    import pandas as pd
+
+    from gemma_cum_loader.ingesta.almacen_local import guardar_descarga
+
+    escrito = []
+
+    def _to_parquet(_df, ruta, index):
+        escrito.append(ruta)
+        assert not (tmp_path / "invima_vigentes_20260825.parquet").exists()
+        ruta.write_bytes(b"parquet")
+
+    monkeypatch.setattr(pd.DataFrame, "to_parquet", _to_parquet)
+
+    resultado = guardar_descarga(
+        pd.DataFrame({"EXPEDIENTE": ["500"]}),
+        "invima_vigentes",
+        tmp_path,
+        fecha=date(2026, 8, 25),
+    )
+
+    assert resultado.ok is True
+    assert resultado.ruta == tmp_path / "invima_vigentes_20260825.parquet"
+    assert resultado.ruta.read_bytes() == b"parquet"
+    assert len(escrito) == 1
+    assert not list(tmp_path.glob(".*.tmp"))

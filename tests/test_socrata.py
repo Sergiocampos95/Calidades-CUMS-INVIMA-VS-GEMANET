@@ -10,6 +10,7 @@ from gemma_cum_loader.integraciones.socrata import (
     ErrorAutenticacionSocrata,
     ErrorSocrata,
     consultar,
+    iterar_paginas,
     consultar_todo,
     enmascarar_token,
     estado_token,
@@ -98,6 +99,25 @@ def test_consultar_todo_una_sola_pagina_si_ya_viene_incompleta():
     filas = consultar_todo("abcd-1234", token="t", sesion=sesion, limite_pagina=100)
     assert len(filas) == 1
     assert len(sesion.llamadas) == 1
+
+
+def test_iterar_paginas_entrega_cada_respuesta_sin_acumularla():
+    pagina_1 = [{"id": i} for i in range(2)]
+    pagina_2 = [{"id": 2}]
+    sesion = _SesionFalsa([_RespuestaFalsa(200, pagina_1), _RespuestaFalsa(200, pagina_2)])
+
+    paginas = iterar_paginas("abcd-1234", token="t", sesion=sesion, limite_pagina=2)
+
+    assert next(paginas) == pagina_1
+    assert sesion.llamadas[0]["params"]["$offset"] == 0
+    assert next(paginas) == pagina_2
+    with pytest.raises(StopIteration):
+        next(paginas)
+
+
+def test_iterar_paginas_rechaza_un_limite_no_positivo():
+    with pytest.raises(ValueError, match="mayor que cero"):
+        next(iterar_paginas("abcd-1234", limite_pagina=0))
 
 
 def test_estado_token_no_configurado_sin_variable_de_entorno(monkeypatch):
