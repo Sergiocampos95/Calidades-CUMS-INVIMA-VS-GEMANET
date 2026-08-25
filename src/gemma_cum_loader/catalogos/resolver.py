@@ -16,10 +16,10 @@ fila cayo ahi (ver su docstring).
 from __future__ import annotations
 
 import csv
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
-from collections.abc import Callable, Iterable
 
 from rapidfuzz import fuzz, process
 
@@ -85,6 +85,32 @@ def sigla_por_codigo(catalogo: list[EntradaCatalogo]) -> dict[int, str]:
     normalizado, asi que esto tambien sirve como la forma comparable ahi.
     """
     return {entrada.codigo: entrada.sigla for entrada in catalogo}
+
+
+def siglas_por_codigo(catalogo: list[EntradaCatalogo]) -> dict[int, frozenset[str]]:
+    """Como `sigla_por_codigo` pero con TODAS las siglas de cada codigo.
+
+    Un mismo codigo puede tener varias entradas en el catalogo, y ninguna es
+    "la buena": son formas alternas del mismo concepto. `sigla_por_codigo`
+    devuelve una sola -- la ultima que aparezca -- y eso sirve para MOSTRAR,
+    pero no para decidir si un valor externo coincide.
+
+    Bug real que motiva esto: el codigo 10001000 (miligramo) tiene cuatro
+    entradas -- "MG - MILIGRAMO", "mg/parche", "mg (titer)" y "mg/CAP". La
+    ultima gana, asi que la auditoria comparaba "MG/CAP" contra el "mg" de
+    INVIMA y lo daba por distinto. Medido contra produccion el 2026-08-21:
+    33.677 de las 35.409 diferencias de UNIDAD_MEDIDA (el 95 %) eran ese solo
+    par. Ninguna era un problema del dato: el medicamento SI esta en
+    miligramos y el codigo guardado SI es el correcto.
+
+    Con el conjunto completo, coincide si el valor externo calza con
+    CUALQUIERA de las formas que el catalogo reconoce para ese codigo -- que
+    es lo unico que el catalogo permite afirmar.
+    """
+    agrupadas: dict[int, set[str]] = {}
+    for entrada in catalogo:
+        agrupadas.setdefault(entrada.codigo, set()).add(entrada.sigla)
+    return {codigo: frozenset(siglas) for codigo, siglas in agrupadas.items()}
 
 
 @dataclass(frozen=True)

@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 import pytest
 
 from gemma_cum_loader.integraciones.socrata import (
+    fecha_ultima_actualizacion,
     ErrorAutenticacionSocrata,
     ErrorSocrata,
     consultar,
@@ -151,3 +152,60 @@ def test_hay_datos_propaga_error_de_transporte():
     sesion = _SesionFalsa([_RespuestaFalsa(500, {}, text="Internal Server Error")])
     with pytest.raises(ErrorSocrata):
         hay_datos("abcd-1234", token="t", sesion=sesion)
+
+
+def test_sesion_por_defecto_reutiliza_la_misma_instancia(monkeypatch):
+    # Fix de rendimiento: sin cachear, cada pagina de consultar_todo abriria
+    # una conexion TCP/TLS nueva en vez de reusar una via keep-alive (ver
+    # docstring de _sesion_por_defecto en integraciones/socrata.py).
+    import gemma_cum_loader.integraciones.socrata as socrata_modulo
+
+    monkeypatch.setattr(socrata_modulo, "_sesion_compartida", None)
+    primera = socrata_modulo._sesion_por_defecto()
+    segunda = socrata_modulo._sesion_por_defecto()
+    assert primera is segunda
+
+
+class _RespuestaMeta:
+    def __init__(self, payload):
+        self._payload = payload
+        self.status_code = 200
+
+    def json(self):
+        return self._payload
+
+
+class _SesionMeta:
+    def __init__(self, payload):
+        self._payload = payload
+        self.urls = []
+
+    def get(self, url, params, headers, timeout):
+        self.urls.append(url)
+        return _RespuestaMeta(self._payload)
+
+
+class _SesionQueFalla:
+    def get(self, url, params, headers, timeout):
+        raise RuntimeError("sin red")
+
+
+def test_fecha_ultima_actualizacion_lee_los_metadatos_no_los_datos():
+    """Va contra /api/views/: responde aunque el dataset devuelva cero filas,
+    que es justo el caso real de los datasets de CUM de INVIMA."""
+    import datetime as dt
+
+    sesion = _SesionMeta({"rowsUpdatedAt": 1755300000})
+    fecha = fecha_ultima_actualizacion("abcd-1234", sesion=sesion)
+
+    assert isinstance(fecha, dt.date)
+    assert "/api/views/abcd-1234.json" in sesion.urls[0]
+
+
+def test_fecha_ultima_actualizacion_devuelve_none_si_falla_en_vez_de_reventar():
+    """Es un dato de contexto: no puede tumbar una corrida."""
+    assert fecha_ultima_actualizacion("abcd-1234", sesion=_SesionQueFalla()) is None
+
+
+def test_fecha_ultima_actualizacion_devuelve_none_si_no_hay_marca():
+    assert fecha_ultima_actualizacion("abcd-1234", sesion=_SesionMeta({})) is None

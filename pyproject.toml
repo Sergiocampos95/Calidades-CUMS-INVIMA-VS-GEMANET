@@ -11,6 +11,13 @@ dependencies = [
     "streamlit>=1.38",
     "anthropic>=0.122",
     "requests>=2.32",
+    # Lectura del catalogo de Gemma Net (marca, unidad, modelo de servicio)
+    # directo de su Postgres, en vez de los CSV copiados a mano en
+    # config/catalogos/. Justifica su peso: el CSV de marca tiene 893 entradas
+    # y deja 15.979 candidatos sin marca resuelta -- es el cuello de botella
+    # del proceso. psycopg 3 y no psycopg2: es la version mantenida, y
+    # [binary] evita exigir un compilador de C en las maquinas del equipo.
+    "psycopg[binary]>=3.2",
 ]
 
 [project.scripts]

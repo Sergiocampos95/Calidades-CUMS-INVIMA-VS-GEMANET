@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "Read",
+      "Grep",
+      "Glob",
+      "Bash(.venv/Scripts/python.exe *)",
+      "Bash(.venv/Scripts/ruff.exe*)",
+      "Bash(pytest*)",
+      "Bash(ruff*)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(git branch*)",
+      "Bash(git ls-files*)"
+    ],
+    "ask": [
+      "Bash(git commit*)",
+      "Bash(git push*)",
+      "Bash(pip install*)",
+      "Bash(.venv/Scripts/pip.exe*)",
+      "Bash(.venv/Scripts/python.exe -m pip*)"
+    ],
+    "deny": [
+      "Read(./data/**)",
+      "Edit(./data/**)",
+      "Write(./data/**)",
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Bash(rm -rf*)",
+      "Bash(git push --force*)",
+      "Bash(git reset --hard*)",
+      "Bash(git clean -fd*)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR:-.}/.venv/Scripts/python.exe\" \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/ruff_post_edit.py\"",
+            "timeout": 40,
+            "statusMessage": "Pasando ruff sobre el archivo editado"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR:-.}/.venv/Scripts/python.exe\" \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/pytest_al_terminar.py\"",
+            "timeout": 620,
+            "statusMessage": "Verificando que la suite quede en verde"
+          }
+        ]
+      }
+    ]
+  }
+}

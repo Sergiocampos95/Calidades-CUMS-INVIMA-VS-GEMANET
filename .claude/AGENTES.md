@@ -75,6 +75,49 @@ campo `description` de cada agente. Para forzar uno concreto, nombralo:
 > "Usa el arquitecto para planear como agregar la dimension de calidad 10, y
 > despues el implementador."
 
+## Autonomia — que corre sin preguntarte
+
+Configurado en `.claude/settings.json`. Modo `acceptEdits`: las ediciones de
+archivos se aplican solas, los comandos siguen las listas.
+
+| | |
+|---|---|
+| **Corre solo** | `pytest`, `ruff`, `git status/diff/log/show/branch`, lecturas |
+| **Siempre pregunta** | `git commit`, `git push`, `pip install` |
+| **Bloqueado** | `rm -rf`, `git push --force`, `git reset --hard`, `git clean -fd`, escribir en `data/`, leer `data/` y `.env` |
+
+Leer `data/` esta bloqueado a proposito: son 34 MB de datos reales de
+produccion y volcarlos al transcript no ayuda a nadie. Para investigarlos se
+usa Python y se citan **conteos y porcentajes, no filas** — que es justo lo que
+pide la regla del proyecto.
+
+### Los dos hooks
+
+**`hooks/ruff_post_edit.py`** (PostToolUse) — despues de cada edicion de un
+`.py` pasa `ruff check --select E9,F --fix`. Lo autocorregible se arregla solo;
+lo que queda vuelve al agente para que lo corrija en el mismo turno.
+
+Usa `E9,F` (errores reales) y **no** las reglas por defecto de ruff. Medido el
+2026-08-19 con ruff 0.16.3: el proyecto esta limpio en `E9,F` pero arrastra 26
+hallazgos de estilo por defecto, 13 de orden de imports. Con las reglas por
+defecto el hook reordenaria imports de cualquier archivo que se toque de paso,
+metiendo en el diff ruido que nadie pidio.
+
+**`hooks/pytest_al_terminar.py`** (Stop) — corre la suite cuando el modelo va a
+detenerse. Si esta roja, no lo deja terminar: le devuelve el fallo para que lo
+arregle. Dos topes deliberados:
+
+- **No corre si no cambio codigo.** Guarda una huella de los `.py` de `src/` y
+  `tests/`; si es identica a la de la ultima corrida verde, sale en 0,2 s en vez
+  de pagar los ~5 s de la suite.
+- **Se rinde tras 3 bloqueos seguidos** y avisa al usuario. Un hook Stop sin
+  tope se convierte en un bucle.
+
+Ambos fallan hacia el lado seguro: si ruff o pytest no pueden correr, el hook
+sale en silencio y no tumba el trabajo del agente.
+
+Para revisarlos o desactivarlos: `/hooks`.
+
 ## Reglas que valen para todos
 
 Estan en `CLAUDE.md`, pero las tres que mas se rompen:

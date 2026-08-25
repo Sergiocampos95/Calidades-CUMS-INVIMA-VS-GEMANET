@@ -33,6 +33,21 @@ COLUMNA_COMO_VERIFICAR = "COMO_VERIFICAR"
 COLUMNA_CAMPOS_CON_ERROR = "CAMPOS_CON_ERROR"
 COLUMNA_PORCENTAJE_COMPLETITUD = "PORCENTAJE_COMPLETITUD"
 
+# Van PRIMERO, antes de los 37 campos de la malla. Caso real (2026-08-20): con
+# estas 4 al final, el archivo se abre mostrando la malla de cargue identica a
+# la del cargue real y hay que arrastrarse 37 columnas a la derecha para
+# descubrir que es un archivo de hallazgos. El usuario lo leyo como una orden de
+# cargue y pregunto por que se estaba cargando un medicamento incompleto -- no
+# se estaba cargando, pero el archivo se veia exactamente igual. El equipo
+# entrega hallazgos; quien carga es una persona, y el archivo tiene que decir
+# eso desde la primera columna.
+COLUMNAS_AUDITORIA = [
+    COLUMNA_ESTADO,
+    COLUMNA_CAMPOS_CON_ERROR,
+    COLUMNA_PORCENTAJE_COMPLETITUD,
+    COLUMNA_COMO_VERIFICAR,
+]
+
 
 def nombre_periodo(fecha: dt.date | None = None) -> str:
     """"Vigente_MMYYYY" -- misma convencion de nombre que pedia el SOP manual
@@ -50,7 +65,8 @@ def armar_estructura_cargue(resultado: pd.DataFrame, reglas: ReglasNegocio) -> p
     salida[COLUMNA_COMO_VERIFICAR] = evaluados["motivo_pendiente"]
     salida[COLUMNA_CAMPOS_CON_ERROR] = evaluados["campos_con_error"]
     salida[COLUMNA_PORCENTAJE_COMPLETITUD] = evaluados["porcentaje_completitud"]
-    return salida
+    resto = [c for c in salida.columns if c not in COLUMNAS_AUDITORIA]
+    return salida[[*COLUMNAS_AUDITORIA, *resto]]
 
 
 def generar_excel_estructura_cargue(df_estructura: pd.DataFrame, ruta: str | Path) -> None:

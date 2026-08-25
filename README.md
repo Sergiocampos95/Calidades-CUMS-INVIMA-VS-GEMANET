@@ -220,6 +220,31 @@ Lo que queda en `sin_resolver` no se adivina: la fila llega con sugerencias
 Es 100 % determinística y **nunca depende del modelo de IA** — con 200.000 filas tiene
 que ser exacta y rápida, sin llamadas de red.
 
+### El SOP manual que esto reemplaza
+
+Antes de esta aplicación el proceso se hacía a mano en Excel, por fases numeradas.
+**El documento original del SOP no está en este repositorio**: lo que sigue es todo lo
+que quedó registrado, reconstruido desde los docstrings del código.
+
+| Fase | Qué hacía | Dónde está la regla hoy |
+|---|---|---|
+| 2 | **Depuración**: `ESTADO_CUM=Activo`, `TIPO_ROL=FABRICANTE`, `ESTADO_REGISTRO=Vigente`, y excluir muestra médica | `armado/malla.py` |
+| 4 | **Código interno**: `COD_MEDICAMENTO_INVIMA` si el corte la trae; si no, `EXPEDIENTE-CONSECUTIVO` | `ingesta/invima_reader.py` |
+| 5 | **Descripción**: `PRINCIPIO_ACTIVO + UNIDAD_REFERENCIA` | `armado/malla.py` |
+| 6 | **Cruce contra Gemma Net** — reemplaza el BUSCARV manual contra el archivo exportado | `armado/cruce_gemanet.py` |
+| 10 | **Nombre del archivo del período**: `Vigente_MMYYYY` (mes con cero a la izquierda, año de 4 dígitos, sin separador — ej. `Vigente_082026`) | `exportacion/estructura_cargue.py` |
+
+> **Fases 1, 3, 7, 8 y 9: sin registrar.** No están ni en el código ni en esta
+> documentación. Quien conozca el procedimiento completo debería completarlas aquí —
+> hoy solo existen en la memoria de quien lo ejecutaba a mano.
+
+**La fase 5 tiene un problema abierto.** Esa fórmula es la que la auditoría usa para
+construir la descripción esperada, y no coincide con lo cargado en Gemma Net en
+**ninguno** de los medicamentos que sí tienen correspondencia con INVIMA (43.266 de
+43.266 en la corrida del 2026-08-20). Un campo que falla en el 100 % de los casos no
+son datos malos: o la fase 5 cambió y el código no se actualizó, o Gemma Net nunca
+guardó la descripción así. Sin el SOP escrito no hay contra qué contrastarlo.
+
 ---
 
 ## 7. El papel de la IA

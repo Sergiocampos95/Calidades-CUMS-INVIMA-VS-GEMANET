@@ -8,12 +8,25 @@ __pycache__/
 # de produccion -- nunca al repositorio.
 data/
 
+# Credenciales locales (DSN de la base de Gemma Net, tokens). NUNCA al
+# repositorio: la base es produccion de Pijao Salud. El deny de
+# .claude/settings.json impide que un agente las lea; esto impide que git
+# las commitee, que es un riesgo distinto.
+.env
+.env.*
+
 # Estado local de Claude Code. Las definiciones de .claude/agents/ y
 # .claude/AGENTES.md SI se versionan: son configuracion del proyecto.
 .claude/scheduled_tasks.lock
+.claude/hooks/.estado_pytest.json
 
 # Salidas de corridas locales (reportes, cargues, pruebas a mano).
 scratch_*.xlsx
 reporte_*.xlsx
 auditoria_*.xlsx
 cargue_*.xlsx
+
+# Respaldo local de la UI y consulta con metricas operativas: no son fuente
+# publicable ni deben entrar por accidente en el primer commit.
+ui_revision/app_streamlit.py.bak
+consultas/verificar_auditoria.sql

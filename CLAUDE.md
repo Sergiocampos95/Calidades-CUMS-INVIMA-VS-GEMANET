@@ -107,3 +107,20 @@ Los archivos reales son la fuente para medir rendimiento, no para versionar.
 
 Este proyecto define agentes especializados en `.claude/agents/`. Ver
 `.claude/AGENTES.md` para el reparto de responsabilidades y como encadenarlos.
+
+## Contexto compartido entre herramientas (Copilot CLI, Claude Code, Copilot Chat)
+
+- `AGENTS.md` en la raiz es el puente para Copilot CLI (lo lee
+  automaticamente). Copilot Chat en VS Code lee `.github/copilot-instructions.md`
+  y las reglas por carpeta de `.github/instructions/*.instructions.md`. Los tres
+  apuntan a este archivo sin duplicar reglas.
+- **El reparto de trabajo con Copilot esta en `.ai/planes/README.md`**: Claude
+  Code decide y verifica, Copilot acelera dentro de una decision ya tomada.
+  Cada tarea no trivial lleva un plan en `.ai/planes/<slug>.md` con un dueno
+  por paso y tres marcas (`[ ]` libre, `[~]` tomado, `[x]` hecho). Comandos:
+  `/plan-equipo`, `/tomar-paso`, `/bitacora`.
+- `.ai/bitacora.jsonl` es un registro append-only de cambios no triviales
+  (agente, fecha, resumen, archivos). Formato en `.ai/README.md`.
+- Convencion de commits: si propones un mensaje, agrega un trailer
+  `Agente: <nombre>` (ej. `Agente: Copilot CLI`) para poder filtrar
+  `git log --grep="^Agente:"` por herramienta.

@@ -132,7 +132,16 @@ def leer_reporte_gemanet(archivo: Any) -> ReporteGemaNet:
     pocas columnas adivina mal). Si no se reconoce una columna CODIGO_INTERNO
     despues de normalizar encabezados, falla con un mensaje claro en vez de
     devolver un reporte vacio silencioso.
+
+    Si `archivo` YA es un `ReporteGemaNet` se devuelve tal cual. Eso permite
+    que el reporte venga de la base de Gemma Net (ver
+    `ingesta/gemanet_sql.py`) sin que nada aguas abajo -- ni el cruce, ni la
+    auditoria, ni la exportacion -- tenga que saber de donde salio. Un solo
+    punto de entrada, dos origenes.
     """
+    if isinstance(archivo, ReporteGemaNet):
+        return archivo
+
     nombre = str(getattr(archivo, "name", archivo)).lower()
 
     if hasattr(archivo, "seek"):

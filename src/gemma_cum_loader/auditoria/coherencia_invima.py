@@ -60,12 +60,23 @@ todo lo no encontrado cae en el siguiente estado de la cascada como antes
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from enum import Enum
 
+import numpy as np
 import pandas as pd
+from rapidfuzz import fuzz, process
 
-from gemma_cum_loader.armado.reglas_negocio import CLASIFICADO_VALORES_VALIDOS, NIVELES_SERVICIO_VALIDOS
-from gemma_cum_loader.catalogos.resolver import EntradaCatalogo, sigla_por_codigo
+from gemma_cum_loader.armado.reglas_negocio import (
+    CLASIFICADO_VALORES_VALIDOS,
+    NIVELES_SERVICIO_VALIDOS,
+)
+from gemma_cum_loader.catalogos.resolver import (
+    FALLBACK_CODIGO,
+    EntradaCatalogo,
+    sigla_por_codigo,
+    siglas_por_codigo,
+)
 from gemma_cum_loader.normaliza.texto import normalizar, normalizar_entidad
 from gemma_cum_loader.validacion.reglas import es_error_excel
 
@@ -76,6 +87,11 @@ class EstadoCoherencia(Enum):
     VENCIDO_EN_INVIMA = "vencido_en_invima"
     ENCONTRADO_EN_OTRO_ESTADO_INVIMA = "encontrado_en_otro_estado_invima"
     EN_TRAMITE_RENOVACION_INVIMA = "en_tramite_renovacion_invima"
+    # Aparece en Otros Estados pero el propio texto de INVIMA dice "Vigente":
+    # el registro sanitario esta al dia y el producto solo no se esta
+    # comercializando ahora. No es riesgo de vigencia -- ver
+    # _FRAGMENTO_VIGENTE_EN_OTROS_ESTADOS.
+    VIGENTE_NO_COMERCIALIZADO_INVIMA = "vigente_no_comercializado_invima"
     SIN_CORRESPONDENCIA_INVIMA = "sin_correspondencia_invima"
 
 
@@ -116,12 +132,39 @@ class EstadoCoherencia(Enum):
 #                      (¿el codigo de MARCA_MEDICAMENTO/UNIDAD_MEDIDA que guarda Gemma
 #                      Net existe de verdad en el catalogo interno, o es un codigo
 #                      huerfano que hoy se confunde con "no coincide con INVIMA"?)
+# 10. CONTRASTE DE VIGENCIA -- NOVEDAD_VIGENCIA_INVIMA / DETALLE_VIGENCIA_INVIMA
+#                      (ver _contrastar_vigencia_invima; pedido de negocio del
+#                      2026-08-20). Las dimensiones 1-9 miran el dato local o lo
+#                      comparan campo a campo; esta pregunta algo distinto: ¿que
+#                      dice INVIMA de la VIGENCIA de las filas cuya fecha local es
+#                      un comodin y no se puede interpretar sola? De ahi salen las
+#                      novedades concretas: una fecha que falta aca y existe alla,
+#                      un medicamento inactivo en la plataforma pero vigente en
+#                      INVIMA, o activo aca e inactivo alla (el de mayor riesgo).
+#                      Nunca se corrige nada: se entrega la novedad con las fechas
+#                      de los dos lados para que una persona decida.
 
 
 # campo de salida -> (columna en el Reporte de Gemma Net, columna en INVIMA)
 # DESCRIPCION, MARCA_MEDICAMENTO y UNIDAD_MEDIDA se arman aparte (ver abajo)
+#
+# CONCENTRACION de Gemma Net NO guarda una concentracion: guarda la
+# PRESENTACION COMERCIAL ("CAJA POR 100 TABLETAS EN BLISTER PVC/ALUMINIO"),
+# que en INVIMA vive en DESCRIPCION_COMERCIAL y no en su columna homonima.
+# Compararla contra CONCENTRACION de INVIMA -- que si es una concentracion
+# ("500 mg") -- fallaba en el 100 % de las filas. Medido el 2026-08-21 sobre
+# las 43.266 filas con correspondencia, cruzando cada campo local contra
+# TODOS los de INVIMA:
+#
+#     contra CONCENTRACION de INVIMA          2 exactas ( 0,0 %)  similitud  3,2
+#     contra DESCRIPCION_COMERCIAL       42.338 exactas (97,9 %)  similitud 100,0
+#
+# Era el unico campo que fallaba siempre, y por eso ESTADO_COHERENCIA=correcto
+# daba CERO en todo el reporte y PORCENTAJE_CALIDAD no podia pasar de 85,7 %.
+# El nombre de salida se deja como CONCENTRACION porque es el que ya usan la
+# UI y el Excel de cargue; lo que contiene esta documentado aca.
 _CAMPOS_DIRECTOS = {
-    "CONCENTRACION": ("CONCENTRACION", "CONCENTRACION"),
+    "CONCENTRACION": ("CONCENTRACION", "DESCRIPCION_COMERCIAL"),
     "FORMA_FARMACEUTICA": ("FORMA_FARMACEUTICA", "FORMA_FARMACEUTICA"),
     "PRINCIPIO_ACTIVO": ("PRINCIPIO_ACTIVO", "PRINCIPIO_ACTIVO"),
     "CODIGO_ATC": ("CODIGO_ATC", "ATC"),
@@ -133,6 +176,23 @@ _CAMPOS_DIRECTOS = {
 # lista a mano (ver CAMPOS_VERIFICABLES_CARGUE en exportacion/cargue.py,
 # mismo patron).
 CAMPOS_COMPARADOS_COHERENCIA = [*_CAMPOS_DIRECTOS.keys(), "DESCRIPCION", "MARCA_MEDICAMENTO", "UNIDAD_MEDIDA"]
+
+# Campos que NO son un dato independiente: se construyen a partir de otros. Si
+# el campo de origen difiere, el derivado difiere por consecuencia -- siempre.
+#
+# Importa para leer bien el reporte. Medido contra produccion el 2026-08-21:
+# de las 12.517 filas con alguna diferencia, 5.319 fallan a la vez en
+# PRINCIPIO_ACTIVO y DESCRIPCION, y otras 4.349 solo en DESCRIPCION. Las
+# primeras NO tienen dos problemas: tienen uno contado dos veces, y ademas
+# quedan penalizadas doble en PORCENTAJE_CALIDAD por la misma causa raiz.
+# Corregir el principio activo arregla los dos campos de una vez.
+#
+# No se descuenta automaticamente del conteo: eso ocultaria que la descripcion
+# guardada esta mal, que es un hecho. Se declara para que quien reparte el
+# trabajo sepa cual es causa y cual efecto.
+CAMPOS_DERIVADOS = {
+    "DESCRIPCION": ("PRINCIPIO_ACTIVO", "UNIDAD_MEDIDA"),
+}
 
 
 def _columna_o_vacia(df: pd.DataFrame, nombre: str) -> pd.Series:
@@ -155,6 +215,95 @@ def _normalizada(serie: pd.Series) -> pd.Series:
     return serie.map(normalizar)
 
 
+def _columnas_marcadas(df_booleano: pd.DataFrame, separador: str) -> pd.Series:
+    """Vectoriza `df.apply(lambda fila: separador.join(fila.index[fila]), axis=1)`.
+
+    `DataFrame.apply(axis=1)` reconstruye una Series de pandas por fila --
+    medido a escala real (199.689 filas, ver benchmark de rendimiento en
+    README) eso tomaba ~6s POR LLAMADA, y esta funcion se usa 4 veces en la
+    auditoria completa. Recorrer directamente el array de numpy subyacente
+    evita esa reconstruccion (~35x mas rapido en el mismo benchmark) y
+    produce exactamente el mismo resultado: las columnas True de una fila
+    booleana son las mismas sin importar si se leen desde una Series o
+    desde la fila cruda del array, mismo orden de columnas.
+    """
+    columnas = df_booleano.columns.to_numpy()
+    return pd.Series(
+        [separador.join(columnas[fila]) for fila in df_booleano.to_numpy()],
+        index=df_booleano.index,
+    )
+
+
+# Fechas comodin de Gemma Net: NO son fechas, son "sin dato" -- el equivalente
+# de -999 para los numericos. Origen confirmado por negocio (Carlos, 2026-08-20):
+# son residuo de la migracion de Gemma Net de local a la nube, donde al poblar
+# los datos se asignaron estos valores frente a los nulos. No son errores de
+# digitacion y no se corrigen fila por fila.
+#
+# Medido sobre la base real (administrativo.tb_medicamento, 199.608 filas):
+#
+#   2999-12-31   48.498 filas   88% activos  <- "no expira"; el mismo comodin que
+#                                               usa la consulta de RIPS de Pijao
+#                                               (coalesce(fecha_fin, '2999-12-31'))
+#   1900-01-01   13.815 filas   59% activos  <- "sin fecha" (residuo de migracion)
+#   NULL          5.797 filas   72% activos  <- "sin fecha"
+#   fecha real  128.312 filas  0,6% activos  <- vencido de verdad: cuando la fecha
+#                                               es real, el sistema SI la respeta
+#
+# Compararlas como fechas producia 13.815 hallazgos falsos en la dimension 3.
+# 1899-12-30 es el cero del calendario serial de Excel (aparece como minimo de
+# fecha_inicio en la base): mismo caso.
+# Como enteros AAAAMMDD y no como Timestamp a proposito: `2999-12-31` esta
+# FUERA del rango de datetime64[ns] de pandas (tope 2262-04-11), asi que
+# construir ese Timestamp lanza OutOfBoundsDatetime. Comparar por componentes
+# ademas funciona igual sea cual sea la unidad de la columna (ns, us, s), que
+# varia segun venga de Excel o de Postgres.
+FECHAS_CENTINELA = frozenset({19000101, 18991230, 29991231})
+
+
+def _es_fecha_real(serie: pd.Series) -> pd.Series:
+    """True donde la fecha es un dato de verdad, no un comodin ni un vacio."""
+    if not pd.api.types.is_datetime64_any_dtype(serie):
+        serie = pd.to_datetime(serie, errors="coerce")
+    aaaammdd = serie.dt.year * 10000 + serie.dt.month * 100 + serie.dt.day
+    return serie.notna() & ~aaaammdd.isin(FECHAS_CENTINELA)
+
+
+def _es_fecha_comodin(serie: pd.Series) -> pd.Series:
+    """True solo en el comodin -- distinto de `~_es_fecha_real`, que tambien
+    marca el vacio. La diferencia importa: un comodin es una fecha que la
+    migracion ESCRIBIO para no dejar la celda en blanco, y un vacio es una
+    fecha que nadie diligencio. Se atienden distinto (ver
+    `_clasificar_naturaleza_hallazgo`)."""
+    if not pd.api.types.is_datetime64_any_dtype(serie):
+        serie = pd.to_datetime(serie, errors="coerce")
+    aaaammdd = serie.dt.year * 10000 + serie.dt.month * 100 + serie.dt.day
+    return serie.notna() & aaaammdd.isin(FECHAS_CENTINELA)
+
+
+def _unir_no_vacios(df: pd.DataFrame, separador: str, index=None) -> pd.Series:
+    """Une los valores no vacios de cada fila, vectorizado.
+
+    Hermano de `_columnas_marcadas`, para cuando lo que hay que unir son los
+    VALORES de las celdas y no los nombres de las columnas. Existe por la
+    misma razon: `DataFrame.apply(axis=1)` reconstruye una Series de pandas
+    por fila. Medido sobre 199.608 filas y 2 columnas -- 4,96 s con `.apply`
+    contra 0,12 s asi, 40 veces mas rapido y con el mismo resultado.
+    """
+    if df.empty or not len(df.columns):
+        return pd.Series("", index=index if index is not None else df.index, dtype="object")
+
+    resultado = pd.Series("", index=df.index, dtype="object")
+    for columna in df.columns:
+        valores = df[columna].fillna("").astype(str)
+        # El separador solo entra si YA hay algo a la izquierda y ademas hay
+        # algo a la derecha: asi no quedan "; " sueltos al principio ni al
+        # final cuando alguna columna viene vacia.
+        pegamento = np.where(resultado.ne("") & valores.ne(""), separador, "")
+        resultado = resultado + pegamento + valores
+    return resultado
+
+
 def _validar_fechas_activo(reporte_gemanet: pd.DataFrame) -> pd.Series:
     """Coherencia interna de Gemma Net -- no depende de INVIMA, valida que
     ACTIVO, FECHA_INICIO y FECHA_FIN sean consistentes ENTRE SI dentro del
@@ -169,20 +318,30 @@ def _validar_fechas_activo(reporte_gemanet: pd.DataFrame) -> pd.Series:
       deberia tener la fecha en que se desactivo.
     - ACTIVO=SI con FECHA_FIN ya pasada: contradiccion -- dice estar activo
       pero su propia fecha de fin ya paso.
+
+    Las tres solo miran fechas REALES (ver FECHAS_CENTINELA): un comodin no
+    contradice nada, significa "sin dato". Antes se comparaban como fechas y
+    eso producia 13.815 hallazgos falsos, casi todos por `1900-01-01`. Que
+    falte la fecha de fin NO se reporta aqui -- se contrasta contra INVIMA,
+    que es quien puede decir si esa fecha existe (ver
+    `_contrastar_vigencia_invima`).
     """
     fecha_inicio = _columna_fecha(reporte_gemanet, "FECHA_INICIO")
     fecha_fin = _columna_fecha(reporte_gemanet, "FECHA_FIN")
     activo = _columna_o_vacia(reporte_gemanet, "ACTIVO").str.strip().str.upper()
     hoy = pd.Timestamp.now().normalize()
 
+    inicio_real = _es_fecha_real(fecha_inicio)
+    fin_real = _es_fecha_real(fecha_fin)
+
     hallazgos = pd.DataFrame(index=reporte_gemanet.index)
     hallazgos["FECHA_FIN anterior a FECHA_INICIO"] = (
-        fecha_inicio.notna() & fecha_fin.notna() & (fecha_fin < fecha_inicio)
+        inicio_real & fin_real & (fecha_fin < fecha_inicio)
     )
-    hallazgos["ACTIVO=NO sin FECHA_FIN registrada"] = activo.eq("NO") & fecha_fin.isna()
-    hallazgos["ACTIVO=SI pero FECHA_FIN ya paso"] = activo.eq("SI") & fecha_fin.notna() & (fecha_fin < hoy)
+    hallazgos["ACTIVO=NO sin FECHA_FIN registrada"] = activo.eq("NO") & ~fin_real
+    hallazgos["ACTIVO=SI pero FECHA_FIN ya paso"] = activo.eq("SI") & fin_real & (fecha_fin < hoy)
 
-    return hallazgos.apply(lambda fila: "; ".join(fila.index[fila]), axis=1)
+    return _columnas_marcadas(hallazgos, "; ")
 
 
 # Los campos del cargue de 37 que SI se esperan diligenciados en el reporte
@@ -219,6 +378,30 @@ _CAMPOS_COMPLETITUD_REPORTE = [
 # real en vez de suponer.
 _MARCADORES_VACIOS = {"", "nan", "none", "<na>", "nat", "-999"}
 
+# MARCA_MEDICAMENTO, UNIDAD_MEDIDA y CODIGO_INTERNO_MODELO_SERVICIO no guardan
+# texto sino un codigo de catalogo, y ahi el "sin dato" no se escribe "-999":
+# se escribe con el codigo 1, que el catalogo describe literalmente como "SIN
+# INFORMACION" (ver resolver.FALLBACK_CODIGO). Es el mismo centinela con otra
+# cara, y hasta el 2026-08-21 no se reconocia como tal: la marca de 40.044
+# medicamentos --el 93 % de todo lo comparable contra INVIMA-- se reportaba
+# como "no coincide con INVIMA" cuando en realidad NO ESTA REGISTRADA. Un
+# dato ausente no es un dato equivocado, y confundirlos convertia un unico
+# problema de proceso en decenas de miles de hallazgos falsos.
+_CAMPOS_CODIGO_DE_CATALOGO = frozenset(
+    {"MARCA_MEDICAMENTO", "UNIDAD_MEDIDA", "CODIGO_INTERNO_MODELO_SERVICIO"}
+)
+
+
+def _sin_dato_local(df: pd.DataFrame, campo: str, columna: str | None = None) -> pd.Series:
+    """Si el campo NO trae dato en Gemma Net, en cualquiera de sus formas:
+    vacio, "-999", un error de Excel, o el codigo 1 de catalogo cuando el
+    campo se guarda como codigo (ver `_CAMPOS_CODIGO_DE_CATALOGO`)."""
+    crudo = _columna_o_vacia(df, columna or campo).str.strip().str.lower()
+    sin_dato = crudo.isin(_MARCADORES_VACIOS) | crudo.map(es_error_excel)
+    if campo in _CAMPOS_CODIGO_DE_CATALOGO:
+        sin_dato = sin_dato | crudo.map(_a_entero).eq(FALLBACK_CODIGO)
+    return sin_dato
+
 
 def _calcular_completitud_reporte(reporte_gemanet: pd.DataFrame) -> pd.Series:
     """Calidad #4 -- COMPLETITUD: de los 37 campos del cargue, cuantos estan
@@ -233,8 +416,7 @@ def _calcular_completitud_reporte(reporte_gemanet: pd.DataFrame) -> pd.Series:
         return pd.Series(float("nan"), index=reporte_gemanet.index)
     poblado = pd.DataFrame(index=reporte_gemanet.index)
     for campo in campos_presentes:
-        valor = _columna_o_vacia(reporte_gemanet, campo).str.strip().str.lower()
-        poblado[campo] = ~valor.isin(_MARCADORES_VACIOS) & ~valor.map(es_error_excel)
+        poblado[campo] = ~_sin_dato_local(reporte_gemanet, campo)
     return (poblado.sum(axis=1) / len(campos_presentes) * 100).round(1)
 
 
@@ -263,20 +445,34 @@ def _detectar_campos_sistemicamente_no_diligenciados(reporte_gemanet: pd.DataFra
     casi todas las filas, es una señal de que ese campo no se esta
     diligenciando en el proceso de origen, no de que cada medicamento tenga
     un dato puntual faltante."""
-    advertencias: list[str] = []
+    return [
+        f"El campo {campo} no trae dato real en el {porcentaje:.1f}% de las filas "
+        "de este reporte -- parece no estarse diligenciando en el proceso de origen, no "
+        "un dato puntual faltante por medicamento."
+        for campo, porcentaje in _campos_sistemicamente_no_diligenciados(reporte_gemanet).items()
+    ]
+
+
+def _campos_sistemicamente_no_diligenciados(reporte_gemanet: pd.DataFrame) -> dict[str, float]:
+    """Los nombres de esos campos, con su porcentaje de vacio.
+
+    Separado del texto de la advertencia porque la clasificacion de hallazgos
+    tambien los necesita, y por el motivo opuesto: para NO contarlos fila por
+    fila. Un campo que nadie diligencia produce un hallazgo en cada uno de los
+    199.689 medicamentos, y eso no es informacion -- es el mismo problema
+    repetido. Ya se reporta una vez, como problema de proceso, que es lo que
+    permite hacer algo al respecto.
+    """
+    if len(reporte_gemanet) == 0:
+        return {}
+    encontrados: dict[str, float] = {}
     for campo in _CAMPOS_COMPLETITUD_REPORTE:
-        if campo not in reporte_gemanet.columns or len(reporte_gemanet) == 0:
+        if campo not in reporte_gemanet.columns:
             continue
-        valor = _columna_o_vacia(reporte_gemanet, campo).str.strip().str.lower()
-        vacio = valor.isin(_MARCADORES_VACIOS) | valor.map(es_error_excel)
-        porcentaje_vacio = vacio.mean() * 100
+        porcentaje_vacio = _sin_dato_local(reporte_gemanet, campo).mean() * 100
         if porcentaje_vacio >= _UMBRAL_CAMPO_SISTEMICAMENTE_VACIO:
-            advertencias.append(
-                f"El campo {campo} no trae dato real en el {porcentaje_vacio:.1f}% de las filas "
-                "de este reporte -- parece no estarse diligenciando en el proceso de origen, no "
-                "un dato puntual faltante por medicamento."
-            )
-    return advertencias
+            encontrados[campo] = porcentaje_vacio
+    return encontrados
 
 
 def _detectar_duplicados_en_reporte(reporte_gemanet: pd.DataFrame) -> pd.Series:
@@ -287,9 +483,23 @@ def _detectar_duplicados_en_reporte(reporte_gemanet: pd.DataFrame) -> pd.Series:
     plataforma. Puede ser legitimo (medicamento combinado, una fila por
     principio activo) o un error real de cargue duplicado -- esta funcion
     solo senala el hecho, no decide cual es el caso.
+
+    Las filas SIN codigo no son un duplicado: son una ausencia, y ya las
+    cuenta la dimension de conformidad de formato. Contarlas aqui inflaba el
+    hallazgo y lo volvia enganoso -- medido el 2026-08-20: de 98 "duplicados"
+    reportados, 87 eran filas con el codigo vacio y solo 11 eran una
+    duplicacion real (todas del codigo "1"). La comparacion contra `.ne("")`
+    no bastaba porque `astype(str)` convierte los nulos en "<NA>", no en "",
+    asi que se reutiliza `_MARCADORES_VACIOS`, que ya conoce todas las formas
+    en que este reporte dice "aqui no hay dato".
     """
-    codigo = reporte_gemanet["CODIGO_INTERNO"].astype(str).str.strip()
-    return codigo.duplicated(keep=False) & codigo.ne("")
+    # _columna_o_vacia y no astype(str) a secas: con el dtype `str` de pandas,
+    # `astype(str)` CONSERVA los nulos como NaN en vez de convertirlos a
+    # texto, asi que `.isin(_MARCADORES_VACIOS)` nunca los reconocia y las
+    # filas sin codigo seguian contandose como duplicadas entre si.
+    codigo = _columna_o_vacia(reporte_gemanet, "CODIGO_INTERNO").str.strip()
+    tiene_codigo = ~codigo.str.casefold().isin(_MARCADORES_VACIOS)
+    return codigo.duplicated(keep=False) & tiene_codigo
 
 
 def _validar_dominio_valores(reporte_gemanet: pd.DataFrame) -> pd.Series:
@@ -300,23 +510,33 @@ def _validar_dominio_valores(reporte_gemanet: pd.DataFrame) -> pd.Series:
     Gemma Net, que nunca se habia revisado contra este dominio). Un valor
     fuera de ese conjunto es un dato mal diligenciado, no una variante
     valida no contemplada.
+
+    La comparacion IGNORA MAYUSCULAS. El dominio esta declarado como
+    "SI"/"NO" y Gemma Net guarda "Si"/"No" en capitalizacion de titulo: una
+    comparacion exacta marcaba **199.590 filas perfectamente validas** como
+    fuera de dominio -- el 99,95 % del reporte, medido el 2026-08-20. Una
+    diferencia de mayusculas no es un dato mal diligenciado; el valor real
+    que hay que cazar aqui es el que no existe en el dominio, y esos son 87.
     """
+    validos_clasificado = {v.casefold() for v in CLASIFICADO_VALORES_VALIDOS}
+    validos_nivel = {v.casefold() for v in NIVELES_SERVICIO_VALIDOS}
+
     clasificado = _columna_o_vacia(reporte_gemanet, "CLASIFICADO").str.strip()
     nivel_servicio = _columna_o_vacia(reporte_gemanet, "CODIGO_NIVEL_SERVICIO").str.strip()
     pos = _columna_o_vacia(reporte_gemanet, "POS").str.strip().str.upper()
     activo = _columna_o_vacia(reporte_gemanet, "ACTIVO").str.strip().str.upper()
 
     hallazgos = pd.DataFrame(index=reporte_gemanet.index)
-    hallazgos["CLASIFICADO fuera de dominio"] = clasificado.ne("") & ~clasificado.isin(
-        CLASIFICADO_VALORES_VALIDOS
+    hallazgos["CLASIFICADO fuera de dominio"] = clasificado.ne("") & ~clasificado.str.casefold().isin(
+        validos_clasificado
     )
-    hallazgos["CODIGO_NIVEL_SERVICIO fuera de dominio"] = nivel_servicio.ne("") & ~nivel_servicio.isin(
-        NIVELES_SERVICIO_VALIDOS
-    )
+    hallazgos["CODIGO_NIVEL_SERVICIO fuera de dominio"] = nivel_servicio.ne(
+        ""
+    ) & ~nivel_servicio.str.casefold().isin(validos_nivel)
     hallazgos["POS fuera de dominio (SI/NO)"] = pos.ne("") & ~pos.isin(["SI", "NO"])
     hallazgos["ACTIVO fuera de dominio (SI/NO)"] = activo.ne("") & ~activo.isin(["SI", "NO"])
 
-    return hallazgos.apply(lambda fila: "; ".join(fila.index[fila]), axis=1)
+    return _columnas_marcadas(hallazgos, "; ")
 
 
 def _a_numero(serie: pd.Series) -> pd.Series:
@@ -357,7 +577,321 @@ def _validar_razonabilidad_numerica(reporte_gemanet: pd.DataFrame) -> pd.Series:
     ]:
         hallazgos[f"{campo} negativo"] = serie.notna() & (serie < 0)
 
-    return hallazgos.apply(lambda fila: "; ".join(fila.index[fila]), axis=1)
+    return _columnas_marcadas(hallazgos, "; ")
+
+
+# Dimension 10 -- valores de NOVEDAD_VIGENCIA_INVIMA, en orden de prioridad:
+# una fila puede cumplir varias condiciones y se reporta la de mayor riesgo.
+NOVEDAD_RIESGO_ACTIVO = "riesgo_activo_sin_vigencia"
+NOVEDAD_REGISTRO_VENCIDO = "registro_vencido_en_invima"
+NOVEDAD_REVISAR_REACTIVACION = "revisar_reactivacion"
+NOVEDAD_ACTUALIZAR_FECHA_FIN = "actualizar_fecha_fin"
+NOVEDAD_COHERENTE = "coherente"
+NOVEDAD_NO_VERIFICABLE = "no_verificable"
+
+
+def _cantidad_como_texto(serie: pd.Series) -> pd.Series:
+    """20.0 -> "20", 2.5 -> "2.5", vacio -> "". INVIMA guarda CANTIDAD como
+    numero y Gemma Net la concatena sin el ".0" de los enteros."""
+    numeros = pd.to_numeric(serie, errors="coerce")
+    return numeros.map(
+        lambda v: "" if pd.isna(v) else (str(int(v)) if float(v).is_integer() else str(v))
+    )
+
+
+def _descripcion_esperada_invima(invima: pd.DataFrame) -> pd.Series:
+    """Como se veria la DESCRIPCION de Gemma Net armada desde INVIMA.
+
+    Formula verificada contra los datos reales el 2026-08-20:
+
+        PRINCIPIO_ACTIVO + CANTIDAD + UNIDAD_MEDIDA + FORMA_FARMACEUTICA
+
+    Ejemplo: "FLUOXETINA CLORHIDRATO EQUIVALENTE A FLUOXETINA BASE 20MG
+    CAPSULA DURA".
+
+    La version anterior usaba `PRINCIPIO_ACTIVO + UNIDAD_REFERENCIA` -- la
+    regla de la fase 5 del SOP -- y fallaba en el 100 % de los casos: 0
+    coincidencias exactas sobre 43.266 filas comparables, lo que dejaba la
+    dimension de Exactitud inservible y hundia PORCENTAJE_CALIDAD de todo el
+    reporte. El motivo es que `UNIDAD_REFERENCIA` no es un dato sino una
+    frase ("CADA CAPSULA DE GELATINA DURA CONTIENE").
+
+    Medido sobre las 43.266 filas con correspondencia:
+
+        PA + UNIDAD_REFERENCIA (anterior)        0 exactas   similitud 92,5
+        PA + CANTIDAD+UNIDAD                     0 exactas   similitud 99,8
+        PA + CANTIDAD+UNIDAD + FORMA        32.414 exactas   similitud 99,9
+
+    El 25 % restante son diferencias reales, que es justo lo que la auditoria
+    debe reportar.
+    """
+    return (
+        _columna_o_vacia(invima, "PRINCIPIO_ACTIVO").str.strip()
+        + " "
+        + _cantidad_como_texto(_columna_o_vacia(invima, "CANTIDAD"))
+        + _columna_o_vacia(invima, "UNIDAD_MEDIDA").str.strip()
+        + " "
+        + _columna_o_vacia(invima, "FORMA_FARMACEUTICA").str.strip()
+    ).str.strip()
+
+
+PREFIJO_SIMILITUD = "SIMILITUD_"
+
+# El trio de columnas por campo comparable: lo que dice Gemma Net, lo que dice
+# INVIMA y el veredicto. Pedido explicito del usuario (2026-08-21): "una
+# columna ejemplo, descripcion gemma, descripcion invima, descripcion
+# validada". Los sufijos viven aca -- y no como literales sueltos -- porque la
+# UI y la exportacion a Excel arman nombres de columna con ellos.
+SUFIJO_GEMANET = "_GEMANET"
+SUFIJO_INVIMA = "_INVIMA"
+SUFIJO_VALIDACION = "_VALIDACION"
+
+# El veredicto es texto y no booleano a proposito: "sin comparar" no es ni
+# verdadero ni falso, y un booleano obligaria a inventarle un valor. Mismo
+# criterio que PORCENTAJE_CALIDAD, que queda vacio en vez de 0 %.
+VALIDACION_COINCIDE = "coincide"
+VALIDACION_DIFIERE = "difiere"
+VALIDACION_SIN_COMPARAR = "sin comparar"
+# Distinto de "sin comparar": ahi falta el lado de INVIMA, aca falta el
+# nuestro. La accion tampoco es la misma -- lo primero no se puede resolver,
+# lo segundo se resuelve diligenciando el campo.
+VALIDACION_SIN_DATO_LOCAL = "sin dato en Gemma Net"
+
+
+def similitud_de_campo(local: pd.Series, oficial: pd.Series) -> pd.Series:
+    """Cuanto se parecen dos columnas de texto, 0-100, fila por fila.
+
+    Pedido de negocio (ing. Sergio, 2026-08-20): saber "que tanto parecido o
+    coincidencia tiene la de nuestra base de datos contra la del INVIMA", no
+    solo si difiere. Un binario dice que hay un problema; el porcentaje dice
+    si es una tilde de diferencia o si son dos medicamentos distintos -- y eso
+    cambia por completo quien tiene que revisarlo y con que urgencia.
+
+    `token_set_ratio` y no `ratio`: compara los conjuntos de palabras, asi que
+    no penaliza el orden ni las palabras repetidas. "ACETAMINOFEN 500 MG
+    TABLETA" contra "TABLETA ACETAMINOFEN 500MG" es el mismo medicamento
+    escrito distinto, y debe dar alto.
+
+    Si alguno de los dos lados esta vacio se devuelve NaN, no 0: "no hay con
+    que comparar" no es lo mismo que "no se parece en nada" -- mismo criterio
+    que PORCENTAJE_CALIDAD.
+    """
+    izq = local.fillna("").astype(str).to_numpy()
+    der = oficial.fillna("").astype(str).to_numpy()
+    # cpdist compara par a par (fila i contra fila i) y libera el GIL con
+    # workers=-1. Medido: 199.689 pares en 0,05 s, los 7 campos en ~0,35 s.
+    puntajes = process.cpdist(izq, der, scorer=fuzz.token_set_ratio, workers=-1)
+    resultado = pd.Series(puntajes, index=local.index, dtype="float64")
+    return resultado.where((izq != "") & (der != ""))
+
+
+def _corte_catalogo_invima(invima: pd.DataFrame) -> pd.Timestamp | None:
+    """Hasta que fecha sabe algo el catalogo INVIMA que se esta usando.
+
+    Se toma de FECHA_ACTIVO, que es la ultima novedad que alcanzo a registrar
+    el corte. Sirve para NO afirmar cosas que el archivo no puede sustentar:
+    un registro que vence despues del corte pudo renovarse sin que esa copia
+    se entere. Medido el 2026-08-20 con el listado de 2022: de 73.716
+    registros "vencidos a hoy", **los 73.716** vencian despues del corte --
+    es decir, el 100 % de ese hallazgo habria sido una afirmacion sin
+    respaldo. Devuelve None si no hay como saberlo, y entonces no se afirma.
+    """
+    if "FECHA_ACTIVO" not in invima.columns:
+        return None
+    fechas = pd.to_datetime(invima["FECHA_ACTIVO"], errors="coerce")
+    return fechas.max() if fechas.notna().any() else None
+
+
+def _contrastar_vigencia_invima(
+    combinado: pd.DataFrame,
+    tiene_correspondencia: pd.Series,
+    corte_invima: pd.Timestamp | None = None,
+    estado_coherencia: pd.Series | None = None,
+) -> tuple[pd.Series, pd.Series]:
+    """Calidad #10 -- CONTRASTE DE VIGENCIA: que dice INVIMA de las filas cuya
+    vigencia local no se puede interpretar sola.
+
+    Pedido de negocio (Carlos, 2026-08-20): las filas con fechas comodin no
+    ameritan corregirse una por una -- son residuo de la migracion -- pero SI
+    deben contrastarse contra INVIMA, porque una fecha ausente localmente
+    puede existir alla (novedad a actualizar) y un medicamento inactivo en la
+    plataforma puede estar vigente en INVIMA. La aplicacion no corrige nada:
+    entrega la novedad fundamentada con las fechas de ambos lados para que
+    una persona decida.
+
+    Como representa INVIMA la vigencia (medido sobre el listado real, era la
+    duda abierta): `FECHA_INACTIVO` **nula** significa que el CUM sigue
+    activo -- 77.545 de 81.641 activos, el 95 %. `FECHA_VENCIMIENTO` nunca es
+    nula: siempre hay vencimiento del registro sanitario. Por eso se comparan
+    las dos y significan cosas distintas -- una da la novedad de dato, la
+    otra el riesgo de vigencia.
+
+    Devuelve (clasificacion, detalle). El detalle lleva las fechas de los dos
+    lados: sin eso la novedad no se puede fundamentar sin abrir otra
+    herramienta, que es justo lo que se quiere evitar.
+    """
+    fin_local = _columna_fecha(combinado, "FECHA_FIN")
+    activo_local = _columna_o_vacia(combinado, "ACTIVO").str.strip().str.upper().isin(
+        {"SI", "SÍ", "S", "1"}
+    )
+    fin_local_real = _es_fecha_real(fin_local)
+
+    inactivo_invima = _columna_o_vacia(combinado, "ESTADO_CUM_INVIMA").str.strip().str.upper().eq(
+        "INACTIVO"
+    )
+    activo_invima = _columna_o_vacia(combinado, "ESTADO_CUM_INVIMA").str.strip().str.upper().eq(
+        "ACTIVO"
+    )
+    fecha_inactivo_invima = _columna_fecha(combinado, "FECHA_INACTIVO_INVIMA")
+    fecha_vencimiento_invima = _columna_fecha(combinado, "FECHA_VENCIMIENTO_INVIMA")
+    inactivo_invima_real = _es_fecha_real(fecha_inactivo_invima)
+    hoy = pd.Timestamp.now().normalize()
+
+    clasificacion = pd.Series(NOVEDAD_COHERENTE, index=combinado.index, dtype="object")
+    detalle = pd.Series("", index=combinado.index, dtype="object")
+
+    def _fecha(serie: pd.Series, mascara: pd.Series) -> pd.Series:
+        return serie[mascara].dt.strftime("%Y-%m-%d").fillna("sin fecha")
+
+    # De menor a mayor prioridad: la ultima asignacion gana, asi la fila queda
+    # con el hallazgo mas grave sin tener que ordenar condiciones a mano.
+    actualizar = tiene_correspondencia & ~fin_local_real & inactivo_invima_real
+    clasificacion[actualizar] = NOVEDAD_ACTUALIZAR_FECHA_FIN
+    detalle[actualizar] = (
+        "Sin fecha de fin en Gemma Net, pero INVIMA registra que el CUM se inactivo el "
+        + _fecha(fecha_inactivo_invima, actualizar)
+        + ". Novedad: actualizar FECHA_FIN."
+    )
+
+    reactivar = tiene_correspondencia & ~activo_local & activo_invima
+    clasificacion[reactivar] = NOVEDAD_REVISAR_REACTIVACION
+    detalle[reactivar] = (
+        "Inactivo en Gemma Net, pero el CUM sigue Activo en INVIMA (registro sanitario "
+        "vigente hasta " + _fecha(fecha_vencimiento_invima, reactivar) + "). "
+        "Revisar si corresponde reactivarlo."
+    )
+
+    # Solo se afirma "vencido" si el vencimiento cae DENTRO de lo que el
+    # catalogo alcanza a saber. Un registro que vence despues del corte pudo
+    # renovarse y esta copia no se entera -- afirmarlo seria justo la decision
+    # a ciegas que el proyecto prohibe. Sin corte conocido no se afirma nada.
+    dentro_del_corte = (
+        pd.Series(False, index=combinado.index)
+        if corte_invima is None
+        else fecha_vencimiento_invima <= corte_invima
+    )
+    vencido = (
+        tiene_correspondencia
+        & activo_local
+        & _es_fecha_real(fecha_vencimiento_invima)
+        & (fecha_vencimiento_invima < hoy)
+        & dentro_del_corte
+    )
+    clasificacion[vencido] = NOVEDAD_REGISTRO_VENCIDO
+    detalle[vencido] = (
+        "Activo en Gemma Net, pero el registro sanitario vencio en INVIMA el "
+        + _fecha(fecha_vencimiento_invima, vencido)
+        + ". Riesgo de autorizar un medicamento sin vigencia."
+    )
+
+    riesgo = tiene_correspondencia & activo_local & inactivo_invima
+    clasificacion[riesgo] = NOVEDAD_RIESGO_ACTIVO
+    detalle[riesgo] = (
+        "Activo en Gemma Net, pero INVIMA tiene el CUM como Inactivo desde "
+        + _fecha(fecha_inactivo_invima, riesgo)
+        + ". Riesgo alto: se puede autorizar un medicamento que INVIMA ya desactivo."
+    )
+
+    # Sin correspondencia no se afirma nada: no se puede confirmar ni descartar.
+    clasificacion[~tiene_correspondencia] = NOVEDAD_NO_VERIFICABLE
+    detalle[~tiene_correspondencia] = ""
+
+    # ...salvo que los datasets auxiliares SI sepan de ese codigo. Un medicamento
+    # que no esta en Vigentes pero aparece en Vencidos no es "no verificable":
+    # INVIMA nos esta diciendo que vencio, y si ademas sigue activo en Gemma Net
+    # es el riesgo mas alto de todos. Sin esto, con los 4 listados cargados la
+    # auditoria reportaba 49.993 vencidos en ESTADO_COHERENCIA y a la vez los
+    # contaba como "no verificable" aqui -- dos respuestas distintas a la misma
+    # pregunta en el mismo reporte.
+    if estado_coherencia is not None:
+        en_vencidos = estado_coherencia.values == EstadoCoherencia.VENCIDO_EN_INVIMA.value
+
+        # Vencido en INVIMA y ACTIVO aca: los dos lados se contradicen, y en la
+        # direccion peligrosa.
+        vencido_y_activo = en_vencidos & activo_local.values
+        clasificacion[vencido_y_activo] = NOVEDAD_RIESGO_ACTIVO
+        detalle[vencido_y_activo] = (
+            "Activo en Gemma Net, pero INVIMA lo tiene en su listado de VENCIDOS. "
+            "Riesgo alto: se puede autorizar un medicamento sin registro vigente."
+        )
+
+        # Vencido en INVIMA e INACTIVO aca: los dos lados coinciden en que no
+        # esta vigente. No es una novedad, pero TAMPOCO es "no verificable" --
+        # sabemos perfectamente que paso. Llamarlo no verificable inflaba esa
+        # categoria en ~49.600 filas y contradecia a ESTADO_COHERENCIA.
+        vencido_y_coherente = en_vencidos & ~activo_local.values
+        clasificacion[vencido_y_coherente] = NOVEDAD_COHERENTE
+        detalle[vencido_y_coherente] = (
+            "Inactivo en Gemma Net y vencido en INVIMA: los dos lados coinciden. "
+            "Sin acción; se conserva para trazabilidad."
+        )
+        for valor_estado, etiqueta in [
+            (EstadoCoherencia.EN_TRAMITE_RENOVACION_INVIMA.value, "en trámite de renovación"),
+            (EstadoCoherencia.VIGENTE_NO_COMERCIALIZADO_INVIMA.value,
+             "vigente pero temporalmente no comercializado"),
+            (EstadoCoherencia.ENCONTRADO_EN_OTRO_ESTADO_INVIMA.value, "en otro estado"),
+        ]:
+            marca = estado_coherencia.values == valor_estado
+            clasificacion[marca] = NOVEDAD_REVISAR_REACTIVACION
+            detalle[marca] = (
+                f"No está en el listado Vigente de INVIMA, pero sí aparece {etiqueta}. "
+                "Revisar antes de tratarlo como código sin correspondencia."
+            )
+
+        # "Revisar reactivacion" solo tiene sentido para lo que esta INACTIVO
+        # aca: a lo que ya esta activo no se le puede pedir que se reactive.
+        # Si ademas su registro sigue siendo valido en INVIMA (en renovacion o
+        # vigente sin comercializar), los dos lados coinciden y no hay novedad.
+        #
+        # Sin esta separacion la tarjeta "inactivo(s) aqui pero vigente(s) en
+        # INVIMA" contaba 38.098 filas de las que 18.360 estaban ACTIVAS:
+        # afirmaba lo contrario de lo que pasaba en el 48 % de los casos.
+        registro_valido_en_invima = np.isin(
+            estado_coherencia.values,
+            [
+                EstadoCoherencia.EN_TRAMITE_RENOVACION_INVIMA.value,
+                EstadoCoherencia.VIGENTE_NO_COMERCIALIZADO_INVIMA.value,
+            ],
+        )
+        activo_y_valido = registro_valido_en_invima & activo_local.values
+        clasificacion[activo_y_valido] = NOVEDAD_COHERENTE
+        detalle[activo_y_valido] = (
+            "Activo en Gemma Net y con registro sanitario válido en INVIMA "
+            "(en renovación o vigente sin comercializar). Los dos lados coinciden: "
+            "sin acción."
+        )
+
+        # ...y un medicamento ACTIVO en Gemma Net cuyo registro INVIMA dio por
+        # Negado, Cancelado o con perdida de fuerza ejecutoria no es un
+        # candidato a reactivar: es el riesgo mas alto que hay, y se estaba
+        # etiquetando como leve.
+        #
+        # Medido contra produccion el 2026-08-24: de los 1.205 activos que
+        # caian en "otro estado", 1.177 eran "Temp. no comerc - Vigente" (que
+        # ahora tienen su propio estado y no llegan aca) y 28 tenian un
+        # registro sin vigencia. Esos 28 quedaban invisibles como riesgo.
+        en_otro_estado_sin_vigencia = (
+            estado_coherencia.values == EstadoCoherencia.ENCONTRADO_EN_OTRO_ESTADO_INVIMA.value
+        )
+        activo_sin_vigencia = en_otro_estado_sin_vigencia & activo_local.values
+        clasificacion[activo_sin_vigencia] = NOVEDAD_RIESGO_ACTIVO
+        detalle[activo_sin_vigencia] = (
+            "Activo en Gemma Net, pero INVIMA no reconoce su registro como vigente "
+            "(Cancelado, Suspendido, Negado, Desistido o con pérdida de fuerza ejecutoria). "
+            "Riesgo alto: se puede autorizar un medicamento sin respaldo sanitario."
+        )
+
+    return clasificacion, detalle
 
 
 def _validar_formato_codigo_interno(reporte_gemanet: pd.DataFrame) -> pd.Series:
@@ -372,6 +906,56 @@ def _validar_formato_codigo_interno(reporte_gemanet: pd.DataFrame) -> pd.Series:
     return pd.Series("", index=reporte_gemanet.index).mask(
         vacio_o_roto, "CODIGO_INTERNO vacio o invalido"
     ).mask(error_excel, "CODIGO_INTERNO es un error de formula de Excel guardado como texto")
+
+
+# Codigos que Gemma Net usa para decir "aqui no hay dato": -999 es el centinela
+# documentado del sistema y 0 aparece en el reporte real con el mismo sentido
+# (medido 2026-08-20: 13 filas con UNIDAD_MEDIDA=0). Ninguno es un codigo de
+# catalogo, y tratarlos como tal produciria un "huerfano" enganoso.
+_CODIGOS_SIN_DATO_CATALOGO = frozenset({-999, 0})
+
+
+def _diagnostico_codigo_catalogo(
+    serie: pd.Series,
+    codigos_validos: set[int],
+    campo: str,
+    legible: str,
+    archivo: str,
+) -> pd.Series:
+    """Un mensaje por fila (vacio si la fila esta bien) para un codigo de catalogo.
+
+    Distingue DOS fallas que antes no se distinguian -- y una de ellas ni
+    siquiera se detectaba:
+
+    1. **Sin dato**: el codigo viene vacio, en -999 o en 0. El medicamento
+       quedo cargado en Gemma Net sin marca / sin unidad. Antes esto pasaba
+       invisible: la condicion exigia `notna()`, asi que una fila sin codigo
+       no entraba en el diagnostico, se resolvia en silencio a texto vacio
+       (ver `sigla_por_codigo`) y salia como CON_DIFERENCIAS -- el mismo
+       diagnostico enganoso que esta dimension existe para evitar. Medido
+       contra produccion el 2026-08-20: 99 filas sin marca y 87 sin unidad
+       que no aparecian en ningun reporte.
+    2. **Huerfano**: el codigo existe pero no esta en el catalogo interno.
+       Es mantenimiento de catalogo, no un dato faltante del medicamento.
+
+    Vectorizado a proposito: sobre 200.000 filas un bucle por indice se nota.
+    """
+    falta = serie.isna() | serie.isin(_CODIGOS_SIN_DATO_CATALOGO)
+    huerfano = ~falta & ~serie.isin(codigos_validos)
+
+    mensajes = pd.Series("", index=serie.index, dtype="object")
+    mensajes[falta] = f"{campo} sin dato -- el medicamento esta cargado sin {legible}"
+    # int(codigo) y no {codigo} a secas: `.map(_a_entero)` sobre una columna con
+    # huecos deja la serie en float64, y el mensaje salia "codigo 10001025.0" --
+    # eso no es un codigo, y el mensaje esta para que alguien lo copie tal cual
+    # al CSV del catalogo.
+    mensajes[huerfano] = serie[huerfano].map(
+        lambda codigo: (
+            f"{campo} (codigo {int(codigo)}) no existe en el catalogo interno "
+            f"-- verificar/agregar en {archivo}"
+        )
+    )
+    return mensajes
 
 
 def _validar_integridad_referencial_catalogo(
@@ -393,34 +977,37 @@ def _validar_integridad_referencial_catalogo(
     esta en nuestro propio catalogo. El mensaje es accionable: dice
     exactamente que codigo falta y en que archivo agregarlo.
 
-    Hallazgo real contra el reporte de produccion (`data/LISTADO_
-    MEDICAMENTOS12082026.xlsx`, verificado 2026-08-19): 1 fila de marca y
-    23 de unidad con codigo huerfano, de ~199.590.
-    """
-    codigos_unidad_validos = {e.codigo for e in catalogo_unidad}
-    codigos_marca_validos = {e.codigo for e in catalogo_marca}
+    Cubre DOS fallas (ver `_diagnostico_codigo_catalogo`): el codigo falta
+    -- el medicamento quedo cargado SIN marca o SIN unidad -- o el codigo
+    existe pero no esta en el catalogo interno.
 
+    Hallazgo real contra el reporte de produccion (`data/LISTADO_
+    MEDICAMENTOS12082026.xlsx`): 1 marca y 23 unidades con codigo huerfano
+    (2026-08-19), mas 99 filas sin marca y 87 sin unidad que la version
+    anterior no detectaba (2026-08-20).
+    """
     marca = _columna_o_vacia(reporte_gemanet, "MARCA_MEDICAMENTO").map(_a_entero)
     unidad = _columna_o_vacia(reporte_gemanet, "UNIDAD_MEDIDA").map(_a_entero)
 
-    marca_huerfana = marca.notna() & ~marca.isin(codigos_marca_validos)
-    unidad_huerfana = unidad.notna() & ~unidad.isin(codigos_unidad_validos)
-
-    resultado = pd.Series("", index=reporte_gemanet.index)
-    for idx in reporte_gemanet.index[marca_huerfana | unidad_huerfana]:
-        partes = []
-        if marca_huerfana.loc[idx]:
-            partes.append(
-                f"MARCA_MEDICAMENTO (codigo {marca.loc[idx]}) no existe en el catalogo interno "
-                "-- verificar/agregar en config/catalogos/marca_medicamento.csv"
-            )
-        if unidad_huerfana.loc[idx]:
-            partes.append(
-                f"UNIDAD_MEDIDA (codigo {unidad.loc[idx]}) no existe en el catalogo interno "
-                "-- verificar/agregar en config/catalogos/unidad_medida.csv"
-            )
-        resultado.loc[idx] = "; ".join(partes)
-    return resultado
+    hallazgos = pd.DataFrame(
+        {
+            "marca": _diagnostico_codigo_catalogo(
+                marca,
+                {e.codigo for e in catalogo_marca},
+                "MARCA_MEDICAMENTO",
+                "marca",
+                "config/catalogos/marca_medicamento.csv",
+            ),
+            "unidad": _diagnostico_codigo_catalogo(
+                unidad,
+                {e.codigo for e in catalogo_unidad},
+                "UNIDAD_MEDIDA",
+                "unidad de medida",
+                "config/catalogos/unidad_medida.csv",
+            ),
+        }
+    )
+    return _unir_no_vacios(hallazgos, "; ", reporte_gemanet.index)
 
 
 def _aplicar_dataset_auxiliar(
@@ -467,6 +1054,19 @@ def _aplicar_dataset_auxiliar(
 # robusta sin depender de que la tilde este bien codificada.
 _FRAGMENTO_RENOVACION_EN_OTROS_ESTADOS = "TRAMITE RENOV"
 
+# El caso hermano del anterior, y por la misma razon. Dentro de Otros Estados
+# hay filas cuyo ESTADO_REGISTRO dice literalmente "Temp. no comerc - Vigente":
+# el registro sanitario esta VIGENTE y lo unico que pasa es que el producto no
+# se esta comercializando ahora mismo.
+#
+# Medido contra produccion el 2026-08-24: de los 10.469 medicamentos que la
+# auditoria pintaba en rojo como "otro estado" (riesgo alto), 2.887 -- el
+# 27,6 % -- traian este texto. Se estaba marcando como riesgo de vigencia algo
+# que INVIMA declara vigente en la misma celda. Decision del usuario: salen de
+# riesgo alto. El resto (Perdida Fuerza Ejec, Negado, Desistido, Cancelado,
+# Abandono, Suspendido) si son 7.582 casos sin vigencia.
+_FRAGMENTO_VIGENTE_EN_OTROS_ESTADOS = "VIGENTE"
+
 
 def _separar_renovacion_de_otros_estados(
     df_otros_estados: pd.DataFrame | None,
@@ -484,11 +1084,160 @@ def _separar_renovacion_de_otros_estados(
     return df_otros_estados[~es_renovacion], df_otros_estados[es_renovacion]
 
 
+def _separar_vigentes_de_otros_estados(
+    df_otros_estados: pd.DataFrame | None,
+) -> tuple[pd.DataFrame | None, pd.DataFrame | None]:
+    """Devuelve (los que de verdad no tienen vigencia, los que INVIMA declara
+    vigentes) -- ver _FRAGMENTO_VIGENTE_EN_OTROS_ESTADOS.
+
+    Se llama DESPUES de `_separar_renovacion_de_otros_estados`, porque el texto
+    de renovacion tambien contiene la palabra vigente en algunas variantes y
+    ese caso ya tiene su propio destino.
+    """
+    if df_otros_estados is None or df_otros_estados.empty or "ESTADO_REGISTRO" not in df_otros_estados.columns:
+        return df_otros_estados, None
+    es_vigente = (
+        df_otros_estados["ESTADO_REGISTRO"]
+        .astype(str)
+        .map(normalizar)
+        .str.contains(_FRAGMENTO_VIGENTE_EN_OTROS_ESTADOS, na=False)
+    )
+    return df_otros_estados[~es_vigente], df_otros_estados[es_vigente]
+
+
 def _a_entero(valor: object) -> int | None:
     try:
         return int(valor)
     except (TypeError, ValueError):
         return None
+
+
+# Que CLASE de problema es, no en que campo esta. Distincion pedida por el
+# usuario el 2026-08-21: hasta ahora todo caia en el mismo saco, y las tres
+# cosas se atienden de forma completamente distinta -- una hay que esperarla,
+# otra no se corrige fila por fila y solo la tercera pide trabajo manual.
+#
+# Medido contra produccion el 2026-08-21, sobre los 16.336 hallazgos de
+# fechas: 11.526 (el 71 %) se apoyan en una fecha comodin -- 5.826 en
+# "2999-12-31" y 5.700 en "1900-01-01" -- y solo 1.636 en una fecha
+# realmente en blanco. Tratar esos 11.526 como si cada uno fuera un
+# medicamento que alguien debe corregir a mano es lo que hacia el reporte
+# inmanejable.
+NATURALEZA_VIGENCIA_EN_RIESGO = "Vigencia en riesgo"
+NATURALEZA_EN_RENOVACION = "En tramite de renovacion"
+NATURALEZA_DESACTUALIZADO = "Dato desactualizado frente a INVIMA"
+NATURALEZA_CARGA_INCOMPLETA = "Cargue incompleto"
+NATURALEZA_RESIDUAL_MIGRACION = "Residual de la migracion"
+
+# Que hacer con cada uno -- la columna sola dice "que es"; esto dice "y ahora
+# que". Va en el reporte para que no haya que explicarlo de viva voz.
+ACCION_POR_NATURALEZA = {
+    NATURALEZA_VIGENCIA_EN_RIESGO: (
+        "Revisar antes de autorizar: el registro sanitario no esta vigente en INVIMA."
+    ),
+    NATURALEZA_EN_RENOVACION: (
+        "Esperar. INVIMA tiene la renovacion en curso y puede volver a estar vigente."
+    ),
+    NATURALEZA_DESACTUALIZADO: "Actualizar el campo en Gemma Net con el dato oficial.",
+    NATURALEZA_CARGA_INCOMPLETA: "Diligenciar los campos que quedaron sin dato.",
+    NATURALEZA_RESIDUAL_MIGRACION: (
+        "No se corrige fila por fila: son fechas comodin heredadas de la migracion."
+    ),
+}
+
+
+def _clasificar_naturaleza_hallazgo(
+    estado: pd.Series,
+    campos_con_diferencia: pd.Series,
+    inconsistencia_fechas: pd.Series,
+    hay_campo_sin_dato: pd.Series,
+    fecha_comodin: pd.Series,
+) -> pd.Series:
+    """Una etiqueta por medicamento, la de la accion mas urgente que pide.
+
+    El orden NO es arbitrario: es el orden en que hay que atenderlos. Lo que
+    pone en riesgo una autorizacion va primero; lo que solo hay que esperar
+    va despues; y el residual de migracion va ultimo justo porque no pide
+    nada -- si compitiera hacia arriba taparia hallazgos que si piden trabajo.
+    """
+    naturaleza = pd.Series("", index=estado.index, dtype="object")
+    for mascara, etiqueta in (
+        (hay_campo_sin_dato | (inconsistencia_fechas != ""), NATURALEZA_CARGA_INCOMPLETA),
+        ((inconsistencia_fechas != "") & fecha_comodin, NATURALEZA_RESIDUAL_MIGRACION),
+        (campos_con_diferencia != "", NATURALEZA_DESACTUALIZADO),
+        (estado == EstadoCoherencia.EN_TRAMITE_RENOVACION_INVIMA.value, NATURALEZA_EN_RENOVACION),
+        (
+            estado.isin(
+                [
+                    EstadoCoherencia.VENCIDO_EN_INVIMA.value,
+                    EstadoCoherencia.ENCONTRADO_EN_OTRO_ESTADO_INVIMA.value,
+                ]
+            ),
+            NATURALEZA_VIGENCIA_EN_RIESGO,
+        ),
+    ):
+        naturaleza[mascara] = etiqueta
+    return naturaleza
+
+
+_SEPARADOR_CLAVE = "\x00"  # no puede aparecer en un dato de texto real
+
+
+def _coincide_con_alguna_sigla(
+    codigos: pd.Series,
+    oficial: pd.Series,
+    siglas: dict[int, frozenset[str]],
+    normalizador: Callable[[str], str],
+    alias: dict[str, str] | None = None,
+) -> pd.Series:
+    """Coincide si el valor de INVIMA calza con CUALQUIERA de las formas que
+    el catalogo reconoce para el codigo que guarda Gemma Net.
+
+    MARCA_MEDICAMENTO y UNIDAD_MEDIDA no se guardan como texto sino como
+    codigo, y un codigo puede tener varias entradas en el catalogo -- formas
+    alternas del mismo concepto, ninguna mas valida que otra. Quedarse con una
+    sola (ver `sigla_por_codigo`) convertia en hallazgo lo que solo era una
+    forma alterna: 33.677 filas donde el codigo 10001000 se mostraba como
+    "MG/CAP" y INVIMA decia "mg" -- el 95 % de las diferencias de unidad, y
+    ninguna era un problema del dato.
+
+    Se compara el par (codigo, texto de INVIMA) contra el conjunto de pares
+    validos derivado del catalogo, en una sola operacion vectorizada: a
+    199.689 filas, resolver esto fila por fila costaria segundos.
+    """
+    # Los alias son equivalencias AUDITADAS A MANO que la normalizacion de
+    # texto no puede deducir sola: "IU" es la sigla inglesa de "UI", "%" es la
+    # forma corta de "% PORCIENTO". Ya existian y los usaba la cascada de
+    # resolucion, pero la auditoria NO: comparaba los textos crudos y reportaba
+    # "difiere" sobre unidades que son la misma.
+    #
+    # Medido contra produccion el 2026-08-24: de las 984 diferencias de
+    # UNIDAD_MEDIDA, 459 -- el 47 % -- eran exactamente esos dos pares:
+    # "% PORCIENTO" contra "%" (287) y "UI" contra "IU" (172). Ninguna era un
+    # problema del dato.
+    #
+    # El mapa se invierte (destino -> origenes) porque de un codigo se conoce
+    # su sigla, y hay que llegar desde ahi a los textos alternos con que INVIMA
+    # puede estar nombrando la misma unidad.
+    origenes_por_destino: dict[str, list[str]] = {}
+    for origen, destino in (alias or {}).items():
+        origenes_por_destino.setdefault(normalizador(destino), []).append(normalizador(origen))
+
+    claves_validas: set[str] = set()
+    for codigo, conjunto in siglas.items():
+        for sigla in conjunto:
+            propia = normalizador(sigla)
+            claves_validas.add(f"{codigo}{_SEPARADOR_CLAVE}{propia}")
+            for equivalente in origenes_por_destino.get(propia, ()):
+                claves_validas.add(f"{codigo}{_SEPARADOR_CLAVE}{equivalente}")
+    # Int64 (nullable) antes de pasar a texto: una Series de enteros con algun
+    # None la vuelve float64 pandas, y ahi `astype(str)` produce "10001000.0",
+    # que no calza con NINGUNA clave. Es un fallo silencioso -- no hay error,
+    # simplemente nada coincide nunca.
+    clave = (
+        codigos.astype("Int64").astype(str) + _SEPARADOR_CLAVE + oficial.astype(str)
+    )
+    return clave.isin(claves_validas)
 
 
 def auditar_coherencia(
@@ -499,6 +1248,7 @@ def auditar_coherencia(
     df_invima_vencidos: pd.DataFrame | None = None,
     df_invima_otros_estados: pd.DataFrame | None = None,
     df_invima_renovacion: pd.DataFrame | None = None,
+    alias_unidad: dict[str, str] | None = None,
 ) -> pd.DataFrame:
     """Una fila por CODIGO_INTERNO del Reporte de Gemma Net, con
     ESTADO_COHERENCIA (correcto / con_diferencias / vencido_en_invima /
@@ -546,6 +1296,12 @@ def auditar_coherencia(
     # "MG - MILIGRAMO") -- ver su docstring para el bug real que esto corrige.
     sigla_unidad = sigla_por_codigo(catalogo_unidad)
     sigla_marca = sigla_por_codigo(catalogo_marca)
+    # Y el conjunto COMPLETO de siglas de cada codigo, para el veredicto: un
+    # codigo con varias entradas no tiene una forma "buena" y las otras malas
+    # -- ver `siglas_por_codigo` y `_coincide_con_alguna_sigla`. El singular
+    # de arriba se sigue usando para MOSTRAR, que es lo unico que puede hacer.
+    siglas_unidad = siglas_por_codigo(catalogo_unidad)
+    siglas_marca = siglas_por_codigo(catalogo_marca)
 
     gemanet = reporte_gemanet.copy()
     gemanet["CODIGO_INTERNO"] = gemanet["CODIGO_INTERNO"].astype(str).str.strip()
@@ -557,15 +1313,21 @@ def auditar_coherencia(
     )
 
     invima = df_invima.drop_duplicates(subset="CODIGO_INTERNO", keep="first").copy()
-    invima["_DESCRIPCION_ESPERADA"] = (
-        _columna_o_vacia(invima, "PRINCIPIO_ACTIVO").str.strip()
-        + " "
-        + _columna_o_vacia(invima, "UNIDAD_REFERENCIA").str.strip()
-    ).str.strip()
+    invima["_DESCRIPCION_ESPERADA"] = _descripcion_esperada_invima(invima)
 
-    columnas_invima = ["CODIGO_INTERNO", "TITULAR", "UNIDAD_MEDIDA", "_DESCRIPCION_ESPERADA"] + [
-        col_invima for _, col_invima in _CAMPOS_DIRECTOS.values() if col_invima in invima.columns
-    ]
+    # ESTADO_CUM y las tres fechas alimentan la dimension 10 (contraste de
+    # vigencia). No participan de la comparacion campo a campo: viajan para
+    # poder decir si una fecha que falta del lado local existe en INVIMA.
+    columnas_invima = [
+        "CODIGO_INTERNO",
+        "TITULAR",
+        "UNIDAD_MEDIDA",
+        "_DESCRIPCION_ESPERADA",
+        "ESTADO_CUM",
+        "FECHA_ACTIVO",
+        "FECHA_INACTIVO",
+        "FECHA_VENCIMIENTO",
+    ] + [col_invima for _, col_invima in _CAMPOS_DIRECTOS.values() if col_invima in invima.columns]
     invima_reducido = invima[[c for c in dict.fromkeys(columnas_invima) if c in invima.columns]]
     invima_reducido = invima_reducido.add_suffix("_INVIMA").rename(
         columns={"CODIGO_INTERNO_INVIMA": "CODIGO_INTERNO"}
@@ -574,29 +1336,115 @@ def auditar_coherencia(
     combinado = gemanet.merge(invima_reducido, on="CODIGO_INTERNO", how="left", indicator=True)
     tiene_correspondencia = combinado["_merge"] == "both"
 
-    matriz_diferencias = pd.DataFrame(index=combinado.index)
-    for campo, (col_gemanet, col_invima) in _CAMPOS_DIRECTOS.items():
-        matriz_diferencias[campo] = _normalizada(_columna_o_vacia(combinado, col_gemanet)) != _normalizada(
-            _columna_o_vacia(combinado, f"{col_invima}_INVIMA")
+    # Los pares (valor local, valor INVIMA) ya normalizados, UNA sola vez: de
+    # aqui salen tanto el veredicto binario como el % de similitud. Derivarlos
+    # del mismo par es lo que garantiza que no se contradigan -- que un campo
+    # aparezca como "difiere" con 100 % de similitud seria incomprensible.
+    pares: dict[str, tuple[pd.Series, pd.Series]] = {
+        campo: (
+            _normalizada(_columna_o_vacia(combinado, col_gemanet)),
+            _normalizada(_columna_o_vacia(combinado, f"{col_invima}_INVIMA")),
         )
-    matriz_diferencias["DESCRIPCION"] = _normalizada(
-        _columna_o_vacia(combinado, "DESCRIPCION")
-    ) != _normalizada(_columna_o_vacia(combinado, "_DESCRIPCION_ESPERADA_INVIMA"))
+        for campo, (col_gemanet, col_invima) in _CAMPOS_DIRECTOS.items()
+    }
+    pares["DESCRIPCION"] = (
+        _normalizada(_columna_o_vacia(combinado, "DESCRIPCION")),
+        _normalizada(_columna_o_vacia(combinado, "_DESCRIPCION_ESPERADA_INVIMA")),
+    )
     # normalizar_entidad, no normalizar: "_MARCA_TEXTO" (sigla_por_codigo del
     # catalogo de marca) ya paso por normalizar_entidad -- comparar contra
     # el TITULAR crudo de INVIMA con la misma normalizacion evita falsos
     # "con_diferencias" por sufijo societario o calificador de planta (ver
     # normalizar_entidad, mismo criterio que usa la resolucion de marca).
-    matriz_diferencias["MARCA_MEDICAMENTO"] = combinado["_MARCA_TEXTO"] != _columna_o_vacia(
-        combinado, "TITULAR_INVIMA"
-    ).map(normalizar_entidad)
-    matriz_diferencias["UNIDAD_MEDIDA"] = _normalizada(
-        combinado["_UNIDAD_TEXTO"]
-    ) != _normalizada(_columna_o_vacia(combinado, "UNIDAD_MEDIDA_INVIMA"))
-
-    campos_con_diferencia = matriz_diferencias.apply(
-        lambda fila: ", ".join(fila.index[fila]), axis=1
+    pares["MARCA_MEDICAMENTO"] = (
+        combinado["_MARCA_TEXTO"],
+        _columna_o_vacia(combinado, "TITULAR_INVIMA").map(normalizar_entidad),
     )
+    pares["UNIDAD_MEDIDA"] = (
+        _normalizada(combinado["_UNIDAD_TEXTO"]),
+        _normalizada(_columna_o_vacia(combinado, "UNIDAD_MEDIDA_INVIMA")),
+    )
+
+    # Los valores CRUDOS de cada lado, para poder compararlos a ojo. Pedido
+    # explicito del usuario (2026-08-21): "es de mas valor que me muestres el
+    # estado de un campo del INVIMA contra el que tiene el medicamento en la
+    # db [...] descripcion gemma, descripcion invima, descripcion validada".
+    # Saber QUE dice cada lado permite decidir; saber solo que "difieren" no.
+    #
+    # Se guardan sin normalizar: la normalizacion existe para comparar, no
+    # para mostrar. Quien revisa necesita ver lo que hay guardado de verdad,
+    # y el veredicto ya tiene en cuenta la normalizacion.
+    crudos_invima: dict[str, pd.Series] = {
+        campo: _columna_o_vacia(combinado, f"{col_invima}_INVIMA")
+        for campo, (_, col_invima) in _CAMPOS_DIRECTOS.items()
+    }
+    crudos_invima["DESCRIPCION"] = _columna_o_vacia(combinado, "_DESCRIPCION_ESPERADA_INVIMA")
+    crudos_invima["MARCA_MEDICAMENTO"] = _columna_o_vacia(combinado, "TITULAR_INVIMA")
+    crudos_invima["UNIDAD_MEDIDA"] = _columna_o_vacia(combinado, "UNIDAD_MEDIDA_INVIMA")
+
+    # De MARCA y UNIDAD el reporte guarda un CODIGO, no un texto: mostrar el
+    # codigo al lado del titular de INVIMA no dejaria comparar nada. Se
+    # muestra el texto ya resuelto contra el catalogo; el codigo crudo sigue
+    # en su columna original.
+    crudos_gemanet: dict[str, pd.Series] = {
+        "MARCA_MEDICAMENTO": combinado["_MARCA_TEXTO"],
+        "UNIDAD_MEDIDA": combinado["_UNIDAD_TEXTO"],
+    }
+
+    matriz_diferencias = pd.DataFrame(
+        {campo: local.ne(oficial) for campo, (local, oficial) in pares.items()},
+        index=combinado.index,
+    )
+
+    # MARCA y UNIDAD no se guardan como texto sino como CODIGO, y comparar el
+    # texto contra INVIMA obliga a elegir una de las varias entradas que ese
+    # codigo puede tener en el catalogo. Aca el veredicto se decide sobre el
+    # codigo: coincide si INVIMA calza con cualquiera de sus formas. El texto
+    # de las columnas *_GEMANET sigue siendo el representativo, para mostrar.
+    for campo, columna_codigo, siglas, normalizador, alias_campo in (
+        ("MARCA_MEDICAMENTO", "MARCA_MEDICAMENTO", siglas_marca, normalizar_entidad, None),
+        ("UNIDAD_MEDIDA", "UNIDAD_MEDIDA", siglas_unidad, normalizar, alias_unidad),
+    ):
+        local, oficial = pares[campo]
+        codigos = _columna_o_vacia(combinado, columna_codigo).map(_a_entero)
+        # `local.eq(oficial)` se conserva ademas del conjunto: si el texto que
+        # se muestra ya calza, coincide, sin depender de que el codigo se haya
+        # podido interpretar.
+        coincide = _coincide_con_alguna_sigla(
+            codigos, oficial, siglas, normalizador, alias_campo
+        ) | local.eq(oficial)
+        matriz_diferencias[campo] = ~coincide
+
+    # Un campo sin dato en Gemma Net no "difiere" de INVIMA: no hay nada que
+    # comparar. Se saca de las diferencias Y del denominador de
+    # PORCENTAJE_CALIDAD, igual que una fila sin correspondencia queda vacia
+    # en vez de en 0 %. La ausencia sigue contando, pero donde corresponde:
+    # en la dimension de COMPLETITUD (#4) y, si es masiva, en la advertencia
+    # de campo sistemicamente no diligenciado. Ver `_sin_dato_local` para el
+    # hallazgo que motiva esto (40.044 marcas "SIN INFORMACION").
+    columnas_locales = {campo: col_gemanet for campo, (col_gemanet, _) in _CAMPOS_DIRECTOS.items()}
+    for campo in ("DESCRIPCION", "MARCA_MEDICAMENTO", "UNIDAD_MEDIDA"):
+        columnas_locales[campo] = campo
+    matriz_sin_dato = pd.DataFrame(
+        {
+            campo: _sin_dato_local(combinado, campo, columnas_locales[campo])
+            for campo in CAMPOS_COMPARADOS_COHERENCIA
+        },
+        index=combinado.index,
+    )
+    matriz_diferencias = matriz_diferencias & ~matriz_sin_dato
+
+    # Una columna SIMILITUD_<CAMPO> por campo comparable: el binario dice que
+    # hay un problema, el porcentaje dice si es una tilde o si son dos
+    # medicamentos distintos (ver `similitud_de_campo`).
+    similitudes = {
+        f"{PREFIJO_SIMILITUD}{campo}": similitud_de_campo(local, oficial).where(
+            tiene_correspondencia
+        )
+        for campo, (local, oficial) in pares.items()
+    }
+
+    campos_con_diferencia = _columnas_marcadas(matriz_diferencias, ", ")
     campos_con_diferencia = campos_con_diferencia.where(tiene_correspondencia, "")
 
     # % de calidad: de los campos que SI se pudieron comparar contra INVIMA,
@@ -606,10 +1454,14 @@ def auditar_coherencia(
     # no solo "correcto"/"con_diferencias" en blanco y negro. NaN (no 0% ni
     # 100%) cuando no hay correspondencia -- no hay nada que comparar, no es
     # lo mismo que "0% de calidad".
-    total_campos_comparables = len(matriz_diferencias.columns)
-    campos_ok = total_campos_comparables - matriz_diferencias.sum(axis=1)
-    porcentaje_calidad = (campos_ok / total_campos_comparables * 100).round(1)
-    porcentaje_calidad = porcentaje_calidad.where(tiene_correspondencia)
+    # El denominador es por fila, no fijo: un campo que Gemma Net no trae no
+    # entra en la cuenta -- no se le puede exigir que coincida con INVIMA.
+    campos_comparables_fila = len(matriz_diferencias.columns) - matriz_sin_dato.sum(axis=1)
+    campos_ok = campos_comparables_fila - matriz_diferencias.sum(axis=1)
+    porcentaje_calidad = (campos_ok / campos_comparables_fila * 100).round(1)
+    porcentaje_calidad = porcentaje_calidad.where(
+        tiene_correspondencia & (campos_comparables_fila > 0)
+    )
 
     estado = pd.Series(EstadoCoherencia.CORRECTO.value, index=combinado.index)
     estado = estado.where(campos_con_diferencia == "", EstadoCoherencia.CON_DIFERENCIAS.value)
@@ -631,12 +1483,24 @@ def auditar_coherencia(
     otros_estados_resto, otros_estados_como_renovacion = _separar_renovacion_de_otros_estados(
         df_invima_otros_estados
     )
+    # Y el caso hermano: los que dicen "Vigente" en su propio texto tampoco son
+    # riesgo de vigencia (2.887 filas de las 10.469, ver
+    # _FRAGMENTO_VIGENTE_EN_OTROS_ESTADOS).
+    otros_estados_resto, otros_estados_vigentes = _separar_vigentes_de_otros_estados(
+        otros_estados_resto
+    )
     df_renovacion_combinado = pd.concat(
         [d for d in [df_invima_renovacion, otros_estados_como_renovacion] if d is not None and not d.empty],
         ignore_index=True,
     ) if any(d is not None and not d.empty for d in [df_invima_renovacion, otros_estados_como_renovacion]) else None
 
     estado_invima_detalle = pd.Series("", index=combinado.index)
+    # Los vigentes van PRIMERO: si un codigo aparece tanto aqui como en el resto
+    # de Otros Estados, la lectura correcta es la que dice que sigue vigente.
+    estado, estado_invima_detalle = _aplicar_dataset_auxiliar(
+        estado, estado_invima_detalle, gemanet["CODIGO_INTERNO"],
+        otros_estados_vigentes, EstadoCoherencia.VIGENTE_NO_COMERCIALIZADO_INVIMA.value,
+    )
     estado, estado_invima_detalle = _aplicar_dataset_auxiliar(
         estado, estado_invima_detalle, gemanet["CODIGO_INTERNO"],
         otros_estados_resto, EstadoCoherencia.ENCONTRADO_EN_OTRO_ESTADO_INVIMA.value,
@@ -701,8 +1565,81 @@ def auditar_coherencia(
     resultado["VALORES_FUERA_DE_DOMINIO"] = _validar_dominio_valores(reporte_gemanet).values
     resultado["INCONSISTENCIA_NUMERICA"] = _validar_razonabilidad_numerica(reporte_gemanet).values
     resultado["FORMATO_CODIGO_INTERNO_INVALIDO"] = _validar_formato_codigo_interno(reporte_gemanet).values
+    for nombre_columna, valores in similitudes.items():
+        resultado[nombre_columna] = valores.values
+
+    # Un trio por campo comparable: lo que dice Gemma Net, lo que dice INVIMA,
+    # y el veredicto. Es lo que convierte el reporte en algo con lo que se
+    # puede decidir sin abrir otras dos herramientas al lado.
+    for campo in CAMPOS_COMPARADOS_COHERENCIA:
+        local = crudos_gemanet.get(campo)
+        if local is None:
+            local = _columna_o_vacia(combinado, campo)
+        resultado[f"{campo}{SUFIJO_GEMANET}"] = local.values
+        resultado[f"{campo}{SUFIJO_INVIMA}"] = crudos_invima[campo].values
+        # "sin comparar" no es lo mismo que "coincide": sin correspondencia
+        # con INVIMA no hay nada contra que validar, igual que
+        # PORCENTAJE_CALIDAD queda vacio en vez de 0.
+        veredicto = pd.Series(VALIDACION_SIN_COMPARAR, index=combinado.index, dtype="object")
+        veredicto[tiene_correspondencia & ~matriz_diferencias[campo]] = VALIDACION_COINCIDE
+        veredicto[tiene_correspondencia & matriz_diferencias[campo]] = VALIDACION_DIFIERE
+        # Al final: pisa a "coincide", porque un campo sin dato quedo fuera de
+        # las diferencias y si no seria indistinguible de uno que si calza.
+        veredicto[tiene_correspondencia & matriz_sin_dato[campo]] = VALIDACION_SIN_DATO_LOCAL
+        resultado[f"{campo}{SUFIJO_VALIDACION}"] = veredicto.values
+
+    # Aviso TEMPRANO de vencimiento. Todo lo demas mira hacia atras ("esto ya
+    # fallo"); esto mira hacia adelante: cuantos dias le quedan al registro
+    # sanitario segun INVIMA. Negativo = ya vencio. Se expone como numero para
+    # que se pueda acotar por rango ("los que vencen en 6 meses") en vez de
+    # tener que esperar a que venzan para enterarse. Vacio si la fecha es un
+    # comodin o no hay correspondencia: no se inventa una cuenta regresiva.
+    vencimiento = _columna_fecha(combinado, "FECHA_VENCIMIENTO_INVIMA")
+    dias_para_vencer = (vencimiento - pd.Timestamp.now().normalize()).dt.days
+    dias_para_vencer = dias_para_vencer.where(
+        _es_fecha_real(vencimiento) & tiene_correspondencia
+    )
+    resultado["FECHA_VENCIMIENTO_INVIMA"] = vencimiento.values
+    resultado["DIAS_PARA_VENCER_INVIMA"] = dias_para_vencer.values
+
+    novedad_vigencia, detalle_vigencia = _contrastar_vigencia_invima(
+        combinado,
+        tiene_correspondencia,
+        _corte_catalogo_invima(df_invima),
+        estado_coherencia=estado,
+    )
+    resultado["NOVEDAD_VIGENCIA_INVIMA"] = novedad_vigencia.values
+    resultado["DETALLE_VIGENCIA_INVIMA"] = detalle_vigencia.values
     resultado["INTEGRIDAD_REFERENCIAL_CATALOGO"] = _validar_integridad_referencial_catalogo(
         reporte_gemanet, catalogo_unidad, catalogo_marca
     ).values
+
+    # De que CLASE es el problema, y por tanto que hay que hacer con el. Sin
+    # esto, "esperar a que INVIMA renueve", "no tocar, es residual de la
+    # migracion" y "hay que diligenciar esto a mano" salian mezclados en la
+    # misma lista, y la unica forma de separarlos era conocer el caso.
+    fecha_comodin = _es_fecha_comodin(_columna_fecha(reporte_gemanet, "FECHA_INICIO")) | (
+        _es_fecha_comodin(_columna_fecha(reporte_gemanet, "FECHA_FIN"))
+    )
+    # Sin los campos que NADIE diligencia: incluirlos ponia el 83 % de los
+    # medicamentos en "cargue incompleto" -- casi todos por la marca "SIN
+    # INFORMACION" -- y una categoria que abarca a casi todos no separa nada.
+    # Esos campos ya salen una vez, como advertencia de proceso.
+    sistemicos = _campos_sistemicamente_no_diligenciados(reporte_gemanet)
+    puntuales = [c for c in matriz_sin_dato.columns if c not in sistemicos]
+    hay_campo_sin_dato = (
+        matriz_sin_dato[puntuales].any(axis=1)
+        if puntuales
+        else pd.Series(False, index=matriz_sin_dato.index)
+    )
+    naturaleza = _clasificar_naturaleza_hallazgo(
+        estado,
+        campos_con_diferencia,
+        inconsistencia_fechas,
+        hay_campo_sin_dato,
+        pd.Series(fecha_comodin.values, index=estado.index),
+    )
+    resultado["NATURALEZA_HALLAZGO"] = naturaleza.values
+    resultado["ACCION_SUGERIDA"] = naturaleza.map(ACCION_POR_NATURALEZA).fillna("").values
     resultado.attrs["advertencias_calidad"] = _detectar_campos_sistemicamente_no_diligenciados(reporte_gemanet)
     return resultado

@@ -20,11 +20,10 @@ import pandas as pd
 from gemma_cum_loader.armado.cruce_gemanet import leer_codigos_gemanet, leer_reporte_gemanet
 from gemma_cum_loader.armado.malla import candidatos_creacion
 from gemma_cum_loader.auditoria.coherencia_invima import auditar_coherencia
+from gemma_cum_loader.catalogos.fuentes import FuenteCatalogos, FuenteCatalogosCSV
 from gemma_cum_loader.catalogos.resolver import (
     ResolverCatalogo,
     SugerenciaCatalogo,
-    cargar_catalogo,
-    cargar_catalogo_csv,
 )
 from gemma_cum_loader.ingesta.invima_reader import leer_catalogo_invima
 from gemma_cum_loader.ingesta.invima_socrata import leer_catalogo_invima_api
@@ -63,18 +62,57 @@ def _formatear_sugerencias(sugerencias: list[SugerenciaCatalogo]) -> str:
     return " | ".join(f"{s.texto} ({s.score:.0f}%, codigo {s.codigo})" for s in sugerencias)
 
 
-def _resolver_unidad(ruta_catalogo: str | Path = RUTA_CATALOGO_UNIDAD) -> ResolverCatalogo:
-    catalogo = cargar_catalogo(cargar_catalogo_csv(ruta_catalogo))
-    return ResolverCatalogo(catalogo)
+def _fuente(
+    fuente_catalogos: FuenteCatalogos | None,
+    ruta_catalogo_unidad: str | Path,
+    ruta_catalogo_marca: str | Path,
+) -> FuenteCatalogos:
+    """La fuente explicita gana; si no hay, se arma una desde los CSV.
+
+    Las rutas siguen en las firmas publicas a proposito: son la via corta y
+    sin dependencias (no exigen credenciales ni driver de base de datos), y
+    es como las llaman las pruebas. `fuente_catalogos` es la via general, la
+    unica que puede representar "traelo de la base de Gemma Net" -- una ruta
+    de archivo no puede.
+    """
+    if fuente_catalogos is not None:
+        return fuente_catalogos
+    return FuenteCatalogosCSV(ruta_catalogo_unidad, ruta_catalogo_marca)
 
 
-def _resolver_marca(ruta_catalogo: str | Path = RUTA_CATALOGO_MARCA) -> ResolverCatalogo:
-    catalogo = cargar_catalogo(
-        cargar_catalogo_csv(ruta_catalogo),
-        normalizador=normalizar_entidad,
-        dividir_sigla_descripcion=False,
-    )
-    return ResolverCatalogo(catalogo, normalizador=normalizar_entidad)
+def _resolver_serie(resolver: ResolverCatalogo, serie: pd.Series) -> pd.Series:
+    """Resuelve una columna resolviendo solo sus valores DISTINTOS.
+
+    La cascada es deterministica y sin estado: el mismo texto siempre da el
+    mismo resultado, asi que resolverlo una vez por valor distinto produce
+    exactamente lo mismo que resolverlo por fila. Y los valores se repiten
+    muchisimo -- medido sobre el catalogo real: 47.767 filas con solo 972
+    marcas distintas (49x) y 73 unidades distintas (654x).
+
+    Lo que costaba: `.apply(resolver.resolver)` sobre la columna de marca
+    tardaba 32,6 s, casi la mitad de la corrida completa, porque cada fila
+    sin resolver dispara una comparacion difusa contra las 894 entradas del
+    catalogo. Resolviendo por valor distinto ese trabajo se hace 49 veces
+    menos.
+    """
+    # factorize con use_na_sentinel=False y NO dropna()+map(): los nulos
+    # tienen que pasar por el resolver igual que cualquier otro valor. Con
+    # dropna()+map() quedaban como NaN en vez del resultado que devuelve la
+    # cascada, y eso NO se ve con los datos reales (esa columna no trae nulos)
+    # -- lo detecto la prueba de equivalencia, no produccion.
+    codigos, valores_unicos = pd.factorize(serie, use_na_sentinel=False)
+    resueltos = [resolver.resolver(valor) for valor in valores_unicos]
+    return pd.Series([resueltos[i] for i in codigos], index=serie.index)
+
+
+def _resolver_unidad(fuente: FuenteCatalogos) -> ResolverCatalogo:
+    # `alias=` completa el paso que la cascada documenta y que estaba muerto:
+    # sin el, "IU" y "%" no resolvian exacto pudiendo hacerlo (747 filas).
+    return ResolverCatalogo(fuente.unidad(), alias=fuente.alias_unidad())
+
+
+def _resolver_marca(fuente: FuenteCatalogos) -> ResolverCatalogo:
+    return ResolverCatalogo(fuente.marca(), normalizador=normalizar_entidad)
 
 
 def procesar_invima_vigentes(
@@ -82,6 +120,7 @@ def procesar_invima_vigentes(
     archivo_gemma_net: Any,
     ruta_catalogo_unidad: str | Path = RUTA_CATALOGO_UNIDAD,
     ruta_catalogo_marca: str | Path = RUTA_CATALOGO_MARCA,
+    fuente_catalogos: FuenteCatalogos | None = None,
 ) -> pd.DataFrame:
     """archivo_invima: Listado Codigo Unico de Medicamentos Vigentes (.xlsx),
     subido a mano -- via de respaldo si la API de Socrata no esta disponible.
@@ -97,7 +136,11 @@ def procesar_invima_vigentes(
     """
     df_invima = leer_catalogo_invima(archivo_invima)
     return procesar_desde_catalogo_invima(
-        df_invima, archivo_gemma_net, ruta_catalogo_unidad, ruta_catalogo_marca
+        df_invima,
+        archivo_gemma_net,
+        ruta_catalogo_unidad,
+        ruta_catalogo_marca,
+        fuente_catalogos=fuente_catalogos,
     )
 
 
@@ -107,6 +150,7 @@ def procesar_invima_vigentes_desde_api(
     sesion: SesionHTTP | None = None,
     ruta_catalogo_unidad: str | Path = RUTA_CATALOGO_UNIDAD,
     ruta_catalogo_marca: str | Path = RUTA_CATALOGO_MARCA,
+    fuente_catalogos: FuenteCatalogos | None = None,
 ) -> pd.DataFrame:
     """Igual que `procesar_invima_vigentes`, pero trae el catalogo INVIMA
     vigente en vivo desde la API de Socrata (Datos Abiertos Colombia,
@@ -117,7 +161,11 @@ def procesar_invima_vigentes_desde_api(
     """
     df_invima = leer_catalogo_invima_api(token=token, sesion=sesion)
     return procesar_desde_catalogo_invima(
-        df_invima, archivo_gemma_net, ruta_catalogo_unidad, ruta_catalogo_marca
+        df_invima,
+        archivo_gemma_net,
+        ruta_catalogo_unidad,
+        ruta_catalogo_marca,
+        fuente_catalogos=fuente_catalogos,
     )
 
 
@@ -126,6 +174,7 @@ def procesar_desde_catalogo_invima(
     archivo_gemma_net: Any,
     ruta_catalogo_unidad: str | Path = RUTA_CATALOGO_UNIDAD,
     ruta_catalogo_marca: str | Path = RUTA_CATALOGO_MARCA,
+    fuente_catalogos: FuenteCatalogos | None = None,
 ) -> pd.DataFrame:
     """Publica (no solo nucleo interno) para que quien ya cargo `df_invima`
     una vez (ej. la UI, para tambien pasarselo a `auditar_coherencia_gemanet`
@@ -141,14 +190,15 @@ def procesar_desde_catalogo_invima(
     malla = candidatos_creacion(df_invima)
     columnas_esperadas = list(malla.columns)
 
-    resolver_unidad = _resolver_unidad(ruta_catalogo_unidad)
-    resolver_marca = _resolver_marca(ruta_catalogo_marca)
+    fuente = _fuente(fuente_catalogos, ruta_catalogo_unidad, ruta_catalogo_marca)
+    resolver_unidad = _resolver_unidad(fuente)
+    resolver_marca = _resolver_marca(fuente)
     cruce_gemanet = leer_codigos_gemanet(archivo_gemma_net)
     ya_existentes = cruce_gemanet.codigos
     no_verificables = cruce_gemanet.codigos_no_verificables
 
-    resultado_unidad = malla["UNIDAD_DE_MEDIDA"].apply(resolver_unidad.resolver)
-    resultado_marca = malla["MARCA_MEDICAMENTO"].apply(resolver_marca.resolver)
+    resultado_unidad = _resolver_serie(resolver_unidad, malla["UNIDAD_DE_MEDIDA"])
+    resultado_marca = _resolver_serie(resolver_marca, malla["MARCA_MEDICAMENTO"])
 
     acciones: list[str] = []
     motivos: list[str] = []
@@ -289,6 +339,7 @@ def auditar_coherencia_gemanet(
     df_invima_renovacion: pd.DataFrame | None = None,
     ruta_catalogo_unidad: str | Path = RUTA_CATALOGO_UNIDAD,
     ruta_catalogo_marca: str | Path = RUTA_CATALOGO_MARCA,
+    fuente_catalogos: FuenteCatalogos | None = None,
 ) -> pd.DataFrame:
     """Audita los medicamentos que YA existen en el Reporte de Gemma Net
     contra el catalogo INVIMA vigente, campo por campo (ver
@@ -309,20 +360,19 @@ def auditar_coherencia_gemanet(
     y cae en el siguiente estado de la cascada como antes.
     """
     reporte = leer_reporte_gemanet(archivo_gemma_net)
-    catalogo_unidad = cargar_catalogo(cargar_catalogo_csv(ruta_catalogo_unidad))
-    catalogo_marca = cargar_catalogo(
-        cargar_catalogo_csv(ruta_catalogo_marca),
-        normalizador=normalizar_entidad,
-        dividir_sigla_descripcion=False,
-    )
+    fuente = _fuente(fuente_catalogos, ruta_catalogo_unidad, ruta_catalogo_marca)
     resultado = auditar_coherencia(
         reporte.df,
         df_invima,
-        catalogo_unidad,
-        catalogo_marca,
+        fuente.unidad(),
+        fuente.marca(),
         df_invima_vencidos=df_invima_vencidos,
         df_invima_otros_estados=df_invima_otros_estados,
         df_invima_renovacion=df_invima_renovacion,
+        # Los mismos alias que usa la cascada de resolucion. Sin esto la
+        # auditoria reportaba como diferencia lo que el resto del sistema ya
+        # sabe que es la misma unidad ("IU" = "UI", "%" = "% PORCIENTO").
+        alias_unidad=fuente.alias_unidad(),
     )
     # list(...) + [...] , no .extend(): resultado.attrs ya trae "advertencias_
     # calidad" (ver auditoria/coherencia_invima.py::_detectar_campos_

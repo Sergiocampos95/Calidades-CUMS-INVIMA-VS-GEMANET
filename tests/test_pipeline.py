@@ -348,3 +348,30 @@ def test_auditar_coherencia_gemanet_pasa_otros_estados_y_renovacion_hasta_el_res
     fila = resultado.set_index("CODIGO_INTERNO").loc["999-9"]
     assert fila["ESTADO_COHERENCIA"] == EstadoCoherencia.ENCONTRADO_EN_OTRO_ESTADO_INVIMA.value
     assert fila["ESTADO_INVIMA_DETALLE"] == "Inactivo"
+
+
+def test_resolver_por_valor_distinto_da_lo_mismo_que_fila_por_fila():
+    """La cascada es deterministica y sin estado, asi que resolver una vez por
+    valor distinto tiene que dar exactamente lo mismo que resolver por fila.
+
+    Es lo que protege la optimizacion: sobre el catalogo real la columna de
+    marca tiene 47.767 filas con solo 972 valores distintos, y resolver por
+    valor bajo el tiempo de 14,3 s a 0,5 s. Si alguna vez el resolver deja de
+    ser puro, esta prueba lo detecta antes que un usuario.
+    """
+    import pandas as pd
+
+    from gemma_cum_loader.catalogos.resolver import ResolverCatalogo, cargar_catalogo
+    from gemma_cum_loader.pipeline import _resolver_serie
+
+    resolver = ResolverCatalogo(cargar_catalogo([(10, "MG - MILIGRAMO"), (20, "ML - MILILITRO")]))
+    serie = pd.Series(["MG", "ML", "MG", "UI", "MG", None, "ML"])
+
+    fila_por_fila = serie.apply(resolver.resolver)
+    por_valor = _resolver_serie(resolver, serie)
+
+    assert len(fila_por_fila) == len(por_valor)
+    for a, b in zip(fila_por_fila, por_valor, strict=True):
+        # Incluidos los nulos: tienen que pasar por el resolver igual que
+        # cualquier otro valor, no quedarse en NaN.
+        assert (a.codigo, a.metodo) == (b.codigo, b.metodo)

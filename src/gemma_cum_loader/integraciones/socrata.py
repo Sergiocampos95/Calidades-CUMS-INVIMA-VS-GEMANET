@@ -14,6 +14,7 @@ ya usado en este proyecto para ANTHROPIC_API_KEY (ver catalogos/ia_client.py).
 
 from __future__ import annotations
 
+import datetime as dt
 import os
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -40,10 +41,25 @@ class SesionHTTP(Protocol):
     def get(self, url: str, params: dict, headers: dict, timeout: int) -> Any: ...
 
 
-def _sesion_por_defecto() -> SesionHTTP:
-    import requests
+_sesion_compartida: SesionHTTP | None = None
 
-    return requests
+
+def _sesion_por_defecto() -> SesionHTTP:
+    """`requests.Session()` cacheada a nivel de modulo, no el modulo `requests`
+    suelto. Con el modulo suelto, cada `requests.get()` abre y cierra una
+    conexion TCP/TLS nueva -- en `consultar_todo` eso significa un handshake
+    completo POR PAGINA (ej. ~40 handshakes para sincronizar el catalogo
+    completo de INVIMA a 5000 filas/pagina). Una Session reutiliza la
+    conexion via keep-alive entre paginas -- mismo resultado, menos tiempo
+    de red. Un test que necesite aislar esto inyecta su propia `sesion=`
+    (ver tests/test_socrata.py), nunca pasa por aca.
+    """
+    global _sesion_compartida
+    if _sesion_compartida is None:
+        import requests
+
+        _sesion_compartida = requests.Session()
+    return _sesion_compartida
 
 
 @dataclass(frozen=True)
@@ -128,6 +144,38 @@ def hay_datos(
         return int(filas[0].get("count", 0)) > 0
     except (TypeError, ValueError):
         return False
+
+
+def fecha_ultima_actualizacion(
+    identificador_dataset: str,
+    dominio: str = "www.datos.gov.co",
+    token: str | None = None,
+    sesion: SesionHTTP | None = None,
+) -> dt.date | None:
+    """Cuando actualizo la fuente ese dataset por ultima vez, o None.
+
+    Va contra `/api/views/<id>.json` (metadatos), no contra los datos: es una
+    respuesta chica y responde AUNQUE el dataset este devolviendo cero filas.
+    Eso es justo lo que lo hace util -- medido el 2026-08-20, los 4 datasets
+    de CUM de INVIMA estaban vacios y aun asi reportaban actualizacion el
+    2026-08-16. Permite avisar "tu archivo local esta atrasado" sin descargar
+    nada, y distinguir "nadie mantiene esto" de "lo actualizaron y quedo
+    vacio", que se reclaman a personas distintas.
+
+    Devuelve None en vez de propagar si algo falla: es un dato de contexto,
+    no puede tumbar una corrida.
+    """
+    sesion = sesion or _sesion_por_defecto()
+    if token is None:
+        token = token_desde_entorno()
+    headers = {"X-App-Token": token} if token else {}
+    url = f"https://{dominio}/api/views/{identificador_dataset}.json"
+    try:
+        respuesta = sesion.get(url, params={}, headers=headers, timeout=TIMEOUT_SEGUNDOS)
+        marca = respuesta.json().get("rowsUpdatedAt")
+        return dt.datetime.fromtimestamp(int(marca)).date() if marca else None
+    except Exception:
+        return None
 
 
 def consultar_todo(
