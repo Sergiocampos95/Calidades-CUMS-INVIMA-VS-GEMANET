@@ -342,6 +342,32 @@ def _inyectar_css(tokens: dict) -> None:
             border-radius: {forma["radio_boton_px"]}px;
             border: none;
         }}
+        /* Navegación lateral: cada opción es una fila completa y la abierta
+        se reconoce también sin depender solo del punto seleccionado. */
+        section[data-testid="stSidebar"] div[data-testid="stRadio"] {{
+            margin-bottom: 1.15rem;
+        }}
+        section[data-testid="stSidebar"] label[data-baseweb="radio"] {{
+            border: 1px solid transparent;
+            border-radius: {forma["radio_input_px"]}px;
+            margin: 0.2rem 0;
+            padding: 0.5rem 0.6rem;
+        }}
+        section[data-testid="stSidebar"] label[data-baseweb="radio"]:hover {{
+            background-color: {color["fondo_input"]["valor"]};
+            border-color: {color["borde_input"]["valor"]};
+        }}
+        section[data-testid="stSidebar"] label[data-baseweb="radio"]:has(input:checked) {{
+            background-color: {color["fondo_boton"]["valor"]};
+            border-color: {color["primario"]["valor"]};
+            box-shadow: inset 4px 0 0 {color["primario"]["valor"]};
+            color: {color["texto_titulo"]["valor"]};
+            font-weight: {tipografia["peso_titulo"]};
+        }}
+        section[data-testid="stSidebar"] label[data-baseweb="radio"]:has(input:focus-visible) {{
+            outline: 2px solid {color["primario"]["valor"]};
+            outline-offset: 2px;
+        }}
         /* Streamlit atenua (opacity baja) TODA la pagina mientras corre
         cualquier accion, marcando los elementos con data-stale="true" --
         pedido explicito del usuario: que el resto de la pantalla se vea
@@ -1066,6 +1092,150 @@ def _mostrar_tabla_de_calidades(auditoria: pd.DataFrame) -> None:
     )
 
 
+def _buscar_auditoria(df: pd.DataFrame, busqueda: str) -> pd.DataFrame:
+    """Acota una lista de auditoria por los datos que alguien suele conocer.
+
+    Buscar en todas las columnas de una auditoria de 200.000 filas obliga a
+    convertir muchos campos de detalle que no ayudan a identificar un
+    medicamento. Codigo, descripcion y expediente cubren la busqueda manual
+    sin crear esas copias transitorias.
+    """
+    texto = busqueda.strip().lower()
+    if not texto:
+        return df
+    columnas = [
+        columna
+        for columna in ("CODIGO_INTERNO", "DESCRIPCION", "EXPEDIENTE", "CONSECUTIVO")
+        if columna in df.columns
+    ]
+    coincide = pd.Series(False, index=df.index)
+    for columna in columnas:
+        coincide = coincide | df[columna].astype(str).str.lower().str.contains(
+            texto, na=False, regex=False
+        )
+    return df[coincide]
+
+
+def _filtrar_exploracion_auditoria(
+    auditoria: pd.DataFrame, estados: list[str], campos: list[str]
+) -> pd.DataFrame:
+    """Filtra la vista exhaustiva sin alterar el DataFrame de la auditoria."""
+    filtrado = auditoria[auditoria["ESTADO_COHERENCIA"].isin(estados)]
+    if campos:
+        return _filtrar_por_campos(filtrado, "CAMPOS_CON_DIFERENCIA", campos)
+    return filtrado
+
+
+def _tabla_auditoria_esencial(
+    df: pd.DataFrame,
+    columnas: list[str],
+    *,
+    clave: str,
+    vacio: str,
+) -> pd.DataFrame:
+    """Tabla de hallazgos con la busqueda necesaria antes de filtros avanzados."""
+    busqueda = st.text_input(
+        "Buscar medicamento",
+        key=f"{clave}_busqueda",
+        placeholder="Codigo, expediente o descripcion",
+    )
+    filtrado = _buscar_auditoria(df, busqueda)
+    if filtrado.empty:
+        st.caption(vacio)
+        return filtrado
+    presentes = [columna for columna in columnas if columna in filtrado.columns]
+    st.caption(f"{len(filtrado):,} medicamento(s) en esta vista.")
+    st.dataframe(filtrado[presentes], use_container_width=True, height=420, hide_index=True)
+    return filtrado
+
+
+def _panel_prioridades_auditoria(auditoria: pd.DataFrame) -> None:
+    """Prioriza una accion y lleva directo a los medicamentos que la requieren."""
+    calidades = _calidades(auditoria)
+    relevantes = [
+        calidad
+        for calidad in calidades
+        if calidad["nombre"]
+        in {
+            "⚠ Activos aquí sin vigencia en INVIMA",
+            "Registro vencido en INVIMA",
+            "En otro estado en INVIMA",
+            "Con formato INVIMA pero no encontrados",
+            "Con algún campo distinto al de INVIMA",
+        }
+    ]
+    resumen = pd.DataFrame(
+        [
+            {
+                "Prioridad": calidad["nombre"],
+                "Medicamentos": int(calidad["mascara"].sum()),
+                "Accion": calidad["explica"],
+            }
+            for calidad in relevantes
+        ]
+    )
+    st.dataframe(
+        resumen,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Medicamentos": st.column_config.NumberColumn(format="%d"),
+            "Accion": st.column_config.TextColumn(width="large"),
+        },
+    )
+    opciones = [calidad["nombre"] for calidad in relevantes]
+    elegida = st.selectbox("Ver medicamentos de esta prioridad", opciones, key="prioridad_auditoria")
+    calidad = next(calidad for calidad in relevantes if calidad["nombre"] == elegida)
+    visible = _tabla_auditoria_esencial(
+        auditoria[calidad["mascara"]],
+        calidad["columnas"],
+        clave="prioridad_auditoria",
+        vacio="No hay medicamentos en esta prioridad en la corrida actual.",
+    )
+    if not visible.empty:
+        _descarga_diferida(
+            "Preparar esta lista (.xlsx)",
+            lambda: _exportar_a_bytes(
+                lambda ruta: visible.to_excel(ruta, index=False, sheet_name="prioridad")
+            ),
+            "prioridad_auditoria.xlsx",
+            "descarga_prioridad_auditoria",
+        )
+
+
+def _panel_entender_auditoria(auditoria: pd.DataFrame) -> None:
+    """Resume la calidad sin mezclarla con las decisiones de prioridad."""
+    total = len(auditoria)
+    completitud = auditoria["PORCENTAJE_COMPLETITUD_REPORTE"].mean()
+    dimensiones = [
+        ("Completitud", completitud, "Promedio de campos diligenciados."),
+        ("Duplicados", int(auditoria["CODIGO_DUPLICADO_EN_REPORTE"].sum()), "CODIGO_INTERNO repetido."),
+        (
+            "Dominio",
+            int((auditoria["VALORES_FUERA_DE_DOMINIO"] != "").sum()),
+            "Valores fuera de los dominios permitidos.",
+        ),
+        (
+            "Formato",
+            int((auditoria["FORMATO_CODIGO_INTERNO_INVALIDO"] != "").sum()),
+            "Codigos vacios o errores de formula.",
+        ),
+        (
+            "Catalogos",
+            int((auditoria["INTEGRIDAD_REFERENCIAL_CATALOGO"] != "").sum()),
+            "Codigos de marca o unidad inexistentes.",
+        ),
+    ]
+    st.caption(
+        f"Indicadores sobre {total:,} medicamentos. No cambian la prioridad: describen "
+        "la calidad del dato que ya esta cargado."
+    )
+    columnas = st.columns(len(dimensiones))
+    for columna, (nombre, valor, ayuda) in zip(columnas, dimensiones, strict=True):
+        texto = f"{valor:.1f}%" if nombre == "Completitud" and pd.notna(valor) else f"{valor:,}"
+        columna.metric(nombre, texto, help=ayuda)
+
+
 def _avisar_campos_derivados(elegidos: list[str], df: pd.DataFrame, columna: str) -> None:
     """Avisa cuando un campo elegido se DERIVA de otro que tambien falla.
 
@@ -1613,13 +1783,26 @@ def _explicar_motivo_cacheado(_cliente_ia: ClienteExplicacionIA, accion: str, mo
     return _cliente_ia.explicar_motivo(accion, motivo)
 
 
+def _activar_seccion(clave_origen: str, claves_a_limpiar: tuple[str, ...]) -> None:
+    """Mantiene una sola sección abierta entre los dos grupos de navegación."""
+    seccion_elegida = st.session_state.get(clave_origen)
+    if seccion_elegida is None:
+        return
+    st.session_state["seccion_activa"] = seccion_elegida
+    for clave in claves_a_limpiar:
+        st.session_state[clave] = None
+
+
 def main() -> None:
     st.set_page_config(page_title="Gemma CUM Loader", layout="wide")
     tokens = _cargar_tokens()
     _inyectar_css(tokens)
     _barra_superior()
 
-    with st.expander("Archivos de entrada", expanded=True):
+    # Colapsado una vez que ya se proceso: la fuente elegida sigue visible en
+    # el titulo, pero deja de ocupar espacio en pantalla. Se puede reabrir a
+    # mano para cambiar de archivo o de fuente antes de volver a procesar.
+    with st.expander("Archivos de entrada", expanded=not st.session_state.get("procesado", False)):
         # Autodescubrimiento en data/: la meta es que nadie tenga que elegir
         # archivos en cada corrida. Se muestran para poder confirmar que son
         # los correctos (pedido explicito: automatizar la seleccion sin
@@ -2015,26 +2198,50 @@ def main() -> None:
     #
     # Con `if seccion == ...` solo corre lo que se esta viendo. Ademas libera
     # el ancho completo de la pantalla, que en auditoria hacia falta.
-    SECCIONES = [
+    SECCIONES_CANDIDATOS = [
         "Resumen de resolución",
         "Casos que requieren decisión",
         "Cargue a Gemma Net",
         "Por qué no se cargó",
+    ]
+    SECCIONES_CARGADOS = [
         "Consultar INVIMA",
         "Auditoría de coherencia",
     ]
+    seccion_activa = st.session_state.get("seccion_activa", SECCIONES_CANDIDATOS[0])
+    if seccion_activa not in (*SECCIONES_CANDIDATOS, *SECCIONES_CARGADOS):
+        seccion_activa = SECCIONES_CANDIDATOS[0]
+    # Sincronizar los dos grupos antes de dibujarlos evita que una sesión que
+    # ya estaba abierta al actualizar la aplicación muestre dos opciones (o
+    # ninguna) seleccionadas.
+    st.session_state["seccion_activa"] = seccion_activa
+    st.session_state["navegacion_candidatos"] = (
+        seccion_activa if seccion_activa in SECCIONES_CANDIDATOS else None
+    )
+    st.session_state["navegacion_cargados"] = (
+        seccion_activa if seccion_activa in SECCIONES_CARGADOS else None
+    )
+
     with st.sidebar:
-        st.markdown("### Secciones")
-        seccion = st.radio(
-            "Sección",
-            SECCIONES,
-            key="seccion_activa",
-            label_visibility="collapsed",
+        st.markdown("### Navegación")
+        st.caption("Elija la información que necesita revisar.")
+        st.radio(
+            "Candidatos para cargue",
+            SECCIONES_CANDIDATOS,
+            key="navegacion_candidatos",
+            index=None,
+            on_change=_activar_seccion,
+            args=("navegacion_candidatos", ("navegacion_cargados",)),
         )
-        st.caption(
-            "Solo se calcula la sección abierta. Cambiar de sección no repite el trabajo "
-            "de las demás."
+        st.radio(
+            "Medicamentos ya cargados",
+            SECCIONES_CARGADOS,
+            key="navegacion_cargados",
+            index=None,
+            on_change=_activar_seccion,
+            args=("navegacion_cargados", ("navegacion_candidatos",)),
         )
+        seccion = st.session_state["seccion_activa"]
 
     if seccion == "Resumen de resolución":
 
@@ -2941,6 +3148,23 @@ def main() -> None:
             if alertas:
                 _mostrar_tarjetas_alerta(alertas)
 
+            vista_auditoria = st.radio(
+                "¿Que necesitas hacer ahora?",
+                [
+                    "Priorizar lo que requiere accion",
+                    "Entender la calidad del catalogo",
+                    "Explorar todos los hallazgos",
+                ],
+                horizontal=True,
+                key="vista_auditoria",
+            )
+            if vista_auditoria == "Priorizar lo que requiere accion":
+                _panel_prioridades_auditoria(auditoria)
+                return
+            if vista_auditoria == "Entender la calidad del catalogo":
+                _panel_entender_auditoria(auditoria)
+                return
+
             # Por CLASE de problema, no por campo. Es la vista que contesta
             # "¿y ahora qué hago con esto?": lo que hay que esperar, lo que no
             # se corrige fila por fila y lo que sí pide trabajo manual salían
@@ -3070,37 +3294,34 @@ def main() -> None:
             st.divider()
             st.subheader("Explorar por estado y por campo")
             estados_disponibles = sorted(auditoria["ESTADO_COHERENCIA"].unique())
-            filtro_estado = st.multiselect(
-                "Filtrar por estado",
-                estados_disponibles,
-                default=[
-                    e
-                    for e in [
-                        EstadoCoherencia.VENCIDO_EN_INVIMA.value,
-                        EstadoCoherencia.ENCONTRADO_EN_OTRO_ESTADO_INVIMA.value,
-                        EstadoCoherencia.EN_TRAMITE_RENOVACION_INVIMA.value,
-                        EstadoCoherencia.CON_DIFERENCIAS.value,
-                    ]
-                    if e in estados_disponibles
+            estados_iniciales = [
+                estado
+                for estado in [
+                    EstadoCoherencia.VENCIDO_EN_INVIMA.value,
+                    EstadoCoherencia.ENCONTRADO_EN_OTRO_ESTADO_INVIMA.value,
+                    EstadoCoherencia.EN_TRAMITE_RENOVACION_INVIMA.value,
+                    EstadoCoherencia.CON_DIFERENCIAS.value,
                 ]
-                or estados_disponibles,
-                format_func=lambda e: _MENSAJE_ESTADO_COHERENCIA.get(e, e),
+                if estado in estados_disponibles
+            ] or estados_disponibles
+            with st.expander("Acotar esta lista", expanded=False):
+                filtro_estado = st.multiselect(
+                    "Estados",
+                    estados_disponibles,
+                    default=estados_iniciales,
+                    format_func=lambda estado: _MENSAJE_ESTADO_COHERENCIA.get(estado, estado),
+                )
+                campos_elegidos_coherencia = st.multiselect(
+                    "Campos con diferencia",
+                    CAMPOS_COMPARADOS_COHERENCIA,
+                    default=[],
+                    key="coherencia_campo_diferencia",
+                    help="Vacío = no filtra por campo. Si eliges uno o más, se muestran filas "
+                    "donde cualquiera de los campos elegidos difiere frente a INVIMA.",
+                )
+            filtrado_coherencia = _filtrar_exploracion_auditoria(
+                auditoria, filtro_estado, campos_elegidos_coherencia
             )
-            campos_elegidos_coherencia = st.multiselect(
-                "Filtrar por campo con diferencia",
-                CAMPOS_COMPARADOS_COHERENCIA,
-                default=[],
-                key="coherencia_campo_diferencia",
-                help="Vacío = no filtra por campo. Si eliges uno o más, solo se muestran filas "
-                "donde CUALQUIERA de los campos elegidos tiene una diferencia frente a INVIMA.",
-            )
-            filtrado_coherencia = auditoria[auditoria["ESTADO_COHERENCIA"].isin(filtro_estado)]
-            if campos_elegidos_coherencia:
-                filtrado_coherencia = filtrado_coherencia[
-                    filtrado_coherencia["CAMPOS_CON_DIFERENCIA"].apply(
-                        lambda campos: any(c in campos.split(", ") for c in campos_elegidos_coherencia)
-                    )
-                ]
             columnas_mostrar = [
                 c
                 for c in [
@@ -3121,10 +3342,11 @@ def main() -> None:
                 ]
                 if c in auditoria.columns
             ]
-            st.dataframe(
-                filtrado_coherencia[columnas_mostrar],
-                use_container_width=True,
-                height=420,
+            _tabla_auditoria_esencial(
+                filtrado_coherencia,
+                columnas_mostrar,
+                clave="explorar_auditoria",
+                vacio="No hay medicamentos con esos criterios en la corrida actual.",
             )
 
             _descarga_diferida(

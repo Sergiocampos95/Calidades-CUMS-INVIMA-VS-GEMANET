@@ -14,7 +14,9 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "ui_revision"))
 
 from app_streamlit import (  # noqa: E402
+    _buscar_auditoria,
     _fechas_legibles,
+    _filtrar_exploracion_auditoria,
     _legible,
     _valores_de_columna_lista,
 )
@@ -111,3 +113,37 @@ def test_el_vocabulario_interno_se_traduce_a_lenguaje_de_negocio():
 def test_un_valor_desconocido_se_deja_como_esta():
     """La traduccion nunca puede ocultar un valor que no se previo."""
     assert _legible("un_valor_nuevo_que_nadie_previo") == "un_valor_nuevo_que_nadie_previo"
+
+
+def test_busqueda_de_auditoria_encuentra_codigo_descripcion_y_expediente():
+    df = pd.DataFrame(
+        {
+            "CODIGO_INTERNO": ["500-1", "501-1", "502-1"],
+            "DESCRIPCION": ["ACETAMINOFEN", "IBUPROFENO", "LORATADINA"],
+            "EXPEDIENTE": [500, 501, 502],
+        }
+    )
+
+    assert list(_buscar_auditoria(df, "501")["CODIGO_INTERNO"]) == ["501-1"]
+    assert list(_buscar_auditoria(df, "lora")["CODIGO_INTERNO"]) == ["502-1"]
+
+
+def test_busqueda_de_auditoria_vacia_conserva_el_dataframe_original():
+    df = pd.DataFrame({"CODIGO_INTERNO": ["500-1"]})
+
+    assert _buscar_auditoria(df, "   ") is df
+
+
+def test_filtro_de_exploracion_aplica_estado_y_campo_sin_apply_por_fila():
+    auditoria = pd.DataFrame(
+        {
+            "ESTADO_COHERENCIA": ["con_diferencias", "vencido_en_invima", "con_diferencias"],
+            "CAMPOS_CON_DIFERENCIA": ["DESCRIPCION, UNIDAD_MEDIDA", "", "CONCENTRACION"],
+        }
+    )
+
+    filtrado = _filtrar_exploracion_auditoria(
+        auditoria, ["con_diferencias"], ["UNIDAD_MEDIDA"]
+    )
+
+    assert list(filtrado.index) == [0]
