@@ -2766,20 +2766,33 @@ def main() -> None:
     mostrar_seleccion_fuentes = not procesado_ya or editando_fuentes
 
     if procesado_ya and not editando_fuentes:
-        # Sin renderizar nada aqui -- pedido explicito (2026-08-26): "sigue
-        # saliendo el recuadro... pedi que lo quitaramos de la vista". Ni
-        # siquiera la linea compacta de una sola fila va en el cuerpo
-        # principal; el resumen de fuente + "Cambiar fuente de datos" vive
-        # en el sidebar (ver el bloque de navegacion, mas abajo), fuera de
-        # la vista de cada seccion. Aqui solo se recuperan las variables.
-        (
-            usar_api_invima,
-            archivo_invima,
-            archivo_gemma_net,
-            archivo_malla_referencia,
-            usar_bd_catalogos,
-            usar_detectados,
-        ) = st.session_state["archivos"]
+        # Solo una linea, no un panel: la fuente ya elegida sigue siendo
+        # visible (degradacion explicita, no silenciosa) pero sin el espacio
+        # del expander completo. Revertido al cuerpo principal a pedido
+        # explicito del usuario (2026-08-26): lo habia movido al sidebar
+        # pensando que ahi seguia leyendose como "el recuadro", pero el
+        # usuario aclaro que queria justo esto de vuelta arriba de cada
+        # seccion -- lo que debia desaparecer era el formulario de carga de
+        # archivos (el expander "Archivos de entrada"), no este resumen.
+        _usar_api_prev, _archivo_invima_prev, _archivo_gn_prev, _archivo_malla_prev, _usar_bd_prev, _usar_det_prev = (
+            st.session_state["archivos"]
+        )
+        col_fuente, col_boton_fuente = st.columns([5, 1])
+        col_fuente.caption(
+            "Fuente: "
+            + ("INVIMA API" if _usar_api_prev else "INVIMA archivo")
+            + " · "
+            + ("Gemma Net en vivo" if _usar_bd_prev else "Gemma Net archivos locales")
+        )
+        if col_boton_fuente.button("Cambiar fuente de datos", key="btn_cambiar_fuente"):
+            st.session_state["editando_fuentes"] = True
+            st.rerun()
+        usar_api_invima = _usar_api_prev
+        archivo_invima = _archivo_invima_prev
+        archivo_gemma_net = _archivo_gn_prev
+        archivo_malla_referencia = _archivo_malla_prev
+        usar_bd_catalogos = _usar_bd_prev
+        usar_detectados = _usar_det_prev
 
     if mostrar_seleccion_fuentes:
         if editando_fuentes:
@@ -3306,30 +3319,6 @@ def main() -> None:
                     on_click=_activar_subvista,
                     args=(clave_subvista, opcion_subvista),
                 )
-
-        # Resumen de fuente + "Cambiar fuente de datos", en el sidebar y NO
-        # en el cuerpo principal -- pedido explicito (2026-08-26): el
-        # usuario ya habia pedido sacar "Archivos de entrada" de la vista
-        # tras procesar, y la linea compacta que quedo en su lugar (arriba
-        # de cada seccion) seguia leyendose como el mismo recuadro. Aca
-        # ocupa el espacio del sidebar, que ya esta dedicado a controles de
-        # sesion, no el ancho completo de la pantalla.
-        if st.session_state.get("procesado", False) and not st.session_state.get(
-            "editando_fuentes", False
-        ):
-            _usar_api_prev, _, _, _, _usar_bd_prev, _ = st.session_state["archivos"]
-            st.divider()
-            st.caption(
-                "Fuente: "
-                + ("INVIMA API" if _usar_api_prev else "INVIMA archivo")
-                + " · "
-                + ("Gemma Net en vivo" if _usar_bd_prev else "Gemma Net archivos locales")
-            )
-            if st.button(
-                "Cambiar fuente de datos", key="btn_cambiar_fuente", use_container_width=True
-            ):
-                st.session_state["editando_fuentes"] = True
-                st.rerun()
 
     seccion = st.session_state["seccion_activa"]
     vista_resumen = st.session_state["resumen_vista"]
