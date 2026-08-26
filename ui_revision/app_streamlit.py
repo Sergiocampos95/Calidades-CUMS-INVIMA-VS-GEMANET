@@ -1293,39 +1293,25 @@ def _mostrar_detalle_alerta(detalle: str, etiqueta: str) -> None:
     existentes aunque ya no se use (era el label del boton) -- no vale la
     pena tocar cada sitio que llama a esta funcion por un parametro que ya
     no hace nada.
+
+    Bug real reportado por el usuario (2026-08-26, captura de Auditoria):
+    varios `detalle` traen "\\n\\n" (mensajes con "Detalle tecnico:" en su
+    propia linea). `st.markdown` primero pasa el texto por su parser de
+    Markdown -- una linea en blanco ahi es una marca de parrafo nuevo, y
+    corta el tag `<span title="...">` a la mitad; el navegador ya no lo ve
+    como UNA etiqueta HTML valida y termina mostrando el `<span...` crudo
+    como texto. `" ".join(detalle.split())` colapsa cualquier salto de
+    linea a un espacio ANTES de armar el HTML, asi el string que llega a
+    `st.markdown` es siempre una sola linea -- nunca hay parrafo que
+    Markdown pueda cortar. El tooltip pierde los saltos de linea visuales,
+    pero un `title` nativo del navegador ya envuelve el texto solo.
     """
     del etiqueta
+    detalle_una_linea = " ".join(detalle.split())
     st.markdown(
-        f'<span class="icono-ayuda" title="{html.escape(detalle)}">❓</span>',
+        f'<span class="icono-ayuda" title="{html.escape(detalle_una_linea)}">❓</span>',
         unsafe_allow_html=True,
     )
-
-
-def _ejemplos_evidencia_vigencia(auditoria: pd.DataFrame, mascara: pd.Series, limite: int = 3) -> str:
-    """Ejemplos de evidencia cruda (codigo + detalle por fila) para una novedad
-    de vigencia, para anexar al detalle de una tarjeta de alerta.
-
-    No inventa nada nuevo: `DETALLE_VIGENCIA_INVIMA` ya trae, por fila, el
-    valor real de Gemma Net y de INVIMA que se comparo (ver
-    `_contrastar_vigencia_invima` en `coherencia_invima.py`). Mostrar 2-3
-    ejemplos junto a la tarjeta agregada permite auto-verificar un hallazgo
-    sin salir de la aplicacion -- pedido explicito tras un caso real donde el
-    usuario dudo de un hallazgo que resulto correcto por no ver la evidencia
-    cruda ahi mismo, solo el conteo.
-    """
-    columnas = [c for c in ("CODIGO_INTERNO", "DETALLE_VIGENCIA_INVIMA") if c in auditoria.columns]
-    if len(columnas) < 2:
-        return ""
-    filas = auditoria.loc[mascara, columnas].head(limite)
-    if filas.empty:
-        return ""
-    ejemplos = "\n".join(
-        f"- {fila['CODIGO_INTERNO']}: {fila['DETALLE_VIGENCIA_INVIMA']}"
-        for _, fila in filas.iterrows()
-    )
-    total = int(mascara.sum())
-    pie = f"\n\n(mostrando {min(limite, total)} de {total:,})" if total > limite else ""
-    return f"\n\nEjemplos con el dato exacto de cada lado:\n{ejemplos}{pie}"
 
 
 _COLUMNAS_DRILLDOWN_ALERTA = [
@@ -1373,18 +1359,20 @@ def _mostrar_tarjetas_alerta(
     grupos de tarjetas distintos (vigencia, calidad...) en la misma pantalla
     no colisionen aunque reusen el mismo índice de posición.
 
-    La grilla de tarjetas y las tablas de medicamentos van en DOS pasadas
-    separadas -- una tabla no cabe legible dentro de una columna de 1/3 de
-    ancho. La grilla se dibuja completa primero; las tablas de lo que quedó
-    activado con el toggle se dibujan despues, a todo el ancho.
+    Una tarjeta por fila, a todo el ancho -- pedido explícito del usuario
+    (2026-08-26): "las tablas de cada cifra deben ir ligadas, o sea dentro
+    del cuadro de la cifra ahí se debe de imprimir la tabla". Antes la
+    grilla de 3 columnas dibujaba las tarjetas primero y las tablas
+    activadas DESPUÉS, en una segunda pasada separada al final -- quedaban
+    visualmente sueltas de la tarjeta que las explicaba. Ahora cada tarjeta
+    dibuja su propia tabla adentro, en el momento en que se activa el
+    toggle, sin una segunda pasada.
     """
-    columnas = st.columns(3)
-    pendientes_de_tabla: list[tuple[int, pd.DataFrame, list[str]]] = []
     for i, alerta in enumerate(alertas):
         severidad, titulo, detalle = alerta[0], alerta[1], alerta[2]
         subconjunto = alerta[3] if len(alerta) > 3 else None
         columnas_extra = alerta[4] if len(alerta) > 4 else []
-        with columnas[i % 3], st.container(border=True):
+        with st.container(border=True):
             st.markdown(f"{_ICONO_SEVERIDAD_ALERTA.get(severidad, '🟡')} **{titulo}**")
             if detalle:
                 _mostrar_detalle_alerta(detalle, "Detalle")
@@ -1394,19 +1382,21 @@ def _mostrar_tarjetas_alerta(
                     key=f"ver_meds_{grupo}_{i}",
                 )
                 if ver:
-                    pendientes_de_tabla.append((i, subconjunto, columnas_extra))
-
-    for i, subconjunto, columnas_extra in pendientes_de_tabla:
-        # columnas_extra primero -- es el dato puntual que explica POR QUE
-        # esta fila esta en esta tarjeta especifica (ej. el campo vacio).
-        columnas_todas = list(dict.fromkeys(columnas_extra + _COLUMNAS_DRILLDOWN_ALERTA))
-        columnas_presentes = [c for c in columnas_todas if c in subconjunto.columns]
-        _tabla_auditoria_esencial(
-            subconjunto,
-            columnas_presentes,
-            clave=f"tabla_{grupo}_{i}",
-            vacio="Ningún medicamento con esos criterios en la corrida actual.",
-        )
+                    # columnas_extra primero -- es el dato puntual que
+                    # explica POR QUE esta fila esta en esta tarjeta
+                    # especifica (ej. el campo vacio).
+                    columnas_todas = list(
+                        dict.fromkeys(columnas_extra + _COLUMNAS_DRILLDOWN_ALERTA)
+                    )
+                    columnas_presentes = [
+                        c for c in columnas_todas if c in subconjunto.columns
+                    ]
+                    _tabla_auditoria_esencial(
+                        subconjunto,
+                        columnas_presentes,
+                        clave=f"tabla_{grupo}_{i}",
+                        vacio="Ningún medicamento con esos criterios en la corrida actual.",
+                    )
 
 
 def _mensaje_breve(
@@ -4154,14 +4144,11 @@ def main() -> None:
                         mascara_novedad = auditoria["NOVEDAD_VIGENCIA_INVIMA"] == clave
                         n = int(mascara_novedad.sum())
                         if n > 0:
-                            detalle_con_evidencia = detalle + _ejemplos_evidencia_vigencia(
-                                auditoria, mascara_novedad
-                            )
                             alertas_vigencia.append(
                                 (
                                     severidad,
                                     f"{n:,} {titulo}",
-                                    detalle_con_evidencia,
+                                    detalle,
                                     auditoria[mascara_novedad],
                                 )
                             )
