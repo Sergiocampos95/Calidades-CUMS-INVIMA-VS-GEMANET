@@ -1761,20 +1761,43 @@ def _panel_entender_auditoria(auditoria: pd.DataFrame) -> None:
         _mostrar_distribucion_tipo_codigo_interno(auditoria)
 
 
+# Capa legada de INVIMA (codigo ATC + expediente + consecutivo): medida
+# contra produccion el 2026-08-26 en 0% activa y con gemelo CUM duplicado en
+# el 90% de los casos -- pura trazabilidad, sin funcion legible hoy. Pedido
+# de negocio explicito (2026-08-26): lo que no esta vigente no deberia
+# estorbar el flujo de trabajo, asi que no se muestra expandida por
+# defecto -- sigue siendo filtrable a mano en cualquier tabla.
+_TIPO_CAPA_LEGADA = "atc_expediente_consecutivo"
+
+
 def _mostrar_distribucion_tipo_codigo_interno(auditoria: pd.DataFrame) -> None:
     """Cuantos codigos hay de cada tipo de estructura -- catalogo investigado
     contra produccion el 2026-08-26 (design/tipos_codigo_interno.md). Se
     puede filtrar por esto en "Explorar todos los hallazgos" y en la tabla
     de calidades (columna TIPO_CODIGO_INTERNO)."""
     conteo = auditoria["TIPO_CODIGO_INTERNO"].value_counts()
+    n_legado = int(conteo.get(_TIPO_CAPA_LEGADA, 0))
+    conteo_principal = conteo.drop(labels=[_TIPO_CAPA_LEGADA], errors="ignore")
     resumen = pd.DataFrame(
         [
             {"Tipo": _legible(tipo), "Medicamentos": int(n)}
-            for tipo, n in conteo.items()
+            for tipo, n in conteo_principal.items()
         ]
     )
     st.caption("Tipos de estructura de CODIGO_INTERNO en este reporte:")
     _mostrar_tabla_estandar(resumen, variante="resumen")
+    if n_legado:
+        with st.expander(
+            f"+ {n_legado:,} en una capa legada de INVIMA (inactiva, no participa en la prioridad)"
+        ):
+            st.caption(
+                "\"Capa legada ATC+expediente\": código ATC + expediente + consecutivo. "
+                "Medido contra producción: 0% activa, y en el 90% de los casos ya existe "
+                "como fila CUM independiente en este mismo reporte. Se conserva por "
+                "trazabilidad — no aparece en la lista principal ni cuenta para las "
+                "tarjetas de \"Priorizar lo que requiere acción\", pero sigue disponible "
+                "en el filtro de esta y otras tablas si necesitás revisarla a propósito."
+            )
     _mensaje_breve(
         "Paquetes e insumos no aparecen en esta lista.",
         "No tienen un patrón de código propio -- solo se distinguen cruzando contra "

@@ -1,17 +1,22 @@
 # Qué hay realmente dentro de CODIGO_INTERNO
 
 > **Estado de implementación (2026-08-26, rama `feature/tipos-codigo-interno`,
-> sin fusionar a master):** las 6 categorías de prioridad alta+media de este
-> documento (`cum_con_sufijo_atc`, `atc_expediente_consecutivo`, `ium`,
-> `registro_sanitario`, `forma_cups`, `codigo_propio`) más `sin_clasificar`
-> como residual ya están implementadas en `normaliza/codigos.py::clasificar_codigos()`,
-> expuestas como columna `TIPO_CODIGO_INTERNO` en el resultado de
-> `auditar_coherencia()` y filtrables en la UI (Auditoría de coherencia →
-> Explorar/tabla de calidades; "Por qué no se cargó" → Ya cargados). **NO
-> implementado**: paquetes/insumos/CUPS por cruce contra `tb_cup`/`tb_insumo`
-> (fuera de alcance, declarado en pantalla) y el paso de "CUM con sufijo ATC
-> recuperable" que cambiaría la llave del merge contra INVIMA (espera
-> aprobación de negocio explícita — ver `.ai/planes/tipos-codigo-interno-en-auditoria.md`).
+> sin fusionar a master; plan completo salvo fusión):** las 6 categorías de
+> prioridad alta+media (`cum_con_sufijo_atc`, `atc_expediente_consecutivo`,
+> `ium`, `registro_sanitario`, `forma_cups`, `codigo_propio`) más
+> `sin_clasificar` como residual están implementadas en
+> `normaliza/codigos.py::clasificar_codigos()`, expuestas como columna
+> `TIPO_CODIGO_INTERNO` en el resultado de `auditar_coherencia()` y
+> filtrables en la UI. **El paso de "CUM con sufijo ATC recuperable" también
+> se implementó**, aprobado explícitamente por el negocio: los 147 códigos se
+> reconstruyen a `EXPEDIENTE-CONSECUTIVO` (columna `CUM_RECONSTRUIDO`) y esa
+> clave se usa para cruzar de verdad contra Vigentes/Vencidos/Otros
+> Estados/Renovación — no solo para etiquetarlos. `CODIGO_INTERNO` real de
+> Gemma Net nunca se toca. La capa legada `atc_expediente_consecutivo` (0%
+> activa) se muestra colapsada por defecto en la UI, siguiendo la regla de
+> negocio de priorizar por estado+vigencia. **Sigue fuera de alcance**:
+> paquetes/insumos/CUPS por cruce contra `tb_cup`/`tb_insumo` (declarado en
+> pantalla) — ver `.ai/planes/tipos-codigo-interno-en-auditoria.md`.
 
 Catálogo de los tipos de estructura de `codigo_interno` que existen en
 `administrativo.tb_medicamento` (Gemma Net), más allá del binario `cum`/`ium`

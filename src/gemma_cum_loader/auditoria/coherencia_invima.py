@@ -1359,6 +1359,30 @@ def auditar_coherencia(
         lambda c: sigla_unidad.get(_a_entero(c), "")
     )
 
+    # Tipo de estructura del codigo, calculado UNA vez y reusado dos veces:
+    # (1) para reconstruir la clave de cruce contra INVIMA de los CUM con
+    # sufijo ATC (ver abajo) y (2) mas adelante como columna informativa
+    # TIPO_CODIGO_INTERNO en el resultado. Ver design/tipos_codigo_interno.md.
+    tipo_codigo_interno = clasificar_codigos(gemanet["CODIGO_INTERNO"])
+
+    # Pedido de negocio (2026-08-26, confirmado explicitamente): los "CUM con
+    # sufijo ATC" (147 filas medidas, 48 activas) son CUM validos cuyo
+    # EXPEDIENTE real vive solo dentro del codigo -- la columna EXPEDIENTE
+    # trae "-999" en 143 de los 147. Sin esto, cruzan como
+    # "sin_correspondencia_invima" aunque el medicamento SI tiene
+    # correspondencia real. Se reconstruye EXPEDIENTE-CONSECUTIVO (sin ceros
+    # a la izquierda, mismo formato que usa el resto del sistema) SOLO para
+    # decidir contra que fila de INVIMA cruzar -- el CODIGO_INTERNO real de
+    # Gemma Net (`resultado["CODIGO_INTERNO"]`, mas abajo) nunca se toca.
+    clave_cruce_invima = gemanet["CODIGO_INTERNO"].copy()
+    es_cum_con_sufijo_atc = tipo_codigo_interno == "cum_con_sufijo_atc"
+    if es_cum_con_sufijo_atc.any():
+        partes = gemanet.loc[es_cum_con_sufijo_atc, "CODIGO_INTERNO"].str.split("-", n=2, expand=True)
+        clave_cruce_invima.loc[es_cum_con_sufijo_atc] = (
+            partes[0].astype(int).astype(str) + "-" + partes[1].astype(int).astype(str)
+        )
+    gemanet["_CLAVE_CRUCE_INVIMA"] = clave_cruce_invima
+
     invima = df_invima.drop_duplicates(subset="CODIGO_INTERNO", keep="first").copy()
     invima["_DESCRIPCION_ESPERADA"] = _descripcion_esperada_invima(invima)
 
@@ -1377,10 +1401,10 @@ def auditar_coherencia(
     ] + [col_invima for _, col_invima in _CAMPOS_DIRECTOS.values() if col_invima in invima.columns]
     invima_reducido = invima[[c for c in dict.fromkeys(columnas_invima) if c in invima.columns]]
     invima_reducido = invima_reducido.add_suffix("_INVIMA").rename(
-        columns={"CODIGO_INTERNO_INVIMA": "CODIGO_INTERNO"}
+        columns={"CODIGO_INTERNO_INVIMA": "_CLAVE_CRUCE_INVIMA"}
     )
 
-    combinado = gemanet.merge(invima_reducido, on="CODIGO_INTERNO", how="left", indicator=True)
+    combinado = gemanet.merge(invima_reducido, on="_CLAVE_CRUCE_INVIMA", how="left", indicator=True)
     tiene_correspondencia = combinado["_merge"] == "both"
 
     # Los pares (valor local, valor INVIMA) ya normalizados, UNA sola vez: de
@@ -1518,7 +1542,7 @@ def auditar_coherencia(
         codigos_vencidos = set(
             df_invima_vencidos["CODIGO_INTERNO"].dropna().astype(str).str.strip()
         )
-        es_vencido = (~tiene_correspondencia) & gemanet["CODIGO_INTERNO"].isin(codigos_vencidos)
+        es_vencido = (~tiene_correspondencia) & gemanet["_CLAVE_CRUCE_INVIMA"].isin(codigos_vencidos)
         estado = estado.where(~es_vencido, EstadoCoherencia.VENCIDO_EN_INVIMA.value)
 
     # Otros Estados y Tramite de Renovacion solo se evaluan sobre lo que
@@ -1545,15 +1569,15 @@ def auditar_coherencia(
     # Los vigentes van PRIMERO: si un codigo aparece tanto aqui como en el resto
     # de Otros Estados, la lectura correcta es la que dice que sigue vigente.
     estado, estado_invima_detalle = _aplicar_dataset_auxiliar(
-        estado, estado_invima_detalle, gemanet["CODIGO_INTERNO"],
+        estado, estado_invima_detalle, gemanet["_CLAVE_CRUCE_INVIMA"],
         otros_estados_vigentes, EstadoCoherencia.VIGENTE_NO_COMERCIALIZADO_INVIMA.value,
     )
     estado, estado_invima_detalle = _aplicar_dataset_auxiliar(
-        estado, estado_invima_detalle, gemanet["CODIGO_INTERNO"],
+        estado, estado_invima_detalle, gemanet["_CLAVE_CRUCE_INVIMA"],
         otros_estados_resto, EstadoCoherencia.ENCONTRADO_EN_OTRO_ESTADO_INVIMA.value,
     )
     estado, estado_invima_detalle = _aplicar_dataset_auxiliar(
-        estado, estado_invima_detalle, gemanet["CODIGO_INTERNO"],
+        estado, estado_invima_detalle, gemanet["_CLAVE_CRUCE_INVIMA"],
         df_renovacion_combinado, EstadoCoherencia.EN_TRAMITE_RENOVACION_INVIMA.value,
     )
 
@@ -1599,6 +1623,11 @@ def auditar_coherencia(
 
     resultado = reporte_gemanet.copy()
     resultado["CODIGO_INTERNO"] = gemanet["CODIGO_INTERNO"].values
+    # Vacio salvo para los CUM con sufijo ATC (ver arriba, junto a
+    # clave_cruce_invima): el EXPEDIENTE-CONSECUTIVO que se reconstruyo para
+    # poder cruzar contra INVIMA. Informativo -- CODIGO_INTERNO arriba sigue
+    # siendo el codigo real de Gemma Net, nunca se reescribe.
+    resultado["CUM_RECONSTRUIDO"] = clave_cruce_invima.where(es_cum_con_sufijo_atc, "").values
     resultado["ESTADO_COHERENCIA"] = estado.values
     resultado["ESTADO_INVIMA_DETALLE"] = estado_invima_detalle.values
     resultado["CAMPOS_CON_DIFERENCIA"] = campos_con_diferencia.values
@@ -1685,7 +1714,8 @@ def auditar_coherencia(
     # ACCION_SUGERIDA. Se asigna ANTES de NATURALEZA_HALLAZGO a proposito,
     # para que sea obvio con solo leer que no participa en el. Investigado
     # contra produccion real el 2026-08-26 -- ver design/tipos_codigo_interno.md.
-    tipo_codigo_interno = clasificar_codigos(_columna_o_vacia(reporte_gemanet, "CODIGO_INTERNO"))
+    # `tipo_codigo_interno` ya se calculo arriba (se reusa para reconstruir
+    # la clave de cruce de los CUM con sufijo ATC) -- no se vuelve a calcular.
     resultado["TIPO_CODIGO_INTERNO"] = tipo_codigo_interno.values
 
     naturaleza = _clasificar_naturaleza_hallazgo(

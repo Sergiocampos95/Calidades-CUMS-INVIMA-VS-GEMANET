@@ -1239,3 +1239,75 @@ def test_el_tipo_de_codigo_no_fusiona_ni_deduplica_codigos_repetidos():
     assert resultado.loc["500-1", "TIPO_CODIGO_INTERNO"] == "cum"
     assert resultado.loc["V10XX029556981", "TIPO_CODIGO_INTERNO"] == "atc_expediente_consecutivo"
     assert not resultado["CODIGO_DUPLICADO_EN_REPORTE"].any()
+
+
+# --- Paso 5: CUM con sufijo ATC recuperado contra INVIMA (aprobado 2026-08-26) ---
+
+
+def test_cum_con_sufijo_atc_cruza_contra_invima_con_el_expediente_reconstruido():
+    """Pedido de negocio explicito: reconstruir EXPEDIENTE-CONSECUTIVO desde
+    el codigo (la columna EXPEDIENTE trae -999 en la mayoria de estos casos
+    reales) y cruzarlo contra INVIMA de verdad -- no solo etiquetarlo."""
+    resultado = _auditar(
+        [_fila_gemanet("00009811-01-0M01AE01", EXPEDIENTE="-999")],
+        [_fila_invima("9811-1")],
+    )
+    fila = resultado.loc["00009811-01-0M01AE01"]
+    assert fila["TIPO_CODIGO_INTERNO"] == "cum_con_sufijo_atc"
+    assert fila["CUM_RECONSTRUIDO"] == "9811-1"
+    assert fila["ESTADO_COHERENCIA"] == EstadoCoherencia.CORRECTO.value  # ya no sin_correspondencia
+
+
+def test_cum_con_sufijo_atc_con_diferencias_se_detecta_igual_que_un_cum_normal():
+    resultado = _auditar(
+        [_fila_gemanet("00009811-01-0M01AE01", EXPEDIENTE="-999", CONCENTRACION="250 MG")],
+        [_fila_invima("9811-1")],
+    )
+    fila = resultado.loc["00009811-01-0M01AE01"]
+    assert fila["ESTADO_COHERENCIA"] == EstadoCoherencia.CON_DIFERENCIAS.value
+    assert "CONCENTRACION" in fila["CAMPOS_CON_DIFERENCIA"]
+
+
+def test_cum_con_sufijo_atc_sin_gemelo_en_invima_sigue_sin_correspondencia():
+    """Si el expediente reconstruido tampoco existe en INVIMA, el resultado
+    es el mismo que para cualquier otro codigo huerfano -- no se inventa una
+    correspondencia que no esta."""
+    resultado = _auditar(
+        [_fila_gemanet("00009811-01-0M01AE01", EXPEDIENTE="-999")],
+        [_fila_invima("500-1")],
+    )
+    fila = resultado.loc["00009811-01-0M01AE01"]
+    assert fila["ESTADO_COHERENCIA"] == EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value
+    assert fila["CUM_RECONSTRUIDO"] == "9811-1"  # se reconstruyo igual, aunque no haya cruzado
+
+
+def test_cum_reconstruido_vacio_para_los_demas_tipos_de_codigo():
+    resultado = _auditar([_fila_gemanet("500-1")], [_fila_invima("500-1")])
+    assert resultado.loc["500-1", "CUM_RECONSTRUIDO"] == ""
+
+
+def test_cum_con_sufijo_atc_recuperado_no_afecta_un_cum_normal_en_la_misma_corrida():
+    """El arreglo del paso 5 no debe cambiar nada del camino ya probado para
+    codigos CUM comunes -- mismo caso que test_todo_coincide_es_correcto,
+    corriendo junto con un CUM con sufijo ATC."""
+    resultado = _auditar(
+        [_fila_gemanet("500-1"), _fila_gemanet("00009811-01-0M01AE01", EXPEDIENTE="-999")],
+        [_fila_invima("500-1"), _fila_invima("9811-1")],
+    )
+    assert resultado.loc["500-1", "ESTADO_COHERENCIA"] == EstadoCoherencia.CORRECTO.value
+    assert resultado.loc["500-1", "PORCENTAJE_CALIDAD"] == 100.0
+    assert resultado.loc["00009811-01-0M01AE01", "ESTADO_COHERENCIA"] == EstadoCoherencia.CORRECTO.value
+
+
+def test_cum_con_sufijo_atc_vencido_en_invima_se_detecta_via_dataset_de_vencidos():
+    """El expediente reconstruido tambien se usa para cruzar contra los
+    datasets auxiliares (Vencidos/Otros Estados/Renovacion), no solo contra
+    Vigentes -- si no, un CUM con sufijo ATC realmente vencido caeria en
+    sin_correspondencia en vez de vencido_en_invima."""
+    resultado = _auditar(
+        [_fila_gemanet("00009811-01-0M01AE01", EXPEDIENTE="-999")],
+        [_fila_invima("500-1")],
+        vencidos_filas=[{"CODIGO_INTERNO": "9811-1"}],
+    )
+    fila = resultado.loc["00009811-01-0M01AE01"]
+    assert fila["ESTADO_COHERENCIA"] == EstadoCoherencia.VENCIDO_EN_INVIMA.value

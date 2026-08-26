@@ -1,6 +1,7 @@
 # Tipos de estructura de CODIGO_INTERNO en la auditoría + filtro
 
-- **Estado:** en curso
+- **Estado:** terminado (2026-08-26) — pendiente solo de fusionar
+  `feature/tipos-codigo-interno` a `master` cuando el usuario lo confirme
 - **Creado:** 2026-08-26 por Claude Code (diagnóstico de `arquitecto`)
 - **Objetivo:** el catálogo de tipos de `CODIGO_INTERNO` investigado contra
   producción (`design/tipos_codigo_interno.md`) se refleja como columna
@@ -88,12 +89,22 @@ Diagnóstico completo de `arquitecto` (ver conversación). Puntos clave:
       (`_calidades()`, quedaba pendiente del paso 2) via `PATRON_CUM`
       importado. 25/25 pruebas de `test_ui_filtros.py`, 379/379 en toda la
       suite.
-- [ ] 5. (bloqueado — requiere aprobación de negocio, NO implementar sin
-      confirmación puntual) `cum_con_sufijo_atc` recuperable: columna
-      informativa con el CUM reconstruido + calidad nueva en `_calidades()`
-      listando esos códigos. **No cambia la llave del merge de la línea
-      1336** — esas 147 filas siguen en `sin_correspondencia_invima` hasta
-      que negocio decida activar el cruce.
+- [x] 5. (aprobado por el usuario 2026-08-26: "Recuperar los 147, pero
+      priorizar solo los activos") `src/gemma_cum_loader/auditoria/coherencia_invima.py`
+      — **SÍ se cambió la llave de cruce contra INVIMA** (a diferencia de lo
+      que decía este plan originalmente): se calcula `clave_cruce_invima`
+      (EXPEDIENTE-CONSECUTIVO reconstruido, sin ceros a la izquierda, SOLO
+      para los `cum_con_sufijo_atc`) y se usa en el merge contra Vigentes y
+      en los tres datasets auxiliares (Vencidos/Otros Estados/Renovación) en
+      vez de `CODIGO_INTERNO` crudo. `resultado["CODIGO_INTERNO"]` (la
+      identidad real del medicamento) nunca se toca — el reconstruido queda
+      aparte en la nueva columna informativa `CUM_RECONSTRUIDO`. La
+      priorización "solo los activos" no necesitó código nuevo: los 48
+      activos con diferencias caen solos en las tarjetas de prioridad
+      existentes (ya filtran por ACTIVO), los 99 inactivos quedan con su
+      `ESTADO_COHERENCIA` real pero fuera de esas tarjetas, igual que
+      cualquier otro código inactivo. 6 pruebas nuevas (incluye el caso de
+      Vencidos), 112/112 en `test_coherencia_invima.py`.
 - [x] 6. (claude/implementador) `ui_revision/app_streamlit.py`,
       `design/tipos_codigo_interno.md` — `_mostrar_distribucion_tipo_codigo_interno()`
       nueva en "Entender la calidad del catálogo": tabla de conteos por tipo
@@ -101,17 +112,21 @@ Diagnóstico completo de `arquitecto` (ver conversación). Puntos clave:
       Documento de diseño actualizado con un bloque de estado de
       implementación al inicio. `README.md` sin tocar todavía (queda para
       el cierre, cuando se confirme el alcance con el usuario).
-- [ ] 7. (claude/pruebas) `tests/test_codigos.py` (ampliar/reemplazar
-      `test_clasificar_codigo_ium` — cambio de contrato consciente: "ZIAL"
-      pasa a `codigo_propio`), `tests/test_coherencia_invima.py`,
-      `tests/test_ui_filtros.py` — casos listados en el diagnóstico del
-      arquitecto, incluyendo el test de no-fusión y el de que ningún valor
-      contenga `", "` (rompería `_valores_de_columna_lista`).
-- [ ] 8. (claude/revisor) Revisión final: `pytest`, `ruff check`, confirmar
-      que `es_cum()` da lo mismo que antes, que `PORCENTAJE_CALIDAD`/
+- [x] 7. (claude/pruebas) Cubierto de forma incremental junto con cada paso
+      (28 en `test_codigos.py` incl. el reemplazo consciente de
+      `test_clasificar_codigo_ium`, 112 en `test_coherencia_invima.py` incl.
+      no-fusión y el cruce real del paso 5, 25 en `test_ui_filtros.py` incl.
+      que ningún valor de tipo se trate como columna-lista).
+- [x] 8. (claude/revisor) `pytest` completo: **385/385 en verde**. `ruff
+      check src/ tests/ ui_revision/`: sin errores nuevos (mismo baseline
+      preexistente de siempre). `es_cum()`/`partir_cum()` sin cambio de
+      comportamiento (prueba dedicada). `PORCENTAJE_CALIDAD`/
       `ESTADO_COHERENCIA`/`NATURALEZA_HALLAZGO` no cambiaron para ningún
-      caso existente, que la clasificación usa `np.select` vectorizado (no
-      `apply`/`map` por fila) y sin llamadas de red.
+      caso preexistente — las 106 pruebas originales de
+      `test_coherencia_invima.py` pasan sin modificar ninguna aserción.
+      Clasificación vectorizada con `np.select` (no `apply`/`map` por fila,
+      confirmado con prueba de equivalencia). Sin llamadas de red en
+      ninguna parte de `codigos.py`/la reconstrucción del paso 5.
 
 ## Decisiones
 
@@ -122,13 +137,23 @@ Diagnóstico completo de `arquitecto` (ver conversación). Puntos clave:
   Postgres (ver el `statement_timeout` real que ya documenta
   `gemanet_sql.py`).
 - `cum_con_sufijo_atc` (paso 5) no se implementa sin aprobación explícita:
-  cambia resultados de auditoría reales (147 filas moverían de estado).
+  cambia resultados de auditoría reales (147 filas moverían de estado). →
+  **Aprobado 2026-08-26**, implementado (ver paso 5).
+- Pedido de negocio (2026-08-26, confirmado explícitamente): los resultados
+  se priorizan por ESTADO + VIGENCIA — lo que no está vigente/activo se
+  conserva por trazabilidad pero no debe estorbar el flujo de trabajo. Dos
+  consecuencias directas: (a) el paso 5 recupera los 147 códigos pero la
+  prioridad natural ya separa los 48 activos de los 99 inactivos sin código
+  nuevo (los masks existentes de "Priorizar" ya filtran por ACTIVO); (b) la
+  capa legada `atc_expediente_consecutivo` (0% activa) se colapsa por
+  defecto en "Entender la calidad del catálogo" (`_TIPO_CAPA_LEGADA`,
+  expander cerrado) — sigue filtrable a mano en cualquier tabla.
 
 ## Abierto
 
-- Confirmar con el usuario si el alcance de 6 categorías + residual (sin
-  paquetes/insumos/CUPS) es lo que esperaba, o si quiere que se sume el
-  cruce contra `tb_cup`/`tb_insumo` en esta misma ronda.
+- Alcance confirmado por el usuario para esta ronda: 6 categorías + residual
+  + el paso 5 recuperado. Paquetes/insumos/CUPS por cruce contra
+  `tb_cup`/`tb_insumo` siguen fuera (ver Decisiones) — no se pidió sumarlos.
 - Paso 5 (`cum_con_sufijo_atc` recuperable) espera aprobación puntual.
 
 ## Verificación
