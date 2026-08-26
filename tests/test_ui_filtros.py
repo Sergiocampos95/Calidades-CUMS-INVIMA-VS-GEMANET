@@ -15,8 +15,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "ui_revision"))
 
 from app_streamlit import (  # noqa: E402
     _buscar_auditoria,
+    _conteo_por_campo,
+    _ejemplos_evidencia_vigencia,
     _fechas_legibles,
     _filtrar_exploracion_auditoria,
+    _filtrar_por_campos,
     _legible,
     _valores_de_columna_lista,
 )
@@ -147,3 +150,118 @@ def test_filtro_de_exploracion_aplica_estado_y_campo_sin_apply_por_fila():
     )
 
     assert list(filtrado.index) == [0]
+
+
+def _auditoria_vigencia(*detalles: str) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "CODIGO_INTERNO": [f"{500 + i}-1" for i in range(len(detalles))],
+            "NOVEDAD_VIGENCIA_INVIMA": ["riesgo_activo_sin_vigencia"] * len(detalles),
+            "DETALLE_VIGENCIA_INVIMA": list(detalles),
+        }
+    )
+
+
+def test_ejemplos_de_evidencia_muestran_el_dato_crudo_de_cada_lado():
+    """El caso real que motivo esto: el usuario dudo de un hallazgo correcto
+    porque la tarjeta agregada no mostraba el valor exacto de cada fuente,
+    solo el conteo. Los ejemplos deben traer codigo + el detalle por fila tal
+    cual, sin resumir ni redondear."""
+    auditoria = _auditoria_vigencia(
+        "Gemma Net: ACTIVO. INVIMA: ESTADO_CUM=INACTIVO, FECHA_INACTIVO=2026-03-01."
+    )
+    mascara = auditoria["NOVEDAD_VIGENCIA_INVIMA"] == "riesgo_activo_sin_vigencia"
+
+    texto = _ejemplos_evidencia_vigencia(auditoria, mascara)
+
+    assert "500-1" in texto
+    assert "Gemma Net: ACTIVO. INVIMA: ESTADO_CUM=INACTIVO, FECHA_INACTIVO=2026-03-01." in texto
+
+
+def test_ejemplos_de_evidencia_se_limitan_y_avisan_el_total():
+    auditoria = _auditoria_vigencia(*[f"detalle {i}" for i in range(5)])
+    mascara = auditoria["NOVEDAD_VIGENCIA_INVIMA"] == "riesgo_activo_sin_vigencia"
+
+    texto = _ejemplos_evidencia_vigencia(auditoria, mascara, limite=3)
+
+    assert texto.count("- 50") == 3  # solo 3 ejemplos, no los 5
+    assert "mostrando 3 de 5" in texto
+
+
+def test_sin_hallazgos_no_hay_texto_de_ejemplos():
+    auditoria = _auditoria_vigencia()
+    mascara = pd.Series([], dtype=bool)
+
+    assert _ejemplos_evidencia_vigencia(auditoria, mascara) == ""
+
+
+def test_ejemplos_de_evidencia_no_revientan_sin_la_columna_de_detalle():
+    """Degradacion explicita: si la auditoria no trae DETALLE_VIGENCIA_INVIMA
+    (dimension no calculada), no se muestra evidencia inventada."""
+    auditoria = pd.DataFrame({"CODIGO_INTERNO": ["500-1"]})
+    mascara = pd.Series([True])
+
+    assert _ejemplos_evidencia_vigencia(auditoria, mascara) == ""
+
+
+def test_filtrar_por_campos_no_revienta_con_texto_libre_con_parentesis():
+    """Bug real en produccion (2026-08-25): una columna de motivo/error trae
+    oraciones libres, no identificadores cortos. `_filtrar_por_campos` usaba
+    un regex `\\b...\\b` sobre ese texto tal cual, y PyArrow (el backend de
+    pandas) reventaba con "Invalid regular expression" ante un parentesis
+    sin cerrar como en "codigo 200) | TRAVENOL LABORATORIES INC. (61%"."""
+    conflictivo = "codigo 200) | TRAVENOL LABORATORIES INC. (61%"
+    df = pd.DataFrame(
+        {
+            "pendientes_campo_error": [
+                conflictivo,
+                "sin problema",
+                "verificar igual en Gemma Net: LABORATORIOS RYAN SAS (70%",
+            ]
+        }
+    )
+
+    filtrado = _filtrar_por_campos(df, "pendientes_campo_error", [conflictivo])
+
+    assert list(filtrado.index) == [0]
+
+
+def test_filtrar_por_campos_encuentra_texto_que_termina_en_signo_de_puntuacion():
+    """La otra mitad del mismo bug: aunque se escapara el regex, `\\b` nunca
+    encuentra limite de palabra al final de un texto que termina en un
+    caracter que no es de palabra (%, ), .). El filtro devolvia 0 filas en
+    silencio -- exactamente la suposicion silenciosa que prohibe el
+    proyecto. La coincidencia literal no tiene ese problema."""
+    valor = "LABORATORIOS RYAN SAS (70%"
+    df = pd.DataFrame({"campo": [valor, "otro valor distinto"]})
+
+    filtrado = _filtrar_por_campos(df, "campo", [valor])
+
+    assert list(filtrado.index) == [0]
+
+
+def test_conteo_por_campo_no_revienta_con_texto_libre():
+    conflictivo = "codigo 200) | TRAVENOL LABORATORIES INC. (61%"
+    serie = pd.Series([conflictivo, "sin relacion"])
+
+    conteo = _conteo_por_campo(serie, [conflictivo, "sin relacion"])
+
+    assert conteo == {conflictivo: 1, "sin relacion": 1}
+
+
+def test_filtrar_por_campos_sigue_funcionando_con_nombres_de_campo_fijos():
+    """No se rompe el caso original: DESCRIPCION/MARCA_MEDICAMENTO en una
+    lista separada por coma, sin confundirse con substrings parciales."""
+    df = pd.DataFrame(
+        {
+            "CAMPOS_CON_DIFERENCIA": [
+                "CONCENTRACION, DESCRIPCION",
+                "DESCRIPCION, UNIDAD_MEDIDA",
+                "CONCENTRACION",
+            ]
+        }
+    )
+
+    filtrado = _filtrar_por_campos(df, "CAMPOS_CON_DIFERENCIA", ["DESCRIPCION"])
+
+    assert list(filtrado.index) == [0, 1]

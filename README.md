@@ -76,18 +76,46 @@ el Excel de cargue final**.
 streamlit run ui_revision/app_streamlit.py
 ```
 
-Sube los archivos, presiona **Procesar**, y trabaja sobre las 5 pestañas:
+Sube los archivos, presiona **Procesar**, y trabaja sobre las 6 secciones del menú
+lateral (agrupadas en "candidatos para cargue" y "medicamentos ya cargados"):
 
 1. **Resumen de resolución** — cuántos candidatos nuevos salieron y cómo se resolvieron
-   marca y unidad de medida contra el catálogo interno.
-2. **Bandeja de cuarentena** — lo que el sistema **no** se atrevió a decidir solo.
-   Cada fila trae el motivo, y un botón *"Explicar este caso"* que lo traduce a lenguaje
-   de negocio con IA.
+   marca y unidad de medida contra el catálogo interno. Tres vistas: *Resumen*,
+   *Cómo se resolvió*, *Detalle por registro*.
+2. **Casos que requieren decisión** — lo que el sistema **no** se atrevió a decidir
+   solo. Cada fila trae el motivo y compara `_texto_invima` (dato oficial) contra
+   `_sugerencia` (coincidencia aproximada, nunca confirmada).
 3. **Cargue a Gemma Net** — genera el Excel final listo para subir a la plataforma.
-4. **Consultar INVIMA** — consulta puntual de un EXPEDIENTE-CONSECUTIVO contra la API.
-5. **Auditoría de coherencia** — el informe de calidad de lo ya cargado (sección 5).
+   Dos vistas: *Auditoría de estructura* (todos los candidatos, listos y pendientes,
+   para repartir el trabajo manual) y *Excel de cargue final* (solo lo listo).
+4. **Por qué no se cargó** — vista por CAMPO, no por flujo: elige un campo puntual
+   (marca, unidad, POS...) y ve exactamente qué medicamentos fallan en él, separando
+   candidatos nuevos de los ya cargados con diferencias frente a INVIMA.
+5. **Consultar INVIMA** — consulta puntual de un EXPEDIENTE-CONSECUTIVO contra la API,
+   sin pasar por el proceso masivo.
+6. **Auditoría de coherencia** — el informe de calidad de lo ya cargado (sección 5).
+   Tres vistas: *Priorizar lo que requiere acción*, *Entender la calidad del catálogo*,
+   *Explorar todos los hallazgos*.
 
-Todas las tablas tienen búsqueda libre y filtros; ninguna se muestra en crudo.
+Todas las tablas tienen búsqueda libre y filtros; ninguna se muestra en crudo. Las
+descargas de listas completas son de dos pasos (**Preparar** → **Descargar**): generar
+el Excel es lo más lento de cada vista, así que solo se paga ese costo si de verdad
+vas a bajarlo.
+
+### Casos de uso frecuentes
+
+| Necesito... | Uso |
+|---|---|
+| Saber qué medicamentos de INVIMA todavía no están en Gemma Net | *Resumen de resolución* → *Resumen* (métrica "Candidatos a crear") |
+| Ver, uno por uno, por qué INVIMA sí/no dio candidato | *Resumen de resolución* → *Detalle por registro* |
+| Entender por qué un candidato puntual quedó pendiente de decisión humana | *Casos que requieren decisión* → busca el `CODIGO_INTERNO` o filtra por `motivo` |
+| Saber si un medicamento activo aquí perdió vigencia en INVIMA (riesgo real de autorización) | *Auditoría de coherencia* → tarjeta "activo(s) aquí sin vigencia en INVIMA" — el ícono **❓** trae el dato exacto de ambos lados, no hace falta salir a verificar a mano |
+| La lista exacta de qué campo (marca, unidad, POS...) le falta a cada medicamento, para repartir el trabajo | *Por qué no se cargó* → elige el campo, filtra, descarga |
+| Verificar un EXPEDIENTE-CONSECUTIVO puntual sin correr todo el proceso | *Consultar INVIMA* |
+| Preparar el archivo para que Autorizaciones confirme y complete a mano | *Cargue a Gemma Net* → *Auditoría de estructura* → Preparar/Descargar |
+| El Excel final ya confirmado, listo para subir a Gemma Net | *Cargue a Gemma Net* → *Excel de cargue final* → Preparar/Descargar |
+| Cambiar de archivo/fuente sin perder la corrida actual en pantalla | Botón **"Cambiar fuente de datos"** (arriba, junto a la fuente usada) → *Procesar* de nuevo |
+| Repetir la misma corrida sin esperar minutos otra vez | No hace falta nada: si los archivos de origen no cambiaron, la corrida se lee de una caché en disco en vez de recalcularse |
 
 ---
 
@@ -254,6 +282,11 @@ guardó la descripción así. Sin el SOP escrito no hay contra qué contrastarlo
 | **Modelo** | Claude Haiku 4.5 (`claude-haiku-4-5`) |
 | **Qué hace** | Traduce un motivo técnico a lenguaje de negocio |
 | **Qué NO hace** | No resuelve códigos, no decide cargues, no toca la cascada |
+
+> **Desactivada en la interfaz desde 2026-08-26** — a pedido explícito ("de momento no
+> se requiere"). `ClienteExplicacionIA`, `explicar_motivo()` y `explicar_fila()` siguen
+> en el código, solo sin un botón que los llame; reactivarla es agregar de vuelta la
+> sub-vista en `ui_revision/app_streamlit.py` (`SUBVISTAS_POR_SECCION`).
 
 El costo se mantiene constante a cualquier volumen porque `explicar_motivo()` se llama
 **una vez por motivo distinto**, no una vez por fila — el vocabulario de motivos es fijo

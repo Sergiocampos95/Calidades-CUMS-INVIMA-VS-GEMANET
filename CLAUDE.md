@@ -98,10 +98,19 @@ Los archivos reales son la fuente para medir rendimiento, no para versionar.
 
 - **Toda tabla de medicamentos lleva filtros y busqueda libre.** Ninguna se
   muestra en crudo.
-- Las advertencias van como **tarjeta corta + detalle en un expander**, nunca
-  como parrafos largos dentro de un banner.
-- 5 pestanas: Resumen de resolucion · Bandeja de cuarentena · Cargue a Gemma Net
-  · Consultar INVIMA · Auditoria de coherencia.
+- Las advertencias van como **tarjeta corta + icono "?" con tooltip nativo**
+  (`st.button(help=...)`), nunca como parrafos largos dentro de un banner ni
+  como expander/popover de detalle -- pedido explicito del usuario
+  (2026-08-25): un desplegable "solo desperdicia espacio". La unica funcion
+  que arma ese icono es `_mostrar_detalle_alerta` en `app_streamlit.py`; no
+  crear un segundo mecanismo de detalle para avisos cortos. (Un expander SI
+  sigue siendo correcto para esconder contenido sustancial -- una tabla, una
+  lista larga -- eso no es lo que esta regla prohibe.)
+- 6 secciones en el menu lateral, agrupadas en "candidatos para cargue" y
+  "medicamentos ya cargados": Resumen de resolucion · Casos que requieren
+  decision · Cargue a Gemma Net · Por que no se cargo · Consultar INVIMA ·
+  Auditoria de coherencia. Varias tienen sub-vistas propias (ver
+  `SUBVISTAS_POR_SECCION` en `app_streamlit.py`).
 
 ## Equipo de agentes
 

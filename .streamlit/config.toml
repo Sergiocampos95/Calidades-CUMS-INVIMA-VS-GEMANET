@@ -26,3 +26,10 @@ maxUploadSize = 300
 [browser]
 # Sin telemetria: la aplicacion trabaja contra datos de produccion de una EPS.
 gatherUsageStats = false
+
+[theme]
+# Streamlit pinta radios/checkboxes/toggles/sliders con su rojo de acento por
+# defecto (#FF4B4B) si no se fija aqui -- se veia como una alerta o una
+# seleccion "en rojo" incluso en la navegacion lateral, que no es un estado
+# de error. Mismo azul que "primario" en design/design_tokens.json.
+primaryColor = "#2A4D8F"    
