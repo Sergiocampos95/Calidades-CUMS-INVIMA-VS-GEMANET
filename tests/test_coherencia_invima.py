@@ -797,6 +797,39 @@ def test_sin_advertencia_sistemica_cuando_el_campo_si_esta_diligenciado():
     assert resultado.attrs.get("advertencias_calidad", []) == []
 
 
+def test_campos_calidad_mascaras_selecciona_exactamente_las_filas_sin_dato():
+    """La UI usa `campos_calidad_mascaras` (attrs) para mostrar, junto a la
+    cifra de cada campo sistemicamente vacio, la tabla de medicamentos que
+    la componen -- pedido explicito (2026-08-26). La mascara debe indexar
+    directamente sobre lo que devuelve `auditar_coherencia()`, SIN
+    reindexar (la UI nunca hace `.set_index()` sobre el resultado)."""
+    campos = {c: "VALOR" for c in _CAMPOS_COMPLETITUD_REPORTE if c != "CODIGO_INTERNO"}
+    campos["POSOLOGIA"] = "-999"
+    filas = [_fila_gemanet(f"{500 + i}-1", **campos) for i in range(10)]
+    resultado = auditar_coherencia(
+        pd.DataFrame(filas),
+        pd.DataFrame([_fila_invima(f"{500 + i}-1") for i in range(10)]),
+        _CATALOGO_UNIDAD,
+        _CATALOGO_MARCA,
+    )
+    mascaras = resultado.attrs.get("campos_calidad_mascaras", {})
+    assert set(mascaras) == {"POSOLOGIA"}
+    mascara = mascaras["POSOLOGIA"]
+    assert int(mascara.sum()) == 10
+    assert resultado[mascara]["CODIGO_INTERNO"].tolist() == resultado["CODIGO_INTERNO"].tolist()
+
+
+def test_sin_campos_calidad_mascaras_cuando_todo_esta_diligenciado():
+    campos = {c: "VALOR" for c in _CAMPOS_COMPLETITUD_REPORTE if c != "CODIGO_INTERNO"}
+    resultado = auditar_coherencia(
+        pd.DataFrame([_fila_gemanet("500-1", **campos)]),
+        pd.DataFrame([_fila_invima("500-1")]),
+        _CATALOGO_UNIDAD,
+        _CATALOGO_MARCA,
+    )
+    assert resultado.attrs.get("campos_calidad_mascaras", {}) == {}
+
+
 def test_completitud_reporte_sentinela_menos_999_cuenta_como_no_diligenciado():
     # "-999" confirmado contra el reporte real de Gemma Net (2026-08-19) como
     # sentinela de "sin dato" en EXPEDIENTE/CONSECUTIVO para codigo legado.
@@ -1223,6 +1256,33 @@ def test_sin_capa_legada_atc_no_hay_advertencia():
     resultado = _auditar([_fila_gemanet("500-1")], [_fila_invima("500-1")])
     advertencias = resultado.attrs.get("advertencias_calidad", [])
     assert not any("capa" in a and "legada" in a for a in advertencias)
+
+
+def test_capa_legada_atc_mascara_selecciona_exactamente_esas_filas():
+    """Misma logica que campos_calidad_mascaras: la UI necesita la mascara
+    alineada al resultado tal cual lo devuelve auditar_coherencia() para
+    mostrar la tabla de medicamentos de esta tarjeta."""
+    filas = [_fila_gemanet(f"V10XX02955698{i}") for i in range(5)]
+    resultado = auditar_coherencia(
+        pd.DataFrame(filas),
+        pd.DataFrame([_fila_invima("500-1")]),
+        _CATALOGO_UNIDAD,
+        _CATALOGO_MARCA,
+    )
+    mascara = resultado.attrs.get("capa_legada_atc_mascara")
+    assert mascara is not None
+    assert int(mascara.sum()) == 5
+    assert resultado[mascara]["CODIGO_INTERNO"].tolist() == resultado["CODIGO_INTERNO"].tolist()
+
+
+def test_sin_capa_legada_atc_mascara_cuando_no_hay():
+    resultado = auditar_coherencia(
+        pd.DataFrame([_fila_gemanet("500-1")]),
+        pd.DataFrame([_fila_invima("500-1")]),
+        _CATALOGO_UNIDAD,
+        _CATALOGO_MARCA,
+    )
+    assert "capa_legada_atc_mascara" not in resultado.attrs
 
 
 def test_el_tipo_de_codigo_no_fusiona_ni_deduplica_codigos_repetidos():

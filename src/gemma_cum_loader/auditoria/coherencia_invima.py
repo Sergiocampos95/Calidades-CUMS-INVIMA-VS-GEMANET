@@ -468,6 +468,22 @@ def _detectar_campos_sistemicamente_no_diligenciados(reporte_gemanet: pd.DataFra
     ]
 
 
+def campos_sistemicamente_no_diligenciados_mascaras(
+    reporte_gemanet: pd.DataFrame,
+) -> dict[str, pd.Series]:
+    """Mascara booleana "sin dato" por cada campo que
+    `_detectar_campos_sistemicamente_no_diligenciados()` reporta como
+    sistemicamente vacio -- misma definicion de "sin dato" que ya arma ese
+    porcentaje (ver `_sin_dato_local`: vacio, "-999", error de Excel, o el
+    codigo 1 de catalogo). Publica y separada del texto para que la UI pueda
+    mostrar, junto a cada cifra, la tabla exacta de medicamentos que la
+    componen, sin reimplementar la deteccion en la capa de presentacion."""
+    return {
+        campo: _sin_dato_local(reporte_gemanet, campo)
+        for campo in _campos_sistemicamente_no_diligenciados(reporte_gemanet)
+    }
+
+
 def _detectar_capa_legada_atc(tipo_codigo_interno: pd.Series) -> list[str]:
     """Advertencia AGREGADA, no por fila -- igual que
     `_detectar_campos_sistemicamente_no_diligenciados()`. La familia
@@ -1730,4 +1746,14 @@ def auditar_coherencia(
     resultado.attrs["advertencias_calidad"] = _detectar_campos_sistemicamente_no_diligenciados(
         reporte_gemanet
     ) + _detectar_capa_legada_atc(tipo_codigo_interno)
+    # Mismo par (texto, mascara) que las tarjetas de vigencia ya usan: el
+    # texto arriba sigue igual (lo cubren las pruebas existentes), esto es
+    # aditivo para que la UI arme una tabla de medicamentos por cada cifra
+    # sin volver a detectar "sin dato" ni la capa legada por su cuenta.
+    resultado.attrs["campos_calidad_mascaras"] = campos_sistemicamente_no_diligenciados_mascaras(
+        reporte_gemanet
+    )
+    mascara_capa_legada = tipo_codigo_interno == "atc_expediente_consecutivo"
+    if mascara_capa_legada.any():
+        resultado.attrs["capa_legada_atc_mascara"] = mascara_capa_legada
     return resultado

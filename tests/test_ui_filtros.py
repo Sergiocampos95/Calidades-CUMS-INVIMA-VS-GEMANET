@@ -22,6 +22,7 @@ from app_streamlit import (
     _filtrar_exploracion_auditoria,
     _filtrar_por_campos,
     _filtrar_por_valores,
+    _filtros_estandar,
     _legible,
     _opciones_filtro,
     _valores_de_columna_lista,
@@ -352,3 +353,30 @@ def test_opciones_filtro_cache_distingue_subconjuntos_de_distinto_tamano():
 
     assert _opciones_filtro(chico, "Z", clave_cache=clave) == ["p", "q"]
     assert _opciones_filtro(grande, "Z", clave_cache=clave) == ["p", "q", "r", "s"]
+
+
+def test_filtros_estandar_cachea_el_resultado_del_filtrado():
+    """Con varias tablas de medicamentos abiertas a la vez (una por tarjeta
+    de hallazgo), cualquier clic en OTRA parte de la pantalla vuelve a
+    correr Streamlit entero -- sin esto, cada tabla ya abierta se
+    recalculaba de cero en cada rerun aunque sus filtros no cambiaran.
+    Pedido explicito (2026-08-26): "mejores mas la capacidad del programa
+    para guardar en cache ... para que no sea inutilizable"."""
+    df = pd.DataFrame({"CODIGO_INTERNO": ["1-1", "2-2"], "DESCRIPCION": ["a", "b"]})
+    clave = f"prueba_filtro_res_{id(df)}"
+
+    primera = _filtros_estandar(df, key_prefix=clave)
+    segunda = _filtros_estandar(df, key_prefix=clave)
+
+    assert primera is segunda  # el segundo llamado devuelve el MISMO objeto: no se recalculo
+    claves = [k for k in st.session_state if k.startswith(f"_filtro_res_{clave}_")]
+    assert len(claves) == 1
+
+
+def test_filtros_estandar_cache_distingue_subconjuntos_de_distinto_tamano():
+    clave = f"prueba_filtro_res_subconjuntos_{id(object())}"
+    chico = pd.DataFrame({"CODIGO_INTERNO": ["1-1"], "DESCRIPCION": ["a"]})
+    grande = pd.DataFrame({"CODIGO_INTERNO": ["1-1", "2-2"], "DESCRIPCION": ["a", "b"]})
+
+    assert len(_filtros_estandar(chico, key_prefix=clave)) == 1
+    assert len(_filtros_estandar(grande, key_prefix=clave)) == 2

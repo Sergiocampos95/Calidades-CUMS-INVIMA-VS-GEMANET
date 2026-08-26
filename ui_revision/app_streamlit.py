@@ -858,6 +858,7 @@ def _buscar_auditoria(df: pd.DataFrame, busqueda: str) -> pd.DataFrame:
 
 
 _PREFIJO_OPCIONES_FILTRO = "_opc_filtro_"
+_PREFIJO_FILTRO_RESULTADO = "_filtro_res_"
 
 
 def _opciones_filtro(
@@ -1106,15 +1107,35 @@ def _filtros_estandar(
                 "significa no acotar por este dato.",
             )
 
-    filtrado = _buscar_texto_libre(df, busqueda, columnas_busqueda)
-    if columna_categoria is not None:
-        filtrado = _filtrar_por_valores(filtrado, columna_categoria, categorias_elegidas)
-    if columna_campo is not None:
-        filtrado = _filtrar_por_valores(filtrado, columna_campo, campos_elegidos)
-    else:
-        filtrado = _filtrar_por_columnas_con_dato(filtrado, campos_elegidos)
-    if columna_tipo is not None:
-        filtrado = _filtrar_por_valores(filtrado, columna_tipo, tipos_elegidos)
+    def _calcular_filtrado() -> pd.DataFrame:
+        resultado = _buscar_texto_libre(df, busqueda, columnas_busqueda)
+        if columna_categoria is not None:
+            resultado = _filtrar_por_valores(resultado, columna_categoria, categorias_elegidas)
+        if columna_campo is not None:
+            resultado = _filtrar_por_valores(resultado, columna_campo, campos_elegidos)
+        else:
+            resultado = _filtrar_por_columnas_con_dato(resultado, campos_elegidos)
+        if columna_tipo is not None:
+            resultado = _filtrar_por_valores(resultado, columna_tipo, tipos_elegidos)
+        return resultado
+
+    # Memoiza el RESULTADO del filtrado, no solo sus opciones -- con varias
+    # tablas de medicamentos abiertas a la vez (una por tarjeta de hallazgo,
+    # ver _mostrar_tarjetas_alerta), cualquier clic en OTRA parte de la
+    # pantalla vuelve a correr Streamlit entero y, sin esto, recalculaba de
+    # cero cada tabla ya abierta aunque sus filtros no cambiaran. Pedido
+    # explicito (2026-08-26): "mejores mas la capacidad del programa para
+    # guardar en cache la informacion cargada para que no sea inutilizable".
+    # `len(df)` en la clave es la misma huella barata que `_opciones_filtro`
+    # (ver su docstring): distingue subconjuntos distintos que comparten
+    # `key_prefix`, a costo de no distinguir dos subconjuntos con el mismo
+    # tamaño -- aceptado ahi, se reusa aqui por consistencia.
+    clave_resultado = (
+        f"{_PREFIJO_FILTRO_RESULTADO}{key_prefix}_{len(df)}_{busqueda}_"
+        f"{tuple(sorted(categorias_elegidas))}_{tuple(sorted(campos_elegidos))}_"
+        f"{tuple(sorted(tipos_elegidos))}"
+    )
+    filtrado = _derivado(clave_resultado, _calcular_filtrado)
     st.caption(f"{len(filtrado):,} medicamento(s) con los filtros actuales.")
     return filtrado
 
@@ -1289,7 +1310,11 @@ _COLUMNAS_DRILLDOWN_ALERTA = [
 
 
 def _mostrar_tarjetas_alerta(
-    alertas: list[tuple[str, str, str] | tuple[str, str, str, pd.DataFrame]],
+    alertas: list[
+        tuple[str, str, str]
+        | tuple[str, str, str, pd.DataFrame]
+        | tuple[str, str, str, pd.DataFrame, list[str]]
+    ],
     *,
     grupo: str = "alerta",
 ) -> None:
@@ -1302,13 +1327,17 @@ def _mostrar_tarjetas_alerta(
 
     `alertas`: lista de (severidad, título_corto, detalle_largo) o, cuando
     hay un subconjunto de medicamentos detrás del hallazgo, (severidad,
-    título_corto, detalle_largo, subconjunto). Pedido explícito
-    (2026-08-26): "se muestre la información de los medicamentos que
-    salieron seleccionados según su validación" -- el subconjunto YA está
-    calculado por el llamador (una máscara sobre `auditoria`, que ya vive en
-    `session_state`), así que mostrarlo es un filtrado en memoria, no un
-    recálculo: "cargado junto con el apartado", sin costo de eficiencia
-    aparte del de dibujar la tabla que el usuario pida ver.
+    título_corto, detalle_largo, subconjunto) o, si además conviene mostrar
+    alguna columna puntual de ese hallazgo (ej. el campo vacío que lo causó),
+    (severidad, título_corto, detalle_largo, subconjunto, columnas_extra).
+    Pedido explícito (2026-08-26): "se muestre la información de los
+    medicamentos que salieron seleccionados según su validación" -- el
+    subconjunto YA está calculado por el llamador (una máscara sobre
+    `auditoria`, que ya vive en `session_state`), así que mostrarlo es un
+    filtrado en memoria, no un recálculo: "cargado junto con el apartado",
+    sin costo de eficiencia aparte del de dibujar la tabla que el usuario
+    pida ver. Cada cifra distinta trae SU PROPIO subconjunto -- no hay una
+    tabla general compartida entre tarjetas.
 
     `grupo` entra en la clave del toggle "Ver medicamentos" para que dos
     grupos de tarjetas distintos (vigencia, calidad...) en la misma pantalla
@@ -1320,10 +1349,11 @@ def _mostrar_tarjetas_alerta(
     activado con el toggle se dibujan despues, a todo el ancho.
     """
     columnas = st.columns(3)
-    pendientes_de_tabla: list[tuple[int, pd.DataFrame]] = []
+    pendientes_de_tabla: list[tuple[int, pd.DataFrame, list[str]]] = []
     for i, alerta in enumerate(alertas):
         severidad, titulo, detalle = alerta[0], alerta[1], alerta[2]
         subconjunto = alerta[3] if len(alerta) > 3 else None
+        columnas_extra = alerta[4] if len(alerta) > 4 else []
         with columnas[i % 3], st.container(border=True):
             st.markdown(f"{_ICONO_SEVERIDAD_ALERTA.get(severidad, '🟡')} **{titulo}**")
             if detalle:
@@ -1334,10 +1364,13 @@ def _mostrar_tarjetas_alerta(
                     key=f"ver_meds_{grupo}_{i}",
                 )
                 if ver:
-                    pendientes_de_tabla.append((i, subconjunto))
+                    pendientes_de_tabla.append((i, subconjunto, columnas_extra))
 
-    for i, subconjunto in pendientes_de_tabla:
-        columnas_presentes = [c for c in _COLUMNAS_DRILLDOWN_ALERTA if c in subconjunto.columns]
+    for i, subconjunto, columnas_extra in pendientes_de_tabla:
+        # columnas_extra primero -- es el dato puntual que explica POR QUE
+        # esta fila esta en esta tarjeta especifica (ej. el campo vacio).
+        columnas_todas = list(dict.fromkeys(columnas_extra + _COLUMNAS_DRILLDOWN_ALERTA))
+        columnas_presentes = [c for c in columnas_todas if c in subconjunto.columns]
         _tabla_auditoria_esencial(
             subconjunto,
             columnas_presentes,
@@ -2445,12 +2478,14 @@ def _derivado(clave: str, calcular):
 def _limpiar_derivados() -> None:
     for clave in _CLAVES_DERIVADAS_DE_LA_CORRIDA:
         st.session_state.pop(clave, None)
-    # Las opciones de filtro cacheadas (ver _opciones_filtro) usan claves
+    # Las opciones de filtro y los resultados de filtrado cacheados (ver
+    # _opciones_filtro y el cache de _filtros_estandar) usan claves
     # dinamicas -- no caben en la tupla fija de arriba. Se purgan por
-    # prefijo para que una corrida nueva no herede opciones calculadas
-    # sobre datos de la corrida anterior.
+    # prefijo para que una corrida nueva no herede opciones ni resultados
+    # calculados sobre datos de la corrida anterior.
+    prefijos_dinamicos = (_PREFIJO_OPCIONES_FILTRO, _PREFIJO_FILTRO_RESULTADO)
     for clave in [
-        clave for clave in st.session_state if clave.startswith(_PREFIJO_OPCIONES_FILTRO)
+        clave for clave in st.session_state if clave.startswith(prefijos_dinamicos)
     ]:
         del st.session_state[clave]
 
@@ -3981,7 +4016,9 @@ def main() -> None:
             # ese nivel de detalle.
             alertas_carga = list(st.session_state.get("auditoria_alertas_carga", []))
             alertas_vigencia: list[tuple[str, str, str, pd.DataFrame]] = []
-            alertas_calidad: list[tuple[str, str, str]] = []
+            alertas_calidad: list[
+                tuple[str, str, str] | tuple[str, str, str, pd.DataFrame, list[str]]
+            ] = []
 
             if n_vencido > 0:
                 mascara_vencido = auditoria["ESTADO_COHERENCIA"] == EstadoCoherencia.VENCIDO_EN_INVIMA.value
@@ -4086,7 +4123,57 @@ def main() -> None:
                             )
                         )
 
+            # Una tarjeta -- con su propia tabla de medicamentos, no la tabla
+            # general con todos los filtros -- por cada campo que
+            # `campos_calidad_mascaras` (auditar_coherencia()) detecto como
+            # sistemicamente vacio, mas la capa legada ATC si aplica. Pedido
+            # explicito (2026-08-26): "una tabla por cada cifra distinta...
+            # una lista solo para vigentes, una lista solo para diferidos".
+            campos_calidad_cubiertos: set[str] = set()
+            for campo, mascara_campo in auditoria.attrs.get("campos_calidad_mascaras", {}).items():
+                campos_calidad_cubiertos.add(campo)
+                n = int(mascara_campo.sum())
+                porcentaje = mascara_campo.mean() * 100 if len(mascara_campo) else 0.0
+                alertas_calidad.append(
+                    (
+                        "warning",
+                        f"{n:,} sin dato real en {campo} ({porcentaje:.1f}%)",
+                        f"El campo {campo} no trae dato real (vacío, \"-999\" o, si es un "
+                        "código de catálogo, el código 1 \"SIN INFORMACIÓN\") en la mayoría "
+                        "de las filas del reporte de Gemma Net -- parece no estarse "
+                        "diligenciando en el proceso de origen, no un dato puntual faltante "
+                        "por medicamento.",
+                        auditoria[mascara_campo],
+                        [campo],
+                    )
+                )
+
+            mascara_capa_legada = auditoria.attrs.get("capa_legada_atc_mascara")
+            if mascara_capa_legada is not None and mascara_capa_legada.any():
+                n = int(mascara_capa_legada.sum())
+                alertas_calidad.append(
+                    (
+                        "warning",
+                        f"{n:,} con capa legada ATC+expediente+consecutivo",
+                        "TIPO_CODIGO_INTERNO clasifica el CODIGO_INTERNO como una capa "
+                        "legada de INVIMA (código ATC + expediente + consecutivo) -- en la "
+                        "mayoría de los casos ya existe como fila CUM independiente en este "
+                        "mismo reporte. Es informativo: no se fusiona ni se deduplica "
+                        "automáticamente.",
+                        auditoria[mascara_capa_legada],
+                        ["TIPO_CODIGO_INTERNO"],
+                    )
+                )
+
+            # El resto de advertencias (lectura del archivo, sin mascara
+            # limpia por fila) siguen como tarjeta simple -- se excluyen las
+            # que ya se representaron arriba con su tabla, que vienen del
+            # mismo texto generado por coherencia_invima.py y se repetirian.
             for advertencia in auditoria.attrs.get("advertencias", []):
+                if any(f"El campo {campo} " in advertencia for campo in campos_calidad_cubiertos):
+                    continue
+                if mascara_capa_legada is not None and "capa legada de INVIMA" in advertencia:
+                    continue
                 alertas_calidad.append(_alerta_desde_advertencia(advertencia))
 
             # Encabezado + tarjetas directo, SIN expander alrededor del
