@@ -1165,3 +1165,77 @@ def test_un_codigo_repetido_de_verdad_si_se_marca_como_duplicado():
         [_fila_gemanet("500-1"), _fila_gemanet("500-1")], [_fila_invima("500-1")]
     )
     assert resultado["CODIGO_DUPLICADO_EN_REPORTE"].all()
+
+
+# --- TIPO_CODIGO_INTERNO: catalogo de estructuras (design/tipos_codigo_interno.md) ---
+
+
+def test_auditoria_agrega_tipo_de_codigo_interno():
+    resultado = _auditar(
+        [
+            _fila_gemanet("500-1"),
+            _fila_gemanet("V10XX029556981"),
+            _fila_gemanet("1C1016781003102"),
+            _fila_gemanet("CU1155"),
+        ],
+        [_fila_invima("500-1")],
+    )
+    assert resultado.loc["500-1", "TIPO_CODIGO_INTERNO"] == "cum"
+    assert resultado.loc["V10XX029556981", "TIPO_CODIGO_INTERNO"] == "atc_expediente_consecutivo"
+    assert resultado.loc["1C1016781003102", "TIPO_CODIGO_INTERNO"] == "ium"
+    assert resultado.loc["CU1155", "TIPO_CODIGO_INTERNO"] == "codigo_propio"
+
+
+def test_el_tipo_de_codigo_no_altera_el_porcentaje_de_calidad():
+    """Mismo caso que test_todo_coincide_es_correcto: la columna nueva no
+    puede cambiar un resultado que ya estaba bien."""
+    resultado = _auditar([_fila_gemanet("500-1")], [_fila_invima("500-1")])
+    assert resultado.loc["500-1", "ESTADO_COHERENCIA"] == EstadoCoherencia.CORRECTO.value
+    assert resultado.loc["500-1", "PORCENTAJE_CALIDAD"] == 100.0
+    assert resultado.loc["500-1", "TIPO_CODIGO_INTERNO"] == "cum"
+
+
+def test_el_tipo_de_codigo_no_altera_la_naturaleza_del_hallazgo():
+    """Un codigo de la familia ATC-legado sin correspondencia en INVIMA
+    sigue clasificandose por NATURALEZA_HALLAZGO exactamente igual que
+    cualquier otro codigo sin correspondencia -- TIPO_CODIGO_INTERNO es
+    informativo, no entra en esa decision."""
+    con_atc = _auditar([_fila_gemanet("V10XX029556981")], [_fila_invima("500-1")])
+    con_cum = _auditar([_fila_gemanet("999-9")], [_fila_invima("500-1")])
+    assert (
+        con_atc.loc["V10XX029556981", "NATURALEZA_HALLAZGO"]
+        == con_cum.loc["999-9", "NATURALEZA_HALLAZGO"]
+    )
+    assert con_atc.loc["V10XX029556981", "TIPO_CODIGO_INTERNO"] == "atc_expediente_consecutivo"
+
+
+def test_la_capa_legada_atc_se_reporta_una_vez_como_advertencia_no_por_fila():
+    filas = [_fila_gemanet(f"V10XX02955698{i}") for i in range(5)]
+    resultado = _auditar(filas, [_fila_invima("500-1")])
+    advertencias = resultado.attrs.get("advertencias_calidad", [])
+    coincidencias = [a for a in advertencias if "capa" in a and "legada" in a]
+    assert len(coincidencias) == 1  # una sola frase, no 5
+    assert "5 de 5" in coincidencias[0]
+    assert "no se fusionan" in coincidencias[0]
+
+
+def test_sin_capa_legada_atc_no_hay_advertencia():
+    resultado = _auditar([_fila_gemanet("500-1")], [_fila_invima("500-1")])
+    advertencias = resultado.attrs.get("advertencias_calidad", [])
+    assert not any("capa" in a and "legada" in a for a in advertencias)
+
+
+def test_el_tipo_de_codigo_no_fusiona_ni_deduplica_codigos_repetidos():
+    """Un CUM y su "gemelo" de la familia ATC-legado son DOS codigos
+    distintos (aunque describan el mismo medicamento) -- deben seguir
+    siendo DOS filas del resultado, cada una con su propio
+    TIPO_CODIGO_INTERNO, y ninguna marcada como CODIGO_DUPLICADO_EN_REPORTE
+    (ese hallazgo es solo para el MISMO CODIGO_INTERNO repetido)."""
+    resultado = _auditar(
+        [_fila_gemanet("500-1"), _fila_gemanet("V10XX029556981")],
+        [_fila_invima("500-1")],
+    )
+    assert len(resultado) == 2
+    assert resultado.loc["500-1", "TIPO_CODIGO_INTERNO"] == "cum"
+    assert resultado.loc["V10XX029556981", "TIPO_CODIGO_INTERNO"] == "atc_expediente_consecutivo"
+    assert not resultado["CODIGO_DUPLICADO_EN_REPORTE"].any()

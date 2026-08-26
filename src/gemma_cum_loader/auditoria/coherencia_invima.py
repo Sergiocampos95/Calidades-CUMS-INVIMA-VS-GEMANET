@@ -77,6 +77,7 @@ from gemma_cum_loader.catalogos.resolver import (
     sigla_por_codigo,
     siglas_por_codigo,
 )
+from gemma_cum_loader.normaliza.codigos import PATRON_CUM, clasificar_codigos
 from gemma_cum_loader.normaliza.texto import normalizar, normalizar_entidad
 from gemma_cum_loader.validacion.reglas import es_error_excel
 
@@ -143,6 +144,20 @@ class EstadoCoherencia(Enum):
 #                      INVIMA, o activo aca e inactivo alla (el de mayor riesgo).
 #                      Nunca se corrige nada: se entrega la novedad con las fechas
 #                      de los dos lados para que una persona decida.
+#
+# TIPO_CODIGO_INTERNO -- columna de CONTEXTO, no una dimension #11 (ver
+#                      clasificar_codigos() en normaliza/codigos.py). Una
+#                      dimension implica un veredicto de bien/mal; aqui no
+#                      lo hay -- un codigo_propio de Pijao Salud es un dato
+#                      legitimo, no un hallazgo. Por eso NO entra en
+#                      PORCENTAJE_CALIDAD, NATURALEZA_HALLAZGO ni
+#                      ACCION_SUGERIDA. Investigado contra produccion real
+#                      el 2026-08-26 (ver design/tipos_codigo_interno.md);
+#                      la capa legada "atc_expediente_consecutivo" (un
+#                      tercio del reporte, 0% activa) se reporta ademas como
+#                      advertencia agregada (_detectar_capa_legada_atc), no
+#                      fila por fila -- y nunca dispara fusion ni
+#                      deduplicado de CODIGO_INTERNO.
 
 
 # campo de salida -> (columna en el Reporte de Gemma Net, columna en INVIMA)
@@ -450,6 +465,38 @@ def _detectar_campos_sistemicamente_no_diligenciados(reporte_gemanet: pd.DataFra
         "de este reporte -- parece no estarse diligenciando en el proceso de origen, no "
         "un dato puntual faltante por medicamento."
         for campo, porcentaje in _campos_sistemicamente_no_diligenciados(reporte_gemanet).items()
+    ]
+
+
+def _detectar_capa_legada_atc(tipo_codigo_interno: pd.Series) -> list[str]:
+    """Advertencia AGREGADA, no por fila -- igual que
+    `_detectar_campos_sistemicamente_no_diligenciados()`. La familia
+    "atc_expediente_consecutivo" (codigo ATC + expediente + consecutivo) es
+    una capa legada de INVIMA: medida contra produccion el 2026-08-26,
+    100% inactiva y en el 90% de los casos ya existe como fila CUM
+    independiente en el mismo reporte -- ver design/tipos_codigo_interno.md.
+    Reportarla fila por fila serian decenas de miles de "hallazgos" que en
+    realidad son el mismo hecho de proceso repetido, igual que un campo
+    sistemicamente vacio.
+
+    NO fusionar ni deduplicar a partir de esto: `CODIGO_INTERNO` duplicado
+    entre un CUM y su gemelo ATC-legado son DOS filas del reporte, cada una
+    se audita por separado -- fusionarlas a ciegas es exactamente lo que
+    `CLAUDE.md` prohibe (puede perder un principio activo si en realidad son
+    medicamentos combinados distintos con la misma coincidencia superficial).
+    """
+    n = int((tipo_codigo_interno == "atc_expediente_consecutivo").sum())
+    if n == 0:
+        return []
+    total = len(tipo_codigo_interno)
+    porcentaje = (n / total * 100) if total else 0.0
+    return [
+        (
+            f"{n:,} de {total:,} codigos ({porcentaje:.1f}%) tienen la forma de una capa "
+            "legada de INVIMA (codigo ATC + expediente + consecutivo) -- en la mayoria de "
+            "los casos ya existen como una fila CUM independiente en este mismo reporte. "
+            "Es informativo: no se fusionan ni se deduplican automaticamente."
+        )
     ]
 
 
@@ -1518,7 +1565,7 @@ def auditar_coherencia(
     # distinta -- posible error de digitacion o un registro que ya no
     # existe ahi, no simplemente "nunca tuvo expediente".
     es_sin_correspondencia_final = estado == EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value
-    parece_codigo_invima = gemanet["CODIGO_INTERNO"].str.match(r"^\d+-\d+$")
+    parece_codigo_invima = gemanet["CODIGO_INTERNO"].str.match(PATRON_CUM)
     tipo_sin_correspondencia = pd.Series("", index=combinado.index)
     tipo_sin_correspondencia = tipo_sin_correspondencia.mask(
         es_sin_correspondencia_final & parece_codigo_invima,
@@ -1632,6 +1679,15 @@ def auditar_coherencia(
         if puntuales
         else pd.Series(False, index=matriz_sin_dato.index)
     )
+    # Columna de CONTEXTO, no una dimension de calidad #10: no hay veredicto
+    # de bien/mal (un codigo_propio es un dato legitimo de Pijao Salud), asi
+    # que no entra en PORCENTAJE_CALIDAD, NATURALEZA_HALLAZGO ni
+    # ACCION_SUGERIDA. Se asigna ANTES de NATURALEZA_HALLAZGO a proposito,
+    # para que sea obvio con solo leer que no participa en el. Investigado
+    # contra produccion real el 2026-08-26 -- ver design/tipos_codigo_interno.md.
+    tipo_codigo_interno = clasificar_codigos(_columna_o_vacia(reporte_gemanet, "CODIGO_INTERNO"))
+    resultado["TIPO_CODIGO_INTERNO"] = tipo_codigo_interno.values
+
     naturaleza = _clasificar_naturaleza_hallazgo(
         estado,
         campos_con_diferencia,
@@ -1641,5 +1697,7 @@ def auditar_coherencia(
     )
     resultado["NATURALEZA_HALLAZGO"] = naturaleza.values
     resultado["ACCION_SUGERIDA"] = naturaleza.map(ACCION_POR_NATURALEZA).fillna("").values
-    resultado.attrs["advertencias_calidad"] = _detectar_campos_sistemicamente_no_diligenciados(reporte_gemanet)
+    resultado.attrs["advertencias_calidad"] = _detectar_campos_sistemicamente_no_diligenciados(
+        reporte_gemanet
+    ) + _detectar_capa_legada_atc(tipo_codigo_interno)
     return resultado

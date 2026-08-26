@@ -25,7 +25,10 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 
-_PATRON_CUM = re.compile(r"^\d+-\d+$")
+# Publico a proposito: antes estaba copiado a mano en coherencia_invima.py
+# y app_streamlit.py (dos lugares distintos, mismo regex literal). Un solo
+# origen evita que alguno de los tres quede desincronizado si esto cambia.
+PATRON_CUM = re.compile(r"^\d+-\d+$")
 
 CodigoTipo = Literal[
     "cum",
@@ -46,7 +49,7 @@ _PATRONES_TIPO: tuple[tuple[CodigoTipo, re.Pattern[str]], ...] = (
     # 1) CUM: el mismo patron que `es_cum()`, repetido aqui (no importado
     #    como funcion) porque el resto de esta tupla necesita objetos
     #    `re.Pattern` para usarlos con `Series.str.match` vectorizado.
-    ("cum", _PATRON_CUM),
+    ("cum", PATRON_CUM),
     # 2) CUM con sufijo ATC: EXPEDIENTE(8)-CONSECUTIVO(2)-0ATC(7). Va ANTES
     #    de cualquier regla laxa con guion -- si no, cae en "ium"/generico y
     #    se pierden 147 CUM reales (48 activos) que hoy no cruzan contra
@@ -112,7 +115,7 @@ def es_cum(codigo: object) -> bool:
     """
     if codigo is None:
         return False
-    return bool(_PATRON_CUM.match(str(codigo).strip()))
+    return bool(PATRON_CUM.match(str(codigo).strip()))
 
 
 def clasificar_codigo(codigo: object) -> CodigoTipo:

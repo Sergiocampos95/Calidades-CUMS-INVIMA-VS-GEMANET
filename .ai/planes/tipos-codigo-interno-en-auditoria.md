@@ -49,23 +49,25 @@ Diagnóstico completo de `arquitecto` (ver conversación). Puntos clave:
 
 ## Pasos
 
-- [ ] 1. (claude/implementador) `src/gemma_cum_loader/normaliza/codigos.py`
-      — ampliar `CodigoTipo`/`clasificar_codigo()` con los 6 valores nuevos
+- [x] 1. (claude/implementador) `src/gemma_cum_loader/normaliza/codigos.py`
+      — ampliado `CodigoTipo`/`clasificar_codigo()` con los 6 valores nuevos
       + `sin_clasificar`, en el orden de correctitud del diagnóstico
       (`cum` → `cum_con_sufijo_atc` → `atc_expediente_consecutivo` → `ium`
       → `registro_sanitario` → `forma_cups` → `codigo_propio` →
-      `sin_clasificar`). Agregar `clasificar_codigos(serie)` vectorizada
+      `sin_clasificar`). Agregado `clasificar_codigos(serie)` vectorizada
       (`np.select`, sin `apply`/`map` por fila) y `TIPOS_CODIGO_INTERNO`
-      exportado. `es_cum()`/`partir_cum()` sin tocar.
-- [ ] 2. (claude/implementador) `src/gemma_cum_loader/auditoria/coherencia_invima.py:1521`,
-      `ui_revision/app_streamlit.py:1387,3928` — reemplazar el patrón
-      `^\d+-\d+$` copiado a mano por el importado de `codigos.py`. Cambio
-      mecánico: mismas cifras que antes.
-- [ ] 3. (claude/implementador) `src/gemma_cum_loader/auditoria/coherencia_invima.py`
+      exportado. `es_cum()`/`partir_cum()` sin tocar. `PATRON_CUM` pasó a
+      público (antes `_PATRON_CUM`) para que el paso 2 lo importe. 28/28
+      pruebas en verde (commit `f41b036`).
+- [x] 2. (claude/implementador) `src/gemma_cum_loader/auditoria/coherencia_invima.py:1521`
+      — reemplazado el patrón `^\d+-\d+$` copiado a mano por `PATRON_CUM`
+      importado. `ui_revision/app_streamlit.py:1387,3928` quedan
+      pendientes (se hacen junto con el paso 4, mismo archivo).
+- [x] 3. (claude/implementador) `src/gemma_cum_loader/auditoria/coherencia_invima.py`
       — nueva columna `TIPO_CODIGO_INTERNO` (vectorizada, vía
       `clasificar_codigos`), agregada junto al resto del resultado, antes de
       `NATURALEZA_HALLAZGO` para dejar claro que no participa en él. Nueva
-      advertencia agregada (una frase, no por fila) cuando la capa
+      `_detectar_capa_legada_atc()`: advertencia agregada (una frase, no por fila) cuando la capa
       `atc_expediente_consecutivo` supera el umbral de reporte, dejando
       explícito que es una capa legada apagada y que **no se fusiona con su
       gemelo CUM**. Comentario nuevo junto a las 9 dimensiones explicando
