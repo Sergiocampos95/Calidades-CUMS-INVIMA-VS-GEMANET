@@ -1,5 +1,18 @@
 # Qué hay realmente dentro de CODIGO_INTERNO
 
+> **Estado de implementación (2026-08-26, rama `feature/tipos-codigo-interno`,
+> sin fusionar a master):** las 6 categorías de prioridad alta+media de este
+> documento (`cum_con_sufijo_atc`, `atc_expediente_consecutivo`, `ium`,
+> `registro_sanitario`, `forma_cups`, `codigo_propio`) más `sin_clasificar`
+> como residual ya están implementadas en `normaliza/codigos.py::clasificar_codigos()`,
+> expuestas como columna `TIPO_CODIGO_INTERNO` en el resultado de
+> `auditar_coherencia()` y filtrables en la UI (Auditoría de coherencia →
+> Explorar/tabla de calidades; "Por qué no se cargó" → Ya cargados). **NO
+> implementado**: paquetes/insumos/CUPS por cruce contra `tb_cup`/`tb_insumo`
+> (fuera de alcance, declarado en pantalla) y el paso de "CUM con sufijo ATC
+> recuperable" que cambiaría la llave del merge contra INVIMA (espera
+> aprobación de negocio explícita — ver `.ai/planes/tipos-codigo-interno-en-auditoria.md`).
+
 Catálogo de los tipos de estructura de `codigo_interno` que existen en
 `administrativo.tb_medicamento` (Gemma Net), más allá del binario `cum`/`ium`
 que distingue `normaliza/codigos.py` hoy. Investigación pura contra la base

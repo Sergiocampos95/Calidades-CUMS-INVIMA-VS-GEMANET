@@ -20,6 +20,7 @@ from app_streamlit import (  # noqa: E402
     _fechas_legibles,
     _filtrar_exploracion_auditoria,
     _filtrar_por_campos,
+    _filtrar_por_valores,
     _legible,
     _valores_de_columna_lista,
 )
@@ -265,3 +266,50 @@ def test_filtrar_por_campos_sigue_funcionando_con_nombres_de_campo_fijos():
     filtrado = _filtrar_por_campos(df, "CAMPOS_CON_DIFERENCIA", ["DESCRIPCION"])
 
     assert list(filtrado.index) == [0, 1]
+
+
+# --- TIPO_CODIGO_INTERNO: filtro nuevo (design/tipos_codigo_interno.md) ---
+
+
+def test_los_tipos_de_codigo_se_traducen_a_lenguaje_de_negocio():
+    tipos = [
+        "cum",
+        "cum_con_sufijo_atc",
+        "atc_expediente_consecutivo",
+        "ium",
+        "registro_sanitario",
+        "forma_cups",
+        "codigo_propio",
+        "sin_clasificar",
+    ]
+    for tipo in tipos:
+        assert _legible(tipo) != tipo  # todos tienen traduccion, ninguno queda crudo
+
+
+def test_el_tipo_de_codigo_no_se_trata_como_columna_lista():
+    """TIPO_CODIGO_INTERNO trae un valor por celda, nunca varios separados
+    por ", " -- si algun dia lo hiciera, _filtros_estandar cambiaria de
+    semantica sin que nadie lo note (ver _valores_de_columna_lista)."""
+    serie = pd.Series(["cum", "atc_expediente_consecutivo", "ium", "cum"])
+    assert _valores_de_columna_lista(serie) is None
+
+
+def test_filtrar_por_tipo_de_codigo_conserva_solo_los_tipos_elegidos():
+    df = pd.DataFrame(
+        {
+            "CODIGO_INTERNO": ["500-1", "V10XX029556981", "1C1016781003102"],
+            "TIPO_CODIGO_INTERNO": ["cum", "atc_expediente_consecutivo", "ium"],
+        }
+    )
+
+    filtrado = _filtrar_por_valores(df, "TIPO_CODIGO_INTERNO", ["cum", "ium"])
+
+    assert sorted(filtrado["CODIGO_INTERNO"]) == ["1C1016781003102", "500-1"]
+
+
+def test_filtrar_por_tipo_de_codigo_sin_seleccion_no_filtra():
+    """Lista vacia de elegidos = no acotar por este dato, igual que el resto
+    de los filtros de _filtros_estandar."""
+    df = pd.DataFrame({"TIPO_CODIGO_INTERNO": ["cum", "ium"]})
+
+    assert _filtrar_por_valores(df, "TIPO_CODIGO_INTERNO", []) is df

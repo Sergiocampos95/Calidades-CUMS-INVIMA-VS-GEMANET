@@ -64,6 +64,7 @@ from gemma_cum_loader.auditoria.coherencia_invima import (
     _corte_catalogo_invima,
 )
 from gemma_cum_loader.ingesta.almacen_local import CARPETA_DATOS, descubrir_todo, guardar_subida
+from gemma_cum_loader.normaliza.codigos import PATRON_CUM
 from gemma_cum_loader.ingesta.gemanet_sql import leer_reporte_gemanet_db
 from gemma_cum_loader.ingesta.invima_reader import (
     leer_catalogo_invima,
@@ -203,6 +204,17 @@ _ETIQUETA_VALOR_INTERNO = {
     "difiere": "Difiere",
     "sin comparar": "Sin comparar",
     "sin dato en Gemma Net": "Sin dato en Gemma Net",
+    # tipo de estructura de CODIGO_INTERNO (normaliza/codigos.py,
+    # investigado contra produccion el 2026-08-26 -- ver
+    # design/tipos_codigo_interno.md)
+    "cum": "CUM (expediente-consecutivo)",
+    "cum_con_sufijo_atc": "CUM con sufijo ATC",
+    "atc_expediente_consecutivo": "Capa legada ATC+expediente (no medicamento nuevo)",
+    "ium": "IUM",
+    "registro_sanitario": "Registro sanitario INVIMA usado como código",
+    "forma_cups": "Forma de código CUPS (sin verificar contra tb_cup)",
+    "codigo_propio": "Código propio de Pijao Salud",
+    "sin_clasificar": "Sin clasificar",
 }
 
 # Ayuda para los terminos que ni traducidos se explican solos.
@@ -607,6 +619,7 @@ _ETIQUETA_COLUMNA_FILTRO = {
     "unidad_metodo": "Resultado de la unidad",
     "marca_metodo": "Resultado de la marca",
     "accion": "Decisión del proceso",
+    "TIPO_CODIGO_INTERNO": "Tipo de estructura del código",
 }
 
 
@@ -659,6 +672,7 @@ _ETIQUETA_COLUMNA_TABLA = {
     "ESTADO": "Resultado",
     "DETALLE": "Detalle",
     "NATURALEZA_HALLAZGO": "Clase de hallazgo",
+    "TIPO_CODIGO_INTERNO": "Tipo de estructura del código",
 }
 
 _ETIQUETA_ESTADO_COHERENCIA_TABLA = {
@@ -944,22 +958,30 @@ def _filtros_estandar(
     columnas_busqueda: list[str] | None = None,
     columna_categoria: str | None = None,
     columna_campo: str | None = None,
+    columna_tipo: str | None = None,
     opciones_categoria: list[str] | None = None,
     opciones_campo: list[str] | None = None,
+    opciones_tipo: list[str] | None = None,
     categorias_iniciales: list[str] | None = None,
     campos_iniciales: list[str] | None = None,
+    tipos_iniciales: list[str] | None = None,
     etiqueta_categoria: str | None = None,
     etiqueta_campo: str | None = None,
+    etiqueta_tipo: str | None = None,
     clave_busqueda: str | None = None,
     clave_categoria: str | None = None,
     clave_campo: str | None = None,
+    clave_tipo: str | None = None,
 ) -> pd.DataFrame:
     """El unico patron de filtro para tablas de medicamentos.
 
-    La busqueda queda siempre a la vista. Los otros dos filtros se guardan
-    en popovers cerrados: una categoria relevante y un campo para acotar.
-    Todo opera sobre el DataFrame recibido, que ya esta en memoria; cambiar
-    un filtro no vuelve a leer archivos, consultar la base ni llamar a IA.
+    La busqueda queda siempre a la vista. Los otros filtros se guardan en
+    popovers cerrados: una categoria relevante, un campo para acotar y,
+    donde aplica, el tipo de estructura de CODIGO_INTERNO (`columna_tipo`,
+    tercer popover OPCIONAL -- con `None` el comportamiento es identico al
+    de antes, ni un tercer `st.columns` se dibuja). Todo opera sobre el
+    DataFrame recibido, que ya esta en memoria; cambiar un filtro no vuelve
+    a leer archivos, consultar la base ni llamar a IA.
     """
     if df.empty:
         return df
@@ -969,6 +991,7 @@ def _filtros_estandar(
     # Esta era la clave del selector de campos de _filtros_avanzados. Se
     # conserva para que una sesion abierta no pierda una seleccion compatible.
     clave_campo = clave_campo or f"{key_prefix}_campos_filtro"
+    clave_tipo = clave_tipo or f"{key_prefix}_tipo_codigo"
     busqueda = st.text_input(
         "🔎 Buscar medicamento",
         key=clave_busqueda,
@@ -981,6 +1004,7 @@ def _filtros_estandar(
         campos = _opciones_filtro(df, columna_campo, opciones_campo)
     else:
         campos = list(dict.fromkeys(opciones_campo or []))
+    tipos = _opciones_filtro(df, columna_tipo, opciones_tipo) if columna_tipo is not None else []
     _migrar_seleccion_compatible(
         clave_categoria,
         categorias,
@@ -992,7 +1016,11 @@ def _filtros_estandar(
         f"{key_prefix}_f_{columna_campo}" if columna_campo is not None else None,
     )
 
-    col_categoria, col_campo = st.columns(2)
+    if columna_tipo is not None:
+        col_categoria, col_campo, col_tipo = st.columns(3)
+    else:
+        col_categoria, col_campo = st.columns(2)
+        col_tipo = None
     with col_categoria, st.popover(
         f"Filtrar por {etiqueta_categoria or _etiqueta_columna_filtro(columna_categoria or 'categoría')}",
         use_container_width=True,
@@ -1020,6 +1048,20 @@ def _filtros_estandar(
             ),
             formato=_etiqueta_columna_filtro,
         )
+    tipos_elegidos: list[str] = []
+    if columna_tipo is not None:
+        with col_tipo, st.popover(
+            f"Filtrar por {etiqueta_tipo or _etiqueta_columna_filtro(columna_tipo)}",
+            use_container_width=True,
+        ):
+            tipos_elegidos = _multiseleccion_compatible(
+                etiqueta_tipo or _etiqueta_columna_filtro(columna_tipo),
+                tipos,
+                clave=clave_tipo,
+                iniciales=tipos_iniciales if tipos_iniciales is not None else tipos,
+                ayuda="Elige uno o varios tipos de estructura de CODIGO_INTERNO. Vacío "
+                "significa no acotar por este dato.",
+            )
 
     filtrado = _buscar_texto_libre(df, busqueda, columnas_busqueda)
     if columna_categoria is not None:
@@ -1028,6 +1070,8 @@ def _filtros_estandar(
         filtrado = _filtrar_por_valores(filtrado, columna_campo, campos_elegidos)
     else:
         filtrado = _filtrar_por_columnas_con_dato(filtrado, campos_elegidos)
+    if columna_tipo is not None:
+        filtrado = _filtrar_por_valores(filtrado, columna_tipo, tipos_elegidos)
     st.caption(f"{len(filtrado):,} medicamento(s) con los filtros actuales.")
     return filtrado
 
@@ -1040,9 +1084,12 @@ def _tabla_filtrable(
     *,
     columna_categoria: str | None = None,
     columna_campo: str | None = None,
+    columna_tipo: str | None = None,
     opciones_campo: list[str] | None = None,
+    opciones_tipo: list[str] | None = None,
     categorias_iniciales: list[str] | None = None,
     campos_iniciales: list[str] | None = None,
+    tipos_iniciales: list[str] | None = None,
     clave_campo: str | None = None,
 ) -> pd.DataFrame:
     """Dibuja una tabla de medicamentos solo despues de aplicar el patron comun."""
@@ -1064,9 +1111,12 @@ def _tabla_filtrable(
         columnas_busqueda=columnas_mostrar,
         columna_categoria=categoria,
         columna_campo=columna_campo,
+        columna_tipo=columna_tipo,
         opciones_campo=opciones_campo,
+        opciones_tipo=opciones_tipo,
         categorias_iniciales=categorias_iniciales,
         campos_iniciales=campos_iniciales,
+        tipos_iniciales=tipos_iniciales,
         clave_campo=clave_campo,
     )
     if filtrado.empty:
@@ -1078,6 +1128,8 @@ def _tabla_filtrable(
         columnas_visibles.append(categoria)
     if columna_campo in filtrado.columns and columna_campo not in columnas_visibles:
         columnas_visibles.append(columna_campo)
+    if columna_tipo in filtrado.columns and columna_tipo not in columnas_visibles:
+        columnas_visibles.append(columna_tipo)
     salida = filtrado[columnas_visibles]
     _mostrar_tabla_estandar(salida, variante="medicamentos")
     return filtrado
@@ -1384,7 +1436,7 @@ def _calidades(auditoria: pd.DataFrame) -> list[dict]:
     estado = auditoria["ESTADO_COHERENCIA"]
     activo = _columna_texto(auditoria, "ACTIVO").str.upper().eq("SI")
     codigo = _columna_texto(auditoria, "CODIGO_INTERNO")
-    tiene_formato_invima = codigo.str.match(r"^\d+-\d+$")
+    tiene_formato_invima = codigo.str.match(PATRON_CUM)
 
     base = ["CODIGO_INTERNO", "DESCRIPCION", "ACTIVO"]
     return [
@@ -1548,6 +1600,9 @@ def _mostrar_tabla_de_calidades(auditoria: pd.DataFrame) -> None:
         columna_campo=(
             "CAMPOS_CON_DIFERENCIA" if "CAMPOS_CON_DIFERENCIA" in subconjunto.columns else None
         ),
+        columna_tipo=(
+            "TIPO_CODIGO_INTERNO" if "TIPO_CODIGO_INTERNO" in subconjunto.columns else None
+        ),
         opciones_campo=(
             CAMPOS_COMPARADOS_COHERENCIA
             if "CAMPOS_CON_DIFERENCIA" in subconjunto.columns
@@ -1572,17 +1627,29 @@ def _tabla_auditoria_esencial(
     vacio: str,
     columna_categoria: str | None = None,
     columna_campo: str | None = None,
+    columna_tipo: str | None = None,
     opciones_campo: list[str] | None = None,
     categorias_iniciales: list[str] | None = None,
     clave_campo: str | None = None,
 ) -> pd.DataFrame:
-    """Tabla de auditoria con el mismo patron de dos filtros de toda la app."""
+    """Tabla de auditoria con el mismo patron de filtros de toda la app.
+
+    `columna_tipo` se autodetecta a TIPO_CODIGO_INTERNO cuando la columna
+    esta presente -- las tablas de auditoria siempre la traen (viene de
+    Gemma Net, ver auditar_coherencia()); se puede desactivar pasando ""
+    explicitamente si alguna vez hiciera falta.
+    """
     categoria = columna_categoria or (
         "ESTADO_COHERENCIA" if "ESTADO_COHERENCIA" in df.columns else None
     )
     campo = columna_campo or (
         "CAMPOS_CON_DIFERENCIA" if "CAMPOS_CON_DIFERENCIA" in df.columns else None
     )
+    tipo = (
+        columna_tipo
+        if columna_tipo is not None
+        else ("TIPO_CODIGO_INTERNO" if "TIPO_CODIGO_INTERNO" in df.columns else None)
+    ) or None
     filtrado = _filtros_estandar(
         df,
         key_prefix=clave,
@@ -1593,6 +1660,7 @@ def _tabla_auditoria_esencial(
         ],
         columna_categoria=categoria,
         columna_campo=campo,
+        columna_tipo=tipo,
         opciones_campo=opciones_campo,
         categorias_iniciales=categorias_iniciales,
         clave_campo=clave_campo,
@@ -1605,6 +1673,8 @@ def _tabla_auditoria_esencial(
         presentes.append(categoria)
     if campo in filtrado.columns and campo not in presentes:
         presentes.append(campo)
+    if tipo in filtrado.columns and tipo not in presentes:
+        presentes.append(tipo)
     _mostrar_tabla_estandar(filtrado[presentes], variante="medicamentos")
     return filtrado
 
@@ -1686,6 +1756,34 @@ def _panel_entender_auditoria(auditoria: pd.DataFrame) -> None:
     for columna, (nombre, valor, ayuda) in zip(columnas, dimensiones, strict=True):
         texto = f"{valor:.1f}%" if nombre == "Completitud" and pd.notna(valor) else f"{valor:,}"
         columna.metric(nombre, texto, help=ayuda)
+
+    if "TIPO_CODIGO_INTERNO" in auditoria.columns:
+        _mostrar_distribucion_tipo_codigo_interno(auditoria)
+
+
+def _mostrar_distribucion_tipo_codigo_interno(auditoria: pd.DataFrame) -> None:
+    """Cuantos codigos hay de cada tipo de estructura -- catalogo investigado
+    contra produccion el 2026-08-26 (design/tipos_codigo_interno.md). Se
+    puede filtrar por esto en "Explorar todos los hallazgos" y en la tabla
+    de calidades (columna TIPO_CODIGO_INTERNO)."""
+    conteo = auditoria["TIPO_CODIGO_INTERNO"].value_counts()
+    resumen = pd.DataFrame(
+        [
+            {"Tipo": _legible(tipo), "Medicamentos": int(n)}
+            for tipo, n in conteo.items()
+        ]
+    )
+    st.caption("Tipos de estructura de CODIGO_INTERNO en este reporte:")
+    _mostrar_tabla_estandar(resumen, variante="resumen")
+    _mensaje_breve(
+        "Paquetes e insumos no aparecen en esta lista.",
+        "No tienen un patrón de código propio -- solo se distinguen cruzando contra "
+        "las tablas `tb_cup`/`tb_insumo` de Gemma Net, que esta aplicación hoy no "
+        "consulta. Quedan dentro de las categorías por forma de código (ej. "
+        "`codigo_propio`, `sin_clasificar`) hasta que se implemente ese cruce.",
+        tipo="caption",
+        etiqueta="Por qué no hay categoría \"paquete\" o \"insumo\"",
+    )
 
 
 def _avisar_campos_derivados(elegidos: list[str], df: pd.DataFrame, columna: str) -> None:
@@ -1841,6 +1939,11 @@ def _diagnostico_por_campo(
         columnas_mostrar=columnas_mostrar,
         columna_categoria=categoria,
         columna_campo=columna,
+        # Solo los "ya cargados con diferencias" vienen de la auditoria y
+        # traen TIPO_CODIGO_INTERNO -- los candidatos pendientes de Cargue
+        # vienen de INVIMA y no la tienen, asi que el filtro se autodetecta
+        # en vez de forzarse en los dos origenes que comparten esta funcion.
+        columna_tipo="TIPO_CODIGO_INTERNO" if "TIPO_CODIGO_INTERNO" in df.columns else None,
         opciones_campo=campos,
         clave_campo=f"{key_prefix}_campos",
     )

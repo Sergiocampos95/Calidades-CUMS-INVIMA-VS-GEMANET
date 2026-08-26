@@ -72,27 +72,35 @@ Diagnóstico completo de `arquitecto` (ver conversación). Puntos clave:
       explícito que es una capa legada apagada y que **no se fusiona con su
       gemelo CUM**. Comentario nuevo junto a las 9 dimensiones explicando
       por qué esta columna no es una dimensión #10.
-- [ ] 4. (claude/implementador) `ui_revision/app_streamlit.py` — tercer
+- [x] 4. (claude/implementador) `ui_revision/app_streamlit.py` — tercer
       parámetro opcional (`columna_tipo`/`opciones_tipo`/`clave_tipo`) en
-      `_filtros_estandar`, `_tabla_filtrable`, `_tabla_auditoria_esencial`;
-      activado en las tablas de Auditoría de coherencia donde
-      `CODIGO_INTERNO` es de Gemma Net (Explorar, tabla de calidades,
-      Priorizar) y en "Por qué no se cargó → Ya cargados". NO se agrega en
-      Detalle por registro ni Casos que requieren decisión (esas tablas son
-      de INVIMA, siempre CUM). Etiquetas de los 8 valores en
+      `_filtros_estandar`, `_tabla_filtrable`, `_tabla_auditoria_esencial`
+      (esta última con AUTODETECCIÓN: se activa sola cuando la columna está
+      presente). Activo en Explorar y Priorizar (vía autodetección),
+      tabla de calidades (explícito) y "Por qué no se cargó → Ya cargados"
+      (autodetección dentro de `_diagnostico_por_campo`, compartida con
+      Cargue → candidatos pendientes, que no tiene la columna y por tanto no
+      la muestra). NO se agregó en Detalle por registro ni Casos que
+      requieren decisión (datos de INVIMA, siempre CUM). Etiquetas de los 8
+      valores + nombre de columna en
       `_ETIQUETA_VALOR_INTERNO`/`_ETIQUETA_COLUMNA_FILTRO`/`_ETIQUETA_COLUMNA_TABLA`.
+      Se unificó también el segundo sitio con el patrón CUM copiado a mano
+      (`_calidades()`, quedaba pendiente del paso 2) via `PATRON_CUM`
+      importado. 25/25 pruebas de `test_ui_filtros.py`, 379/379 en toda la
+      suite.
 - [ ] 5. (bloqueado — requiere aprobación de negocio, NO implementar sin
       confirmación puntual) `cum_con_sufijo_atc` recuperable: columna
       informativa con el CUM reconstruido + calidad nueva en `_calidades()`
       listando esos códigos. **No cambia la llave del merge de la línea
       1336** — esas 147 filas siguen en `sin_correspondencia_invima` hasta
       que negocio decida activar el cruce.
-- [ ] 6. (claude/implementador) `ui_revision/app_streamlit.py`,
-      `design/tipos_codigo_interno.md`, `README.md` — aviso breve junto al
-      filtro nuevo explicando por qué no hay opción "paquete"/"insumo"
-      (sin patrón de código, requieren consulta a `tb_cup`/`tb_insumo` que
-      hoy no se hace); marcar en el documento de diseño qué quedó
-      implementado.
+- [x] 6. (claude/implementador) `ui_revision/app_streamlit.py`,
+      `design/tipos_codigo_interno.md` — `_mostrar_distribucion_tipo_codigo_interno()`
+      nueva en "Entender la calidad del catálogo": tabla de conteos por tipo
+      + aviso explícito de por qué no hay categoría "paquete"/"insumo".
+      Documento de diseño actualizado con un bloque de estado de
+      implementación al inicio. `README.md` sin tocar todavía (queda para
+      el cierre, cuando se confirme el alcance con el usuario).
 - [ ] 7. (claude/pruebas) `tests/test_codigos.py` (ampliar/reemplazar
       `test_clasificar_codigo_ium` — cambio de contrato consciente: "ZIAL"
       pasa a `codigo_propio`), `tests/test_coherencia_invima.py`,
