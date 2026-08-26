@@ -746,7 +746,6 @@ def _previsualizacion_tabla(df: pd.DataFrame) -> pd.DataFrame:
             "accion",
             "unidad_metodo",
             "marca_metodo",
-            "CLASIFICACION_CREACION",
             "NOVEDAD_VIGENCIA_INVIMA",
         )
         if columna in vista.columns
@@ -755,6 +754,19 @@ def _previsualizacion_tabla(df: pd.DataFrame) -> pd.DataFrame:
         vista = vista.copy()
         for columna in columnas_internas:
             vista[columna] = vista[columna].map(_legible)
+    if "CLASIFICACION_CREACION" in vista.columns:
+        # CLASIFICACION_CREACION NO pasa por _legible(): su valor "candidato"
+        # significa algo distinto del "candidato" de la decision de cargue
+        # (ver _ETIQUETA_VALOR_INTERNO), y _legible() no sabe de que columna
+        # viene el valor -- confundia "Candidato" con "Falta cargarlo" y
+        # dejaba "cum_inactivo"/"muestra_medica" sin traducir. Bug real
+        # reportado por el usuario (2026-08-26, captura de "Detalle por
+        # registro"). _ETIQUETA_CLASIFICACION_CREACION es el diccionario
+        # correcto -- el mismo que ya usan las tarjetas de metricas arriba.
+        vista = vista.copy()
+        vista["CLASIFICACION_CREACION"] = vista["CLASIFICACION_CREACION"].map(
+            lambda valor: _ETIQUETA_CLASIFICACION_CREACION.get(str(valor), _legible(valor))
+        )
     if "ESTADO_COHERENCIA" in vista.columns:
         vista = vista.copy()
         vista["ESTADO_COHERENCIA"] = vista["ESTADO_COHERENCIA"].map(
@@ -1010,6 +1022,7 @@ def _filtros_estandar(
     clave_categoria: str | None = None,
     clave_campo: str | None = None,
     clave_tipo: str | None = None,
+    formato_categoria=None,
 ) -> pd.DataFrame:
     """El unico patron de filtro para tablas de medicamentos.
 
@@ -1075,6 +1088,7 @@ def _filtros_estandar(
             clave=clave_categoria,
             iniciales=categorias_iniciales if categorias_iniciales is not None else categorias,
             ayuda="Elige uno o varios estados o categorías. Vacío significa no acotar por este dato.",
+            formato=formato_categoria or _etiqueta_valor_filtro,
         )
     with col_campo, st.popover(
         f"Acotar por {etiqueta_campo or _etiqueta_columna_filtro(columna_campo or 'campo')}",
@@ -1140,6 +1154,7 @@ def _filtros_estandar(
     return filtrado
 
 
+@st.fragment
 def _tabla_filtrable(
     df: pd.DataFrame,
     columnas_filtro: list[str],
@@ -1155,8 +1170,22 @@ def _tabla_filtrable(
     campos_iniciales: list[str] | None = None,
     tipos_iniciales: list[str] | None = None,
     clave_campo: str | None = None,
+    formato_categoria=None,
 ) -> pd.DataFrame:
-    """Dibuja una tabla de medicamentos solo despues de aplicar el patron comun."""
+    """Dibuja una tabla de medicamentos solo despues de aplicar el patron comun.
+
+    `@st.fragment` (2026-08-26, pedido explicito del usuario tras medir que el
+    computo en si ya era rapido -- ~0.1-0.3s por rerun completo incluso a
+    200.000 filas -- pero CADA interaccion dentro de esta tabla (escribir en
+    el buscador, abrir un filtro) igual reejecutaba TODO `main()`: el sidebar
+    entero, las alertas de otras secciones, etc. Con el fragmento, escribir o
+    filtrar aqui solo reejecuta esta funcion, no la pagina completa. Seguro
+    para los llamadores que capturan el DataFrame devuelto (ej. el boton
+    "Preparar esta lista (.xlsx)"): ese boton vive FUERA del fragmento, asi
+    que un clic en el dispara igual un rerun completo que reconstruye el
+    valor con los filtros mas recientes -- nunca se sirve un Excel con
+    filtros viejos.
+    """
     if df.empty:
         return df
 
@@ -1182,6 +1211,7 @@ def _tabla_filtrable(
         campos_iniciales=campos_iniciales,
         tipos_iniciales=tipos_iniciales,
         clave_campo=clave_campo,
+        formato_categoria=formato_categoria,
     )
     if filtrado.empty:
         st.caption("No hay medicamentos con esos criterios.")
@@ -1747,6 +1777,7 @@ def _mostrar_tabla_de_calidades(auditoria: pd.DataFrame) -> None:
     )
 
 
+@st.fragment
 def _tabla_auditoria_esencial(
     df: pd.DataFrame,
     columnas: list[str],
@@ -1761,6 +1792,10 @@ def _tabla_auditoria_esencial(
     clave_campo: str | None = None,
 ) -> pd.DataFrame:
     """Tabla de auditoria con el mismo patron de filtros de toda la app.
+
+    `@st.fragment`: ver el docstring de `_tabla_filtrable` -- mismo motivo y
+    misma garantia de seguridad para los llamadores que capturan el
+    resultado (el boton de descarga vive fuera del fragmento).
 
     `columna_tipo` se autodetecta a TIPO_CODIGO_INTERNO cuando la columna
     esta presente -- las tablas de auditoria siempre la traen (viene de
@@ -2746,6 +2781,12 @@ def _seccion_resumen_detalle_registro(df_invima: pd.DataFrame) -> None:
             if c in universo_clasificado.columns
         ],
         columna_categoria="CLASIFICACION_CREACION",
+        # Mismo diccionario que ya usan las tarjetas de metricas arriba, no
+        # _etiqueta_valor_filtro (generico): "candidato" significa algo
+        # distinto en CLASIFICACION_CREACION que en la decision de cargue,
+        # y confundirlos fue el bug reportado por el usuario (ver
+        # _previsualizacion_tabla).
+        formato_categoria=lambda v: _ETIQUETA_CLASIFICACION_CREACION.get(str(v), _legible(v)),
     )
 
 
