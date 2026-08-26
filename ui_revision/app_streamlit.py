@@ -3308,1103 +3308,1101 @@ def main() -> None:
         if clave_subvista is not None and st.session_state.get(clave_subvista) not in opciones_subvista:
             st.session_state[clave_subvista] = opciones_subvista[0]
 
-    # Navegacion + despacho de secciones, en UN solo fragmento -- pedido
-    # explicito del usuario (2026-08-26) tras confirmar que hasta una seccion
-    # LIVIANA como "Consultar INVIMA" se sentia lenta al volver a ella: el
-    # costo no era de computo (medido ~0.1-0.3s por rerun completo, ver
-    # commit anterior) sino de Streamlit reenviando/redibujando TODA la
-    # pagina en cada clic del sidebar, porque los botones de navegacion
-    # vivian FUERA de cualquier fragmento. Envolviendo el sidebar Y el
-    # despacho de secciones juntos, un clic de navegacion (el widget que
-    # dispara el cambio) queda DENTRO del fragmento: solo se reejecuta y
-    # reenvia esta funcion, no el resto de main() (que de todos modos ya
-    # termino de correr antes de este punto).
-    @st.fragment
-    def _navegacion_y_contenido() -> None:
-        with st.sidebar:
-            st.markdown("### Navegación")
-            # Las 6 secciones se dibujan SIEMPRE en el mismo orden y con el mismo
-            # alto -- pedido explicito del usuario: la version anterior insertaba
-            # los botones de sub-vista ENTRE los de seccion, y la lista entera se
-            # reacomodaba (se "desordenaba") cada vez que cambiaba la seccion
-            # activa, porque las secciones de abajo se corrian segun cuantas
-            # sub-vistas tuviera la de arriba. Ahora la lista de secciones nunca
-            # cambia de alto; solo el bloque de sub-vistas, aparte y siempre
-            # despues, cambia de contenido.
-            for posicion, seccion_menu in enumerate(SECCIONES):
-                if seccion_menu == SECCIONES_CARGADOS[0]:
-                    st.caption("MEDICAMENTOS YA CARGADOS")
+    # Navegacion + despacho de secciones -- NO en un @st.fragment.
+    # Se intento (2026-08-26) envolver el sidebar de navegacion junto con el
+    # despacho de secciones en un solo fragmento, para que cambiar de
+    # seccion no reenviara toda la pagina. Se revirtio: el usuario reporto
+    # que el menu quedaba "pegado" en la primera seccion. Causa confirmada
+    # contra la documentacion oficial de Streamlit: "A fragment can't draw
+    # widgets in containers outside of the main body of the fragment" --
+    # `st.sidebar` es un contenedor DISTINTO del cuerpo del fragmento, y los
+    # elementos dibujados ahi "will not be cleared with each fragment
+    # rerun... will accumulate until the next full-script rerun". Cambiar
+    # de seccion SI necesita un rerun completo -- lo que se gano con
+    # @st.fragment fue en _tabla_filtrable/_tabla_auditoria_esencial (un
+    # solo contenedor cada una), no aca.
+    with st.sidebar:
+        st.markdown("### Navegación")
+        # Las 6 secciones se dibujan SIEMPRE en el mismo orden y con el mismo
+        # alto -- pedido explicito del usuario: la version anterior insertaba
+        # los botones de sub-vista ENTRE los de seccion, y la lista entera se
+        # reacomodaba (se "desordenaba") cada vez que cambiaba la seccion
+        # activa, porque las secciones de abajo se corrian segun cuantas
+        # sub-vistas tuviera la de arriba. Ahora la lista de secciones nunca
+        # cambia de alto; solo el bloque de sub-vistas, aparte y siempre
+        # despues, cambia de contenido.
+        for posicion, seccion_menu in enumerate(SECCIONES):
+            if seccion_menu == SECCIONES_CARGADOS[0]:
+                st.caption("MEDICAMENTOS YA CARGADOS")
 
+            st.button(
+                seccion_menu,
+                key=f"menu_seccion_{posicion}",
+                type="primary" if seccion_menu == seccion_activa else "secondary",
+                use_container_width=True,
+                on_click=_activar_seccion,
+                args=(seccion_menu,),
+            )
+
+        configuracion_subvista = SUBVISTAS_POR_SECCION[seccion_activa]
+        clave_subvista = configuracion_subvista["clave"]
+        opciones_subvista = configuracion_subvista["opciones"]
+        if clave_subvista is not None and len(opciones_subvista) > 1:
+            st.divider()
+            st.caption(configuracion_subvista["etiqueta"])
+            for indice_subvista, opcion_subvista in enumerate(opciones_subvista):
                 st.button(
-                    seccion_menu,
-                    key=f"menu_seccion_{posicion}",
-                    type="primary" if seccion_menu == seccion_activa else "secondary",
+                    opcion_subvista,
+                    key=f"menu_subvista_{indice_subvista}",
+                    type=(
+                        "primary"
+                        if st.session_state[clave_subvista] == opcion_subvista
+                        else "secondary"
+                    ),
                     use_container_width=True,
-                    on_click=_activar_seccion,
-                    args=(seccion_menu,),
+                    on_click=_activar_subvista,
+                    args=(clave_subvista, opcion_subvista),
                 )
 
-            configuracion_subvista = SUBVISTAS_POR_SECCION[seccion_activa]
-            clave_subvista = configuracion_subvista["clave"]
-            opciones_subvista = configuracion_subvista["opciones"]
-            if clave_subvista is not None and len(opciones_subvista) > 1:
-                st.divider()
-                st.caption(configuracion_subvista["etiqueta"])
-                for indice_subvista, opcion_subvista in enumerate(opciones_subvista):
-                    st.button(
-                        opcion_subvista,
-                        key=f"menu_subvista_{indice_subvista}",
-                        type=(
-                            "primary"
-                            if st.session_state[clave_subvista] == opcion_subvista
-                            else "secondary"
-                        ),
-                        use_container_width=True,
-                        on_click=_activar_subvista,
-                        args=(clave_subvista, opcion_subvista),
-                    )
+    seccion = st.session_state["seccion_activa"]
+    vista_resumen = st.session_state["resumen_vista"]
+    vista_cargue = st.session_state["cargue_vista"]
+    origen = st.session_state["diagnostico_origen"]
+    vista_auditoria = st.session_state["vista_auditoria"]
 
-        seccion = st.session_state["seccion_activa"]
-        vista_resumen = st.session_state["resumen_vista"]
-        vista_cargue = st.session_state["cargue_vista"]
-        origen = st.session_state["diagnostico_origen"]
-        vista_auditoria = st.session_state["vista_auditoria"]
-
-        if seccion == "Resumen de resolución":
-            total = len(resultado)
-            if total == 0:
-                # Diagnostico especifico, no solo el mensaje generico: caso real
-                # confirmado (2026-08-19) -- subir por error el archivo de Vencidos/
-                # Renovacion/Otros Estados en el campo de Vigentes produce EXACTAMENTE
-                # esto (0 filas tras depurar), porque ninguno de esos 3 trae registros
-                # con ESTADO REGISTRO=Vigente. Facil de confundir ahora que hay 4
-                # archivos de INVIMA con nombres muy parecidos.
-                estado_registro_col = (
-                    df_invima["ESTADO_REGISTRO"].astype(str).str.strip()
-                    if "ESTADO_REGISTRO" in df_invima.columns
-                    else pd.Series(dtype=str)
+    if seccion == "Resumen de resolución":
+        total = len(resultado)
+        if total == 0:
+            # Diagnostico especifico, no solo el mensaje generico: caso real
+            # confirmado (2026-08-19) -- subir por error el archivo de Vencidos/
+            # Renovacion/Otros Estados en el campo de Vigentes produce EXACTAMENTE
+            # esto (0 filas tras depurar), porque ninguno de esos 3 trae registros
+            # con ESTADO REGISTRO=Vigente. Facil de confundir ahora que hay 4
+            # archivos de INVIMA con nombres muy parecidos.
+            estado_registro_col = (
+                df_invima["ESTADO_REGISTRO"].astype(str).str.strip()
+                if "ESTADO_REGISTRO" in df_invima.columns
+                else pd.Series(dtype=str)
+            )
+            tiene_vigente = estado_registro_col.str.casefold().eq("vigente").any()
+            if not estado_registro_col.empty and not tiene_vigente:
+                valor_mas_comun = estado_registro_col.value_counts().idxmax()
+                _mensaje_breve(
+                    "0 filas vigentes: parece que se subió el archivo equivocado de INVIMA.",
+                    "El archivo/API usado no trae **ningún** registro con ESTADO "
+                    f"REGISTRO=\"Vigente\" (el valor más común encontrado fue "
+                    f"\"{valor_mas_comun}\"). Revisa que en el campo de Vigentes de \"Archivos de "
+                    "entrada\" no esté, por error, el listado de Vencidos, Trámite de Renovación u "
+                    "Otros Estados: los 4 archivos de INVIMA tienen nombres muy parecidos.",
+                    tipo="error",
+                    etiqueta="Qué revisar",
                 )
-                tiene_vigente = estado_registro_col.str.casefold().eq("vigente").any()
-                if not estado_registro_col.empty and not tiene_vigente:
-                    valor_mas_comun = estado_registro_col.value_counts().idxmax()
+            else:
+                _mensaje_breve(
+                    "0 filas vigentes en el catálogo INVIMA: no hay nada que procesar.",
+                    "El filtro es ESTADO REGISTRO=Vigente + ESTADO CUM=Activo, y no quedó nada. "
+                    "Esto no es un resultado normal. Si veniste de la API, confirma que la "
+                    "sincronización realmente trajo filas (no debería llegar hasta acá si falló); "
+                    "si veniste del Excel de respaldo, confirma que es el listado correcto y no "
+                    "está vacío o con la hoja equivocada.",
+                    tipo="error",
+                    etiqueta="Qué revisar",
+                )
+            st.stop()
+
+        candidatos = int((resultado["accion"] == "candidato").sum())
+        ya_existe = int((resultado["accion"] == "ya_existe").sum())
+        cuarentena = int((resultado["accion"] == "cuarentena").sum())
+
+        if vista_resumen == "Resumen":
+            _seccion_resumen_metricas(resultado, total, candidatos, ya_existe, cuarentena)
+        elif vista_resumen == "Cómo se resolvió":
+            _seccion_resumen_metodos(resultado, total)
+        else:
+            _seccion_resumen_detalle_registro(df_invima)
+
+    if seccion == "Casos que requieren decisión":
+        df_cuarentena = resultado[resultado["accion"] == "cuarentena"]
+        st.metric(
+            "Casos pendientes de decisión",
+            f"{len(df_cuarentena):,}",
+            help="Son los medicamentos que el proceso apartó porque necesitan una decisión "
+            "humana antes de crear o descartar un registro.",
+        )
+        # Unica sub-vista desde 2026-08-26: "Explicar con IA" se quito a
+        # pedido del usuario ("de momento no se requiere"). Su logica
+        # (_cliente_ia_disponible, _explicar_motivo_cacheado, ClienteExplicacionIA.explicar_fila)
+        # sigue en el archivo sin usarse desde aqui, por si se reactiva.
+        _mensaje_breve(
+            "Compara **_texto_invima** (dato oficial) contra **_sugerencia** (coincidencia "
+            "aproximada, nunca confirmada).",
+            "**_texto_invima** es el dato crudo tal como lo reporta el listado oficial de "
+            "INVIMA para ese medicamento. **_sugerencia** es una coincidencia aproximada de "
+            "nuestro catálogo interno — sirve para decidir más rápido si el medicamento ya "
+            "existe en Gemma Net con otro nombre, pero no está confirmada.",
+            etiqueta="Qué significa cada columna",
+        )
+        _tabla_filtrable(
+            df_cuarentena,
+            columnas_filtro=["motivo", "unidad_metodo", "marca_metodo"],
+            key_prefix="cuarentena",
+            columnas_mostrar=[
+                c
+                for c in [
+                    "CODIGO_INTERNO",
+                    "DESCRIPCION",
+                    "EXPEDIENTE",
+                    "unidad_metodo",
+                    "unidad_texto_invima",
+                    "unidad_sugerencia",
+                    "marca_metodo",
+                    "marca_texto_invima",
+                    "marca_sugerencia",
+                    "motivo",
+                ]
+                if c in df_cuarentena.columns
+            ],
+            columna_categoria="motivo",
+        )
+        _descarga_diferida(
+            "Preparar reporte de revisión (.xlsx, una hoja por acción)",
+            lambda: _bytes_reporte_cruce(resultado),
+            "reporte_cruce_invima.xlsx",
+            "descarga_cruce",
+        )
+
+    if seccion == "Cargue a Gemma Net":
+        candidatos = int((resultado["accion"] == "candidato").sum())
+        st.metric(
+            "Candidatos recibidos para cargue",
+            f"{candidatos:,}",
+            help="Son los medicamentos nuevos que pasaron el cruce inicial y ahora se revisan "
+            "contra la estructura de cargue antes de preparar el Excel final.",
+        )
+        _mensaje_breve(
+            "Estructura de 37 campos, confirmada dos veces.",
+            # `tb_medicamento`, singular. Confirmado el 2026-08-20 consultando el
+            # catalogo de la base real (129 MB, esquema administrativo). Se llego a
+            # cambiar a plural por un dato de memoria y estaba mal: el nombre
+            # original, deducido de la hoja NO POS del workbook, era correcto.
+            "Verificada contra el archivo real que exporta Gemma Net y contra el encabezado de "
+            "carga que confirmaste. Tabla destino: `administrativo.tb_medicamento`.",
+            etiqueta="De dónde sale la estructura",
+        )
+
+        if archivo_malla_referencia is None:
+            _mensaje_breve(
+                "Falta la **Estructura Cargue Medicamentos (.xlsx)** — sin ella no se genera el "
+                "Excel de cargue.",
+                "Súbela en \"Archivos de entrada\". Es lo que permite clasificar POS y Modelo de "
+                "Servicio por expediente y completar los demás campos de regla de negocio.",
+                tipo="warning",
+                etiqueta="Para qué se usa",
+            )
+        else:
+            try:
+                malla_referencia = _derivado(
+                    "derivado_malla_referencia",
+                    lambda: _leer_malla_referencia_cacheada(archivo_malla_referencia),
+                )
+            except _ERRORES_ARCHIVO_CORRUPTO as exc:
+                _alerta_fallo_lectura(
+                    "La Estructura Cargue Medicamentos llegó dañada",
+                    "El archivo llegó incompleto o dañado. Vuelve a intentar la subida.",
+                    exc,
+                )
+                st.stop()
+            reglas = _derivado(
+                "derivado_reglas", lambda: _derivar_reglas_negocio_cacheada(malla_referencia)
+            )
+
+            if reglas.advertencias:
+                with st.expander(
+                    f"⚠ {len(reglas.advertencias)} campo(s) con inconsistencias en la malla de referencia",
+                    expanded=True,
+                ):
+                    for campo, advertencia in reglas.advertencias.items():
+                        st.write(f"**{campo}**: {advertencia}")
+
+            evaluados = _derivado(
+                "derivado_evaluados", lambda: _evaluar_candidatos_cargue_cacheado(resultado, reglas)
+            )
+            listos = evaluados[evaluados["listo_para_cargue"]]
+            pendientes = evaluados[~evaluados["listo_para_cargue"]]
+
+            if vista_cargue == "Auditoría de estructura":
+                st.write("**Archivo de auditoría — Estructura de Cargue**")
+                _mensaje_breve(
+                    "Reemplaza la copia manual de \"plantilla\" a \"plantilla (2)\" del SOP original.",
+                    "Trae TODOS los candidatos (listos y pendientes) con CÓDIGO_INTERNO y "
+                    "DESCRIPCIÓN ya concatenados, su ESTADO, y en CÓMO VERIFICAR los pasos "
+                    "exactos para confirmar cada pendiente contra los archivos oficiales de "
+                    "Pijao Salud a mano.",
+                    etiqueta="Qué trae el archivo",
+                )
+                df_estructura = _derivado(
+                    "derivado_df_estructura",
+                    lambda: _armar_estructura_cargue_cacheada(resultado, reglas),
+                )
+                _descarga_diferida(
+                    "Preparar Estructura de Cargue (auditoría)",
+                    lambda: _bytes_estructura_cargue(df_estructura),
+                    f"{nombre_periodo()}.xlsx",
+                    "descarga_estructura",
+                )
+
+                if len(pendientes) > 0:
+                    with st.expander(
+                        f"🔎 {len(pendientes):,} candidato(s) pendientes de clasificación manual — por qué no están en el Excel",
+                        expanded=(len(listos) == 0),
+                    ):
+                        # Sin _mensaje_breve: ya estamos DENTRO de un expander y
+                        # streamlit no permite anidarlos. Aqui el texto se acorta en
+                        # sitio; el usuario ya hizo un clic para llegar hasta aca.
+                        st.write(
+                            "**Lista de tareas pendientes para Autorizaciones.** Cada fila es un "
+                            "medicamento que no se pudo crear solo porque falta confirmar marca, "
+                            "unidad de medida, POS o modelo de servicio. Nunca se adivina."
+                        )
+                        st.caption(
+                            "**CAMPOS_CON_ERROR**: cuáles de esos 4 faltan. **% COMPLETITUD**: "
+                            "cuántos ya están confirmados. **DETALLE**: el motivo y una "
+                            "sugerencia aproximada, que siempre hay que verificar en Gemma Net."
+                        )
+                        pendientes_mostrar = pendientes[
+                            [
+                                "CODIGO_INTERNO",
+                                "DESCRIPCION",
+                                "EXPEDIENTE",
+                                "campos_con_error",
+                                "porcentaje_completitud",
+                                "motivo_pendiente",
+                            ]
+                        ].rename(
+                            columns={
+                                "campos_con_error": "CAMPOS_CON_ERROR",
+                                "porcentaje_completitud": "% COMPLETITUD",
+                                "motivo_pendiente": "DETALLE",
+                            }
+                        )
+                        _tabla_filtrable(
+                            pendientes_mostrar,
+                            columnas_filtro=["DETALLE"],
+                            key_prefix="pendientes",
+                            columnas_mostrar=list(pendientes_mostrar.columns),
+                            columna_categoria="DETALLE",
+                            columna_campo="CAMPOS_CON_ERROR",
+                            opciones_campo=CAMPOS_VERIFICABLES_CARGUE,
+                            campos_iniciales=CAMPOS_VERIFICABLES_CARGUE,
+                            clave_campo="pendientes_campo_error",
+                        )
+            else:
+                st.write("**Excel de cargue final — solo lo listo para subir**")
+                _mensaje_breve(
+                    f"**{len(listos):,} de {candidatos:,} candidatos listos para cargue.**",
+                    "Listo significa: marca y unidad resueltas contra catálogo, POS y Modelo de "
+                    "Servicio confirmados por expediente. Ningún campo adivinado.",
+                    tipo="write",
+                    etiqueta="Qué quiere decir \"listo\"",
+                )
+
+                if len(listos) == 0:
                     _mensaje_breve(
-                        "0 filas vigentes: parece que se subió el archivo equivocado de INVIMA.",
-                        "El archivo/API usado no trae **ningún** registro con ESTADO "
-                        f"REGISTRO=\"Vigente\" (el valor más común encontrado fue "
-                        f"\"{valor_mas_comun}\"). Revisa que en el campo de Vigentes de \"Archivos de "
-                        "entrada\" no esté, por error, el listado de Vencidos, Trámite de Renovación u "
-                        "Otros Estados: los 4 archivos de INVIMA tienen nombres muy parecidos.",
-                        tipo="error",
-                        etiqueta="Qué revisar",
+                        "0 filas en el Excel de cargue. No es un error.",
+                        "Ningún candidato de este lote tiene POS y Modelo de Servicio confirmados "
+                        "con certeza todavía — revisa la sub-vista «Auditoría de estructura».",
+                        tipo="info",
+                        etiqueta="Por qué quedó vacío",
                     )
                 else:
-                    _mensaje_breve(
-                        "0 filas vigentes en el catálogo INVIMA: no hay nada que procesar.",
-                        "El filtro es ESTADO REGISTRO=Vigente + ESTADO CUM=Activo, y no quedó nada. "
-                        "Esto no es un resultado normal. Si veniste de la API, confirma que la "
-                        "sincronización realmente trajo filas (no debería llegar hasta acá si falló); "
-                        "si veniste del Excel de respaldo, confirma que es el listado correcto y no "
-                        "está vacío o con la hoja equivocada.",
-                        tipo="error",
-                        etiqueta="Qué revisar",
+                    df_cargue = _derivado(
+                        "derivado_df_cargue",
+                        lambda: _preparar_filas_cargue_cacheada(resultado, reglas),
                     )
-                st.stop()
+                    _tabla_filtrable(
+                        df_cargue,
+                        columnas_filtro=["POS", "FORMA_FARMACEUTICA", "CLASIFICADO", "CODIGO_NIVEL_SERVICIO"],
+                        key_prefix="cargue_final",
+                        columna_categoria="POS",
+                    )
 
-            candidatos = int((resultado["accion"] == "candidato").sum())
-            ya_existe = int((resultado["accion"] == "ya_existe").sum())
-            cuarentena = int((resultado["accion"] == "cuarentena").sum())
+                    buffer_excel = _bytes_cargue_final(df_cargue)
+                    st.download_button(
+                        "Descargar Excel de cargue",
+                        data=buffer_excel,
+                        file_name="cargue_gemma_net.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
 
-            if vista_resumen == "Resumen":
-                _seccion_resumen_metricas(resultado, total, candidatos, ya_existe, cuarentena)
-            elif vista_resumen == "Cómo se resolvió":
-                _seccion_resumen_metodos(resultado, total)
-            else:
-                _seccion_resumen_detalle_registro(df_invima)
+    if seccion == "Por qué no se cargó":
+        # Vista por CAMPO, no por flujo -- pedido explicito del usuario
+        # (2026-08-20): "una vista en la que podamos enfocarnos en los
+        # medicamentos que no se cargaron y por que [...] los que tienen
+        # diferencias de descripcion, que no tienen marca, que no tienen
+        # unidad y asi con cada uno". Las otras pestañas responden "en que
+        # estado quedo la corrida"; esta responde "quien falla en ESTE campo",
+        # que es la pregunta con la que se reparte el trabajo manual.
+        _mensaje_breve(
+            "Elige un campo y ve exactamente qué medicamentos fallan en él.",
+            "Dos orígenes distintos: los **candidatos nuevos** que no se pudieron cargar por "
+            "un campo sin confirmar, y los **ya cargados** cuyo dato no coincide con INVIMA. "
+            "Son problemas diferentes y se resuelven en sitios diferentes, por eso no se "
+            "mezclan en una sola tabla.",
+            etiqueta="Qué muestra esta vista",
+        )
 
-        if seccion == "Casos que requieren decisión":
-            df_cuarentena = resultado[resultado["accion"] == "cuarentena"]
-            st.metric(
-                "Casos pendientes de decisión",
-                f"{len(df_cuarentena):,}",
-                help="Son los medicamentos que el proceso apartó porque necesitan una decisión "
-                "humana antes de crear o descartar un registro.",
-            )
-            # Unica sub-vista desde 2026-08-26: "Explicar con IA" se quito a
-            # pedido del usuario ("de momento no se requiere"). Su logica
-            # (_cliente_ia_disponible, _explicar_motivo_cacheado, ClienteExplicacionIA.explicar_fila)
-            # sigue en el archivo sin usarse desde aqui, por si se reactiva.
-            _mensaje_breve(
-                "Compara **_texto_invima** (dato oficial) contra **_sugerencia** (coincidencia "
-                "aproximada, nunca confirmada).",
-                "**_texto_invima** es el dato crudo tal como lo reporta el listado oficial de "
-                "INVIMA para ese medicamento. **_sugerencia** es una coincidencia aproximada de "
-                "nuestro catálogo interno — sirve para decidir más rápido si el medicamento ya "
-                "existe en Gemma Net con otro nombre, pero no está confirmada.",
-                etiqueta="Qué significa cada columna",
-            )
-            _tabla_filtrable(
-                df_cuarentena,
-                columnas_filtro=["motivo", "unidad_metodo", "marca_metodo"],
-                key_prefix="cuarentena",
-                columnas_mostrar=[
-                    c
-                    for c in [
-                        "CODIGO_INTERNO",
-                        "DESCRIPCION",
-                        "EXPEDIENTE",
-                        "unidad_metodo",
-                        "unidad_texto_invima",
-                        "unidad_sugerencia",
-                        "marca_metodo",
-                        "marca_texto_invima",
-                        "marca_sugerencia",
-                        "motivo",
-                    ]
-                    if c in df_cuarentena.columns
-                ],
-                columna_categoria="motivo",
-            )
-            _descarga_diferida(
-                "Preparar reporte de revisión (.xlsx, una hoja por acción)",
-                lambda: _bytes_reporte_cruce(resultado),
-                "reporte_cruce_invima.xlsx",
-                "descarga_cruce",
-            )
-
-        if seccion == "Cargue a Gemma Net":
-            candidatos = int((resultado["accion"] == "candidato").sum())
-            st.metric(
-                "Candidatos recibidos para cargue",
-                f"{candidatos:,}",
-                help="Son los medicamentos nuevos que pasaron el cruce inicial y ahora se revisan "
-                "contra la estructura de cargue antes de preparar el Excel final.",
-            )
-            _mensaje_breve(
-                "Estructura de 37 campos, confirmada dos veces.",
-                # `tb_medicamento`, singular. Confirmado el 2026-08-20 consultando el
-                # catalogo de la base real (129 MB, esquema administrativo). Se llego a
-                # cambiar a plural por un dato de memoria y estaba mal: el nombre
-                # original, deducido de la hoja NO POS del workbook, era correcto.
-                "Verificada contra el archivo real que exporta Gemma Net y contra el encabezado de "
-                "carga que confirmaste. Tabla destino: `administrativo.tb_medicamento`.",
-                etiqueta="De dónde sale la estructura",
-            )
-
+        if origen.startswith("Candidatos"):
             if archivo_malla_referencia is None:
                 _mensaje_breve(
-                    "Falta la **Estructura Cargue Medicamentos (.xlsx)** — sin ella no se genera el "
-                    "Excel de cargue.",
-                    "Súbela en \"Archivos de entrada\". Es lo que permite clasificar POS y Modelo de "
-                    "Servicio por expediente y completar los demás campos de regla de negocio.",
+                    "Falta la **Estructura Cargue Medicamentos (.xlsx)** para saber por qué "
+                    "quedó pendiente cada candidato.",
+                    "Súbela en \"Archivos de entrada\". Sin ella se sabe que un candidato no "
+                    "está listo, pero no qué campo puntual se lo impide.",
                     tipo="warning",
-                    etiqueta="Para qué se usa",
+                    etiqueta="Por qué hace falta",
                 )
             else:
                 try:
-                    malla_referencia = _derivado(
+                    # Mismas claves derivadas que usa "Cargue a Gemma Net": si
+                    # esa seccion ya corrio en esta corrida, esto no vuelve a
+                    # leer los 26 MB del archivo ni a derivar las reglas de
+                    # nuevo -- es el mismo `archivo_malla_referencia`.
+                    malla_referencia_diag = _derivado(
                         "derivado_malla_referencia",
                         lambda: _leer_malla_referencia_cacheada(archivo_malla_referencia),
+                    )
+                    reglas_diag = _derivado(
+                        "derivado_reglas",
+                        lambda: _derivar_reglas_negocio_cacheada(malla_referencia_diag),
                     )
                 except _ERRORES_ARCHIVO_CORRUPTO as exc:
                     _alerta_fallo_lectura(
                         "La Estructura Cargue Medicamentos llegó dañada",
-                        "El archivo llegó incompleto o dañado. Vuelve a intentar la subida.",
+                        "Sin ella no se puede saber qué campo deja pendiente a cada candidato.",
                         exc,
                     )
                     st.stop()
-                reglas = _derivado(
-                    "derivado_reglas", lambda: _derivar_reglas_negocio_cacheada(malla_referencia)
+                evaluados_diag = _derivado(
+                    "derivado_evaluados",
+                    lambda: _evaluar_candidatos_cargue_cacheado(resultado, reglas_diag),
+                )
+                pendientes_diag = evaluados_diag[~evaluados_diag["listo_para_cargue"]]
+                _diagnostico_por_campo(
+                    pendientes_diag,
+                    columna="campos_con_error",
+                    campos=CAMPOS_VERIFICABLES_CARGUE,
+                    key_prefix="diag_cargue",
+                    columnas_extra=["motivo_pendiente", "porcentaje_completitud"],
+                    nombre_archivo="pendientes_por_campo.xlsx",
+                    total=len(evaluados_diag),
+                    leyenda="candidatos evaluados",
+                )
+        elif origen.startswith("Novedades"):
+            auditoria_vig = st.session_state.get("auditoria_coherencia")
+            if auditoria_vig is None or "NOVEDAD_VIGENCIA_INVIMA" not in auditoria_vig.columns:
+                _mensaje_breve(
+                    "Todavía no has corrido la auditoría de coherencia.",
+                    "Ve a la pestaña \"Auditoría de coherencia\" y ejecútala; las novedades de "
+                    "vigencia aparecen aquí al terminar.",
+                    tipo="info",
+                    etiqueta="Cómo obtenerlas",
+                )
+            else:
+                # "coherente" y "no_verificable" no piden nada de nadie: esta
+                # vista es para repartir trabajo, no para listar el universo.
+                accionables = [
+                    "riesgo_activo_sin_vigencia",
+                    "registro_vencido_en_invima",
+                    "revisar_reactivacion",
+                    "actualizar_fecha_fin",
+                ]
+                con_novedad = auditoria_vig[
+                    auditoria_vig["NOVEDAD_VIGENCIA_INVIMA"].isin(accionables)
+                ]
+                _diagnostico_por_campo(
+                    con_novedad,
+                    columna="NOVEDAD_VIGENCIA_INVIMA",
+                    campos=accionables,
+                    key_prefix="diag_vigencia",
+                    columnas_extra=["DETALLE_VIGENCIA_INVIMA", "ESTADO_COHERENCIA"],
+                    nombre_archivo="novedades_vigencia_invima.xlsx",
+                    total=len(auditoria_vig),
+                    leyenda="medicamentos auditados",
+                )
+        else:
+            auditoria_diag = st.session_state.get("auditoria_coherencia")
+            if auditoria_diag is None:
+                _mensaje_breve(
+                    "Todavía no has corrido la auditoría de coherencia.",
+                    "Ve a la pestaña \"Auditoría de coherencia\" y ejecútala; al terminar, "
+                    "sus resultados aparecen aquí desglosados por campo.",
+                    tipo="info",
+                    etiqueta="Cómo obtenerlos",
+                )
+            else:
+                con_dif = auditoria_diag[
+                    auditoria_diag["CAMPOS_CON_DIFERENCIA"].fillna("").astype(str).str.strip() != ""
+                ]
+                _diagnostico_por_campo(
+                    con_dif,
+                    columna="CAMPOS_CON_DIFERENCIA",
+                    campos=CAMPOS_COMPARADOS_COHERENCIA,
+                    key_prefix="diag_coherencia",
+                    columnas_extra=["ESTADO_COHERENCIA", "PORCENTAJE_CALIDAD"],
+                    nombre_archivo="diferencias_por_campo.xlsx",
+                    total=len(auditoria_diag),
+                    leyenda="medicamentos auditados",
                 )
 
-                if reglas.advertencias:
-                    with st.expander(
-                        f"⚠ {len(reglas.advertencias)} campo(s) con inconsistencias en la malla de referencia",
-                        expanded=True,
-                    ):
-                        for campo, advertencia in reglas.advertencias.items():
-                            st.write(f"**{campo}**: {advertencia}")
-
-                evaluados = _derivado(
-                    "derivado_evaluados", lambda: _evaluar_candidatos_cargue_cacheado(resultado, reglas)
-                )
-                listos = evaluados[evaluados["listo_para_cargue"]]
-                pendientes = evaluados[~evaluados["listo_para_cargue"]]
-
-                if vista_cargue == "Auditoría de estructura":
-                    st.write("**Archivo de auditoría — Estructura de Cargue**")
-                    _mensaje_breve(
-                        "Reemplaza la copia manual de \"plantilla\" a \"plantilla (2)\" del SOP original.",
-                        "Trae TODOS los candidatos (listos y pendientes) con CÓDIGO_INTERNO y "
-                        "DESCRIPCIÓN ya concatenados, su ESTADO, y en CÓMO VERIFICAR los pasos "
-                        "exactos para confirmar cada pendiente contra los archivos oficiales de "
-                        "Pijao Salud a mano.",
-                        etiqueta="Qué trae el archivo",
-                    )
-                    df_estructura = _derivado(
-                        "derivado_df_estructura",
-                        lambda: _armar_estructura_cargue_cacheada(resultado, reglas),
-                    )
-                    _descarga_diferida(
-                        "Preparar Estructura de Cargue (auditoría)",
-                        lambda: _bytes_estructura_cargue(df_estructura),
-                        f"{nombre_periodo()}.xlsx",
-                        "descarga_estructura",
-                    )
-
-                    if len(pendientes) > 0:
-                        with st.expander(
-                            f"🔎 {len(pendientes):,} candidato(s) pendientes de clasificación manual — por qué no están en el Excel",
-                            expanded=(len(listos) == 0),
-                        ):
-                            # Sin _mensaje_breve: ya estamos DENTRO de un expander y
-                            # streamlit no permite anidarlos. Aqui el texto se acorta en
-                            # sitio; el usuario ya hizo un clic para llegar hasta aca.
-                            st.write(
-                                "**Lista de tareas pendientes para Autorizaciones.** Cada fila es un "
-                                "medicamento que no se pudo crear solo porque falta confirmar marca, "
-                                "unidad de medida, POS o modelo de servicio. Nunca se adivina."
-                            )
-                            st.caption(
-                                "**CAMPOS_CON_ERROR**: cuáles de esos 4 faltan. **% COMPLETITUD**: "
-                                "cuántos ya están confirmados. **DETALLE**: el motivo y una "
-                                "sugerencia aproximada, que siempre hay que verificar en Gemma Net."
-                            )
-                            pendientes_mostrar = pendientes[
-                                [
-                                    "CODIGO_INTERNO",
-                                    "DESCRIPCION",
-                                    "EXPEDIENTE",
-                                    "campos_con_error",
-                                    "porcentaje_completitud",
-                                    "motivo_pendiente",
-                                ]
-                            ].rename(
-                                columns={
-                                    "campos_con_error": "CAMPOS_CON_ERROR",
-                                    "porcentaje_completitud": "% COMPLETITUD",
-                                    "motivo_pendiente": "DETALLE",
-                                }
-                            )
-                            _tabla_filtrable(
-                                pendientes_mostrar,
-                                columnas_filtro=["DETALLE"],
-                                key_prefix="pendientes",
-                                columnas_mostrar=list(pendientes_mostrar.columns),
-                                columna_categoria="DETALLE",
-                                columna_campo="CAMPOS_CON_ERROR",
-                                opciones_campo=CAMPOS_VERIFICABLES_CARGUE,
-                                campos_iniciales=CAMPOS_VERIFICABLES_CARGUE,
-                                clave_campo="pendientes_campo_error",
-                            )
-                else:
-                    st.write("**Excel de cargue final — solo lo listo para subir**")
-                    _mensaje_breve(
-                        f"**{len(listos):,} de {candidatos:,} candidatos listos para cargue.**",
-                        "Listo significa: marca y unidad resueltas contra catálogo, POS y Modelo de "
-                        "Servicio confirmados por expediente. Ningún campo adivinado.",
-                        tipo="write",
-                        etiqueta="Qué quiere decir \"listo\"",
-                    )
-
-                    if len(listos) == 0:
-                        _mensaje_breve(
-                            "0 filas en el Excel de cargue. No es un error.",
-                            "Ningún candidato de este lote tiene POS y Modelo de Servicio confirmados "
-                            "con certeza todavía — revisa la sub-vista «Auditoría de estructura».",
-                            tipo="info",
-                            etiqueta="Por qué quedó vacío",
+    if seccion == "Consultar INVIMA":
+        _mensaje_breve(
+            "Consulta puntual contra INVIMA, para verificar un caso a mano.",
+            "Nunca se usa en el proceso masivo. El resultado no se guarda en ningún registro de "
+            "medicamento: solo se muestra en pantalla.",
+            etiqueta="Alcance de esta consulta",
+        )
+        estado_token_consulta = socrata.estado_token()
+        st.caption(_indicador_token(estado_token_consulta), help=_ayuda_token(estado_token_consulta))
+        col_exp, col_cons = st.columns(2)
+        expediente_consulta = col_exp.text_input("EXPEDIENTE", placeholder="20227202")
+        consecutivo_consulta = col_cons.text_input("CONSECUTIVO", placeholder="1")
+        if st.button("Consultar contra INVIMA"):
+            expediente_limpio = expediente_consulta.strip()
+            consecutivo_limpio = consecutivo_consulta.strip()
+            if not expediente_limpio or not consecutivo_limpio:
+                st.warning("Ingresa tanto el EXPEDIENTE como el CONSECUTIVO antes de consultar.")
+            elif not expediente_limpio.isdigit():
+                st.warning(f"EXPEDIENTE debe contener solo números — \"{expediente_limpio}\" no es válido.")
+            elif not consecutivo_limpio.isdigit():
+                st.warning(f"CONSECUTIVO debe contener solo números — \"{consecutivo_limpio}\" no es válido.")
+            else:
+                codigo_consulta = f"{expediente_limpio}-{consecutivo_limpio}"
+                with st.spinner("Consultando..."):
+                    # Chequeo previo, cacheado (ttl=180s, ver _hay_datos_invima_api):
+                    # si YA sabemos que el dataset completo de INVIMA esta vacio
+                    # ahora mismo (el outage real que venimos monitoreando), no
+                    # tiene sentido gastar dos llamadas de red por cada consulta
+                    # puntual (la consulta especifica + la verificacion de
+                    # "esta vacio de verdad o es solo este codigo" que hace
+                    # consultar_cum internamente) -- se corta directo con el
+                    # mismo resultado, mucho mas rapido y sin doble round-trip.
+                    if not _hay_datos_invima_api():
+                        resultado_cum = ResultadoValidacionCUM(
+                            codigo_interno=codigo_consulta,
+                            estado=EstadoValidacionCUM.SERVICIO_NO_DISPONIBLE,
+                            mensaje=(
+                                "Este código no se pudo confirmar contra el servicio en línea de "
+                                "INVIMA porque ahora mismo no está entregando información. No "
+                                "quiere decir que el medicamento no exista."
+                            ),
+                            fecha_consulta=dt.datetime.now(),
                         )
                     else:
-                        df_cargue = _derivado(
-                            "derivado_df_cargue",
-                            lambda: _preparar_filas_cargue_cacheada(resultado, reglas),
-                        )
-                        _tabla_filtrable(
-                            df_cargue,
-                            columnas_filtro=["POS", "FORMA_FARMACEUTICA", "CLASIFICADO", "CODIGO_NIVEL_SERVICIO"],
-                            key_prefix="cargue_final",
-                            columna_categoria="POS",
-                        )
+                        resultado_cum = consultar_cum(codigo_consulta)
+                tipo_mensaje, texto_estado = _MENSAJE_ESTADO_CUM[resultado_cum.estado]
+                getattr(st, tipo_mensaje)(f"**{texto_estado}** — {resultado_cum.mensaje}")
+                st.caption(f"Consultado: {resultado_cum.fecha_consulta.strftime('%Y-%m-%d %H:%M:%S')}")
+                # Sin API pero CON respaldo cargado, el archivo si puede responder:
+                # quedarse en "servicio no disponible" teniendo el dato a mano es
+                # dejar al usuario sin salida (ver _consultar_cum_en_respaldo).
+                if (
+                    resultado_cum.estado
+                    in (
+                        EstadoValidacionCUM.SERVICIO_NO_DISPONIBLE,
+                        EstadoValidacionCUM.API_NO_CONFIGURADA,
+                    )
+                    and archivo_invima is not None
+                ):
+                    _consultar_cum_en_respaldo(archivo_invima, codigo_consulta)
+                # Siempre, no solo cuando la API falla: "¿es valido en INVIMA?" y
+                # "¿ya esta cargado en Gemma Net?" son preguntas distintas y el
+                # usuario suele necesitar las dos a la vez para decidir.
+                if archivo_gemma_net is not None:
+                    _consultar_cum_en_gemanet(archivo_gemma_net, codigo_consulta)
+                if resultado_cum.datos_oficiales:
+                    st.json(resultado_cum.datos_oficiales)
 
-                        buffer_excel = _bytes_cargue_final(df_cargue)
-                        st.download_button(
-                            "Descargar Excel de cargue",
-                            data=buffer_excel,
-                            file_name="cargue_gemma_net.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        )
-
-        if seccion == "Por qué no se cargó":
-            # Vista por CAMPO, no por flujo -- pedido explicito del usuario
-            # (2026-08-20): "una vista en la que podamos enfocarnos en los
-            # medicamentos que no se cargaron y por que [...] los que tienen
-            # diferencias de descripcion, que no tienen marca, que no tienen
-            # unidad y asi con cada uno". Las otras pestañas responden "en que
-            # estado quedo la corrida"; esta responde "quien falla en ESTE campo",
-            # que es la pregunta con la que se reparte el trabajo manual.
-            _mensaje_breve(
-                "Elige un campo y ve exactamente qué medicamentos fallan en él.",
-                "Dos orígenes distintos: los **candidatos nuevos** que no se pudieron cargar por "
-                "un campo sin confirmar, y los **ya cargados** cuyo dato no coincide con INVIMA. "
-                "Son problemas diferentes y se resuelven en sitios diferentes, por eso no se "
-                "mezclan en una sola tabla.",
-                etiqueta="Qué muestra esta vista",
-            )
-
-            if origen.startswith("Candidatos"):
-                if archivo_malla_referencia is None:
-                    _mensaje_breve(
-                        "Falta la **Estructura Cargue Medicamentos (.xlsx)** para saber por qué "
-                        "quedó pendiente cada candidato.",
-                        "Súbela en \"Archivos de entrada\". Sin ella se sabe que un candidato no "
-                        "está listo, pero no qué campo puntual se lo impide.",
-                        tipo="warning",
-                        etiqueta="Por qué hace falta",
-                    )
-                else:
-                    try:
-                        # Mismas claves derivadas que usa "Cargue a Gemma Net": si
-                        # esa seccion ya corrio en esta corrida, esto no vuelve a
-                        # leer los 26 MB del archivo ni a derivar las reglas de
-                        # nuevo -- es el mismo `archivo_malla_referencia`.
-                        malla_referencia_diag = _derivado(
-                            "derivado_malla_referencia",
-                            lambda: _leer_malla_referencia_cacheada(archivo_malla_referencia),
-                        )
-                        reglas_diag = _derivado(
-                            "derivado_reglas",
-                            lambda: _derivar_reglas_negocio_cacheada(malla_referencia_diag),
-                        )
-                    except _ERRORES_ARCHIVO_CORRUPTO as exc:
-                        _alerta_fallo_lectura(
-                            "La Estructura Cargue Medicamentos llegó dañada",
-                            "Sin ella no se puede saber qué campo deja pendiente a cada candidato.",
-                            exc,
-                        )
-                        st.stop()
-                    evaluados_diag = _derivado(
-                        "derivado_evaluados",
-                        lambda: _evaluar_candidatos_cargue_cacheado(resultado, reglas_diag),
-                    )
-                    pendientes_diag = evaluados_diag[~evaluados_diag["listo_para_cargue"]]
-                    _diagnostico_por_campo(
-                        pendientes_diag,
-                        columna="campos_con_error",
-                        campos=CAMPOS_VERIFICABLES_CARGUE,
-                        key_prefix="diag_cargue",
-                        columnas_extra=["motivo_pendiente", "porcentaje_completitud"],
-                        nombre_archivo="pendientes_por_campo.xlsx",
-                        total=len(evaluados_diag),
-                        leyenda="candidatos evaluados",
-                    )
-            elif origen.startswith("Novedades"):
-                auditoria_vig = st.session_state.get("auditoria_coherencia")
-                if auditoria_vig is None or "NOVEDAD_VIGENCIA_INVIMA" not in auditoria_vig.columns:
-                    _mensaje_breve(
-                        "Todavía no has corrido la auditoría de coherencia.",
-                        "Ve a la pestaña \"Auditoría de coherencia\" y ejecútala; las novedades de "
-                        "vigencia aparecen aquí al terminar.",
-                        tipo="info",
-                        etiqueta="Cómo obtenerlas",
-                    )
-                else:
-                    # "coherente" y "no_verificable" no piden nada de nadie: esta
-                    # vista es para repartir trabajo, no para listar el universo.
-                    accionables = [
-                        "riesgo_activo_sin_vigencia",
-                        "registro_vencido_en_invima",
-                        "revisar_reactivacion",
-                        "actualizar_fecha_fin",
-                    ]
-                    con_novedad = auditoria_vig[
-                        auditoria_vig["NOVEDAD_VIGENCIA_INVIMA"].isin(accionables)
-                    ]
-                    _diagnostico_por_campo(
-                        con_novedad,
-                        columna="NOVEDAD_VIGENCIA_INVIMA",
-                        campos=accionables,
-                        key_prefix="diag_vigencia",
-                        columnas_extra=["DETALLE_VIGENCIA_INVIMA", "ESTADO_COHERENCIA"],
-                        nombre_archivo="novedades_vigencia_invima.xlsx",
-                        total=len(auditoria_vig),
-                        leyenda="medicamentos auditados",
-                    )
-            else:
-                auditoria_diag = st.session_state.get("auditoria_coherencia")
-                if auditoria_diag is None:
-                    _mensaje_breve(
-                        "Todavía no has corrido la auditoría de coherencia.",
-                        "Ve a la pestaña \"Auditoría de coherencia\" y ejecútala; al terminar, "
-                        "sus resultados aparecen aquí desglosados por campo.",
-                        tipo="info",
-                        etiqueta="Cómo obtenerlos",
-                    )
-                else:
-                    con_dif = auditoria_diag[
-                        auditoria_diag["CAMPOS_CON_DIFERENCIA"].fillna("").astype(str).str.strip() != ""
-                    ]
-                    _diagnostico_por_campo(
-                        con_dif,
-                        columna="CAMPOS_CON_DIFERENCIA",
-                        campos=CAMPOS_COMPARADOS_COHERENCIA,
-                        key_prefix="diag_coherencia",
-                        columnas_extra=["ESTADO_COHERENCIA", "PORCENTAJE_CALIDAD"],
-                        nombre_archivo="diferencias_por_campo.xlsx",
-                        total=len(auditoria_diag),
-                        leyenda="medicamentos auditados",
-                    )
-
-        if seccion == "Consultar INVIMA":
-            _mensaje_breve(
-                "Consulta puntual contra INVIMA, para verificar un caso a mano.",
-                "Nunca se usa en el proceso masivo. El resultado no se guarda en ningún registro de "
-                "medicamento: solo se muestra en pantalla.",
-                etiqueta="Alcance de esta consulta",
-            )
-            estado_token_consulta = socrata.estado_token()
-            st.caption(_indicador_token(estado_token_consulta), help=_ayuda_token(estado_token_consulta))
-            col_exp, col_cons = st.columns(2)
-            expediente_consulta = col_exp.text_input("EXPEDIENTE", placeholder="20227202")
-            consecutivo_consulta = col_cons.text_input("CONSECUTIVO", placeholder="1")
-            if st.button("Consultar contra INVIMA"):
-                expediente_limpio = expediente_consulta.strip()
-                consecutivo_limpio = consecutivo_consulta.strip()
-                if not expediente_limpio or not consecutivo_limpio:
-                    st.warning("Ingresa tanto el EXPEDIENTE como el CONSECUTIVO antes de consultar.")
-                elif not expediente_limpio.isdigit():
-                    st.warning(f"EXPEDIENTE debe contener solo números — \"{expediente_limpio}\" no es válido.")
-                elif not consecutivo_limpio.isdigit():
-                    st.warning(f"CONSECUTIVO debe contener solo números — \"{consecutivo_limpio}\" no es válido.")
-                else:
-                    codigo_consulta = f"{expediente_limpio}-{consecutivo_limpio}"
-                    with st.spinner("Consultando..."):
-                        # Chequeo previo, cacheado (ttl=180s, ver _hay_datos_invima_api):
-                        # si YA sabemos que el dataset completo de INVIMA esta vacio
-                        # ahora mismo (el outage real que venimos monitoreando), no
-                        # tiene sentido gastar dos llamadas de red por cada consulta
-                        # puntual (la consulta especifica + la verificacion de
-                        # "esta vacio de verdad o es solo este codigo" que hace
-                        # consultar_cum internamente) -- se corta directo con el
-                        # mismo resultado, mucho mas rapido y sin doble round-trip.
-                        if not _hay_datos_invima_api():
-                            resultado_cum = ResultadoValidacionCUM(
-                                codigo_interno=codigo_consulta,
-                                estado=EstadoValidacionCUM.SERVICIO_NO_DISPONIBLE,
-                                mensaje=(
-                                    "Este código no se pudo confirmar contra el servicio en línea de "
-                                    "INVIMA porque ahora mismo no está entregando información. No "
-                                    "quiere decir que el medicamento no exista."
-                                ),
-                                fecha_consulta=dt.datetime.now(),
-                            )
-                        else:
-                            resultado_cum = consultar_cum(codigo_consulta)
-                    tipo_mensaje, texto_estado = _MENSAJE_ESTADO_CUM[resultado_cum.estado]
-                    getattr(st, tipo_mensaje)(f"**{texto_estado}** — {resultado_cum.mensaje}")
-                    st.caption(f"Consultado: {resultado_cum.fecha_consulta.strftime('%Y-%m-%d %H:%M:%S')}")
-                    # Sin API pero CON respaldo cargado, el archivo si puede responder:
-                    # quedarse en "servicio no disponible" teniendo el dato a mano es
-                    # dejar al usuario sin salida (ver _consultar_cum_en_respaldo).
-                    if (
-                        resultado_cum.estado
-                        in (
-                            EstadoValidacionCUM.SERVICIO_NO_DISPONIBLE,
-                            EstadoValidacionCUM.API_NO_CONFIGURADA,
-                        )
-                        and archivo_invima is not None
-                    ):
-                        _consultar_cum_en_respaldo(archivo_invima, codigo_consulta)
-                    # Siempre, no solo cuando la API falla: "¿es valido en INVIMA?" y
-                    # "¿ya esta cargado en Gemma Net?" son preguntas distintas y el
-                    # usuario suele necesitar las dos a la vez para decidir.
-                    if archivo_gemma_net is not None:
-                        _consultar_cum_en_gemanet(archivo_gemma_net, codigo_consulta)
-                    if resultado_cum.datos_oficiales:
-                        st.json(resultado_cum.datos_oficiales)
-
-        if seccion == "Auditoría de coherencia":
-            _mensaje_breve(
-                "Revisa **todo** lo que ya está cargado en Gemma Net: compara campo a campo lo que "
-                "tiene contraparte en INVIMA, y localiza el resto en los cuatro listados oficiales.",
-                "**Son dos operaciones distintas y conviene no confundirlas.** Un medicamento solo "
-                "se puede *comparar* si INVIMA lo tiene en su listado vigente: ahí se contrastan "
-                "sus siete campos uno por uno. El resto no se compara con nada — de esos solo se "
-                "averigua **en cuál de los cuatro listados aparece** (vigentes, vencidos, otros "
-                "estados, en renovación), que es una pregunta distinta y con otra respuesta.\n\n"
-                "Por eso hay dos familias de resultados: «coinciden» y «con diferencias» hablan del "
-                "contenido del dato; «vencido», «otro estado», «en renovación» y «sin "
-                "correspondencia» hablan de dónde está el registro, sin haber mirado un solo campo.\n\n"
-                "Distinto de la bandeja de casos pendientes: esa es para medicamentos NUEVOS que "
-                "aún no existen. Aquí «con diferencias» significa que el medicamento SÍ existe y SÍ "
-                "se pudo emparejar — solo que algún campo quedó desactualizado y conviene "
-                "corregirlo. Corre sobre el lote completo, no por código individual.",
-                etiqueta="Qué compara exactamente, y qué no",
-            )
-            # Antes esto era un warning fijo, visible incluso antes de correr la
-            # auditoria. Un aviso de riesgo sobre cero medicamentos no es un
-            # hallazgo, es una explicacion -- y pintarlo en amarillo desde el
-            # arranque entrena a ignorar el color justo donde hace falta. Ahora la
-            # explicacion se muestra siempre en tono neutro y el color aparece
-            # solo cuando la corrida encontro casos que clasificar.
-            _auditoria_previa = st.session_state.get("auditoria_coherencia")
-            _sin_corresp_previos = (
-                int(
-                    (
-                        _auditoria_previa["ESTADO_COHERENCIA"]
-                        == EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value
-                    ).sum()
-                )
-                if _auditoria_previa is not None
-                else 0
-            )
-            _mensaje_breve(
+    if seccion == "Auditoría de coherencia":
+        _mensaje_breve(
+            "Revisa **todo** lo que ya está cargado en Gemma Net: compara campo a campo lo que "
+            "tiene contraparte en INVIMA, y localiza el resto en los cuatro listados oficiales.",
+            "**Son dos operaciones distintas y conviene no confundirlas.** Un medicamento solo "
+            "se puede *comparar* si INVIMA lo tiene en su listado vigente: ahí se contrastan "
+            "sus siete campos uno por uno. El resto no se compara con nada — de esos solo se "
+            "averigua **en cuál de los cuatro listados aparece** (vigentes, vencidos, otros "
+            "estados, en renovación), que es una pregunta distinta y con otra respuesta.\n\n"
+            "Por eso hay dos familias de resultados: «coinciden» y «con diferencias» hablan del "
+            "contenido del dato; «vencido», «otro estado», «en renovación» y «sin "
+            "correspondencia» hablan de dónde está el registro, sin haber mirado un solo campo.\n\n"
+            "Distinto de la bandeja de casos pendientes: esa es para medicamentos NUEVOS que "
+            "aún no existen. Aquí «con diferencias» significa que el medicamento SÍ existe y SÍ "
+            "se pudo emparejar — solo que algún campo quedó desactualizado y conviene "
+            "corregirlo. Corre sobre el lote completo, no por código individual.",
+            etiqueta="Qué compara exactamente, y qué no",
+        )
+        # Antes esto era un warning fijo, visible incluso antes de correr la
+        # auditoria. Un aviso de riesgo sobre cero medicamentos no es un
+        # hallazgo, es una explicacion -- y pintarlo en amarillo desde el
+        # arranque entrena a ignorar el color justo donde hace falta. Ahora la
+        # explicacion se muestra siempre en tono neutro y el color aparece
+        # solo cuando la corrida encontro casos que clasificar.
+        _auditoria_previa = st.session_state.get("auditoria_coherencia")
+        _sin_corresp_previos = (
+            int(
                 (
-                    f"**{_sin_corresp_previos:,} sin correspondencia en INVIMA.** Detrás de ese número "
-                    "hay cuatro situaciones distintas, y no se atienden igual."
-                    if _sin_corresp_previos
-                    else "\"Sin correspondencia\" no es un solo caso, son cuatro."
-                ),
-                "Un código que no aparece en el listado Vigente de INVIMA puede significar que el "
-                "registro sanitario **venció**, que está en **otro estado** "
-                "(Cancelado/Suspendido/Inactivo/etc.), que está en **trámite de renovación**, o que es "
-                "un **código legado** sin expediente INVIMA asociado. No se pueden tratar igual: no "
-                "nos podemos exponer a autorizar un medicamento que ya no está vigente.",
-                tipo="warning" if _sin_corresp_previos else "caption",
-                etiqueta="Los cuatro casos",
+                    _auditoria_previa["ESTADO_COHERENCIA"]
+                    == EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value
+                ).sum()
             )
-            # Los 3 auxiliares tambien salen de data/ si estan ahi: son justo los
-            # que nadie recuerda subir, y sin ellos "vencido" y "otro estado" se
-            # confunden con "codigo legado".
-            auxiliares_detectados = descubrir_todo() if usar_detectados else {}
-            archivo_invima_vencidos = _ruta_detectada(auxiliares_detectados, "invima_vencidos")
-            archivo_invima_otros_estados = _ruta_detectada(auxiliares_detectados, "invima_otros_estados")
-            archivo_invima_renovacion = _ruta_detectada(auxiliares_detectados, "invima_renovacion")
-            if archivo_invima_vencidos or archivo_invima_otros_estados or archivo_invima_renovacion:
-                hallados = [
-                    _ETIQUETA_ARCHIVO[k]
-                    for k in ("invima_vencidos", "invima_otros_estados", "invima_renovacion")
-                    if k in auxiliares_detectados
-                ]
-                st.caption("Detectados en `data/`: " + " · ".join(hallados))
-            elif not usar_api_invima:
-                _mensaje_breve(
-                    "Modo Excel de respaldo: sin los 3 archivos opcionales, todo lo no encontrado "
-                    "cae en \"sin correspondencia\".",
-                    "Las distinciones \"vencido\" / \"otro estado\" / \"trámite de renovación\" no "
-                    "están disponibles automáticamente en este modo. Para tenerlas, sube abajo los "
-                    "archivos oficiales correspondientes de INVIMA a mano (todos opcionales e "
-                    "independientes entre sí), o cambia a la fuente API de Socrata en \"Archivos de "
-                    "entrada\".",
-                    tipo="info",
-                    etiqueta="Cómo recuperar esas distinciones",
-                )
-                archivo_invima_vencidos = st.file_uploader(
-                    "Listado Código Único de Medicamentos Vencidos (.xlsx) — opcional",
-                    type=["xlsx"],
-                    help="Descargado de invima.gov.co, mismo lugar que el listado de Vigentes. Sin "
-                    "este archivo, la auditoría sigue funcionando igual, solo sin distinguir "
-                    "\"vencido\" de \"código legado\".",
-                )
-                archivo_invima_otros_estados = st.file_uploader(
-                    "Listado Código Único de Medicamentos Otros Estados (.xlsx) — opcional",
-                    type=["xlsx"],
-                    help="Agrupa registros Cancelado/Suspendido/Inactivo/etc. Sin este archivo, la "
-                    "auditoría sigue funcionando igual, solo sin poder distinguir estos casos de "
-                    "\"código legado\".",
-                )
-                archivo_invima_renovacion = st.file_uploader(
-                    "Listado Código Único de Medicamentos en Trámite de Renovación (.xlsx) — opcional",
-                    type=["xlsx"],
-                    help="Registros sanitarios cuya renovación está en curso. Sin este archivo, la "
-                    "auditoría sigue funcionando igual, solo sin distinguir este caso de \"código "
-                    "legado\".",
-                )
+            if _auditoria_previa is not None
+            else 0
+        )
+        _mensaje_breve(
+            (
+                f"**{_sin_corresp_previos:,} sin correspondencia en INVIMA.** Detrás de ese número "
+                "hay cuatro situaciones distintas, y no se atienden igual."
+                if _sin_corresp_previos
+                else "\"Sin correspondencia\" no es un solo caso, son cuatro."
+            ),
+            "Un código que no aparece en el listado Vigente de INVIMA puede significar que el "
+            "registro sanitario **venció**, que está en **otro estado** "
+            "(Cancelado/Suspendido/Inactivo/etc.), que está en **trámite de renovación**, o que es "
+            "un **código legado** sin expediente INVIMA asociado. No se pueden tratar igual: no "
+            "nos podemos exponer a autorizar un medicamento que ya no está vigente.",
+            tipo="warning" if _sin_corresp_previos else "caption",
+            etiqueta="Los cuatro casos",
+        )
+        # Los 3 auxiliares tambien salen de data/ si estan ahi: son justo los
+        # que nadie recuerda subir, y sin ellos "vencido" y "otro estado" se
+        # confunden con "codigo legado".
+        auxiliares_detectados = descubrir_todo() if usar_detectados else {}
+        archivo_invima_vencidos = _ruta_detectada(auxiliares_detectados, "invima_vencidos")
+        archivo_invima_otros_estados = _ruta_detectada(auxiliares_detectados, "invima_otros_estados")
+        archivo_invima_renovacion = _ruta_detectada(auxiliares_detectados, "invima_renovacion")
+        if archivo_invima_vencidos or archivo_invima_otros_estados or archivo_invima_renovacion:
+            hallados = [
+                _ETIQUETA_ARCHIVO[k]
+                for k in ("invima_vencidos", "invima_otros_estados", "invima_renovacion")
+                if k in auxiliares_detectados
+            ]
+            st.caption("Detectados en `data/`: " + " · ".join(hallados))
+        elif not usar_api_invima:
+            _mensaje_breve(
+                "Modo Excel de respaldo: sin los 3 archivos opcionales, todo lo no encontrado "
+                "cae en \"sin correspondencia\".",
+                "Las distinciones \"vencido\" / \"otro estado\" / \"trámite de renovación\" no "
+                "están disponibles automáticamente en este modo. Para tenerlas, sube abajo los "
+                "archivos oficiales correspondientes de INVIMA a mano (todos opcionales e "
+                "independientes entre sí), o cambia a la fuente API de Socrata en \"Archivos de "
+                "entrada\".",
+                tipo="info",
+                etiqueta="Cómo recuperar esas distinciones",
+            )
+            archivo_invima_vencidos = st.file_uploader(
+                "Listado Código Único de Medicamentos Vencidos (.xlsx) — opcional",
+                type=["xlsx"],
+                help="Descargado de invima.gov.co, mismo lugar que el listado de Vigentes. Sin "
+                "este archivo, la auditoría sigue funcionando igual, solo sin distinguir "
+                "\"vencido\" de \"código legado\".",
+            )
+            archivo_invima_otros_estados = st.file_uploader(
+                "Listado Código Único de Medicamentos Otros Estados (.xlsx) — opcional",
+                type=["xlsx"],
+                help="Agrupa registros Cancelado/Suspendido/Inactivo/etc. Sin este archivo, la "
+                "auditoría sigue funcionando igual, solo sin poder distinguir estos casos de "
+                "\"código legado\".",
+            )
+            archivo_invima_renovacion = st.file_uploader(
+                "Listado Código Único de Medicamentos en Trámite de Renovación (.xlsx) — opcional",
+                type=["xlsx"],
+                help="Registros sanitarios cuya renovación está en curso. Sin este archivo, la "
+                "auditoría sigue funcionando igual, solo sin distinguir este caso de \"código "
+                "legado\".",
+            )
 
 
-            auditoria = st.session_state.get("auditoria_coherencia")
-            if auditoria is None:
-                st.info("Presiona el botón para correr la auditoría sobre el archivo de Gemma Net cargado.")
-            else:
-                conteos = auditoria["ESTADO_COHERENCIA"].value_counts()
-                n_correcto = int(conteos.get(EstadoCoherencia.CORRECTO.value, 0))
-                n_diferencias = int(conteos.get(EstadoCoherencia.CON_DIFERENCIAS.value, 0))
-                n_vencido = int(conteos.get(EstadoCoherencia.VENCIDO_EN_INVIMA.value, 0))
-                n_otro_estado = int(conteos.get(EstadoCoherencia.ENCONTRADO_EN_OTRO_ESTADO_INVIMA.value, 0))
-                n_renovacion = int(conteos.get(EstadoCoherencia.EN_TRAMITE_RENOVACION_INVIMA.value, 0))
-                n_sin_corresp = int(conteos.get(EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value, 0))
+        auditoria = st.session_state.get("auditoria_coherencia")
+        if auditoria is None:
+            st.info("Presiona el botón para correr la auditoría sobre el archivo de Gemma Net cargado.")
+        else:
+            conteos = auditoria["ESTADO_COHERENCIA"].value_counts()
+            n_correcto = int(conteos.get(EstadoCoherencia.CORRECTO.value, 0))
+            n_diferencias = int(conteos.get(EstadoCoherencia.CON_DIFERENCIAS.value, 0))
+            n_vencido = int(conteos.get(EstadoCoherencia.VENCIDO_EN_INVIMA.value, 0))
+            n_otro_estado = int(conteos.get(EstadoCoherencia.ENCONTRADO_EN_OTRO_ESTADO_INVIMA.value, 0))
+            n_renovacion = int(conteos.get(EstadoCoherencia.EN_TRAMITE_RENOVACION_INVIMA.value, 0))
+            n_sin_corresp = int(conteos.get(EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value, 0))
 
-                n_vigente_sin_comerc = int(
-                    conteos.get(EstadoCoherencia.VIGENTE_NO_COMERCIALIZADO_INVIMA.value, 0)
-                )
-                n_comparables = int(auditoria["PORCENTAJE_CALIDAD"].notna().sum())
-                n_auditado = len(auditoria)
+            n_vigente_sin_comerc = int(
+                conteos.get(EstadoCoherencia.VIGENTE_NO_COMERCIALIZADO_INVIMA.value, 0)
+            )
+            n_comparables = int(auditoria["PORCENTAJE_CALIDAD"].notna().sum())
+            n_auditado = len(auditoria)
 
-                # Los dos bloques van en contenedores separados, cada uno con su
-                # titulo diciendo EXACTAMENTE que dos fuentes compara -- pedido
-                # explicito del usuario: "no se sabe que fuentes son las que se
-                # comparan ni tampoco se sabe cuales son los campos que se
-                # comparan". Antes eran dos `st.markdown` sueltos en el mismo
-                # scroll, sin borde que separe donde termina uno y empieza el
-                # otro.
-                with st.container(border=True):
-                    st.markdown("**Comparados campo a campo — Gemma Net vs INVIMA (listado Vigentes)**")
-                    st.caption(
-                        f"{n_comparables:,} medicamentos ({n_comparables / n_auditado:.1%} del "
-                        f"catálogo): son los que INVIMA tiene en su listado vigente. Los campos "
-                        "comparados son DESCRIPCION, MARCA_MEDICAMENTO y UNIDAD_MEDIDA."
-                    )
-                    d1, d2, d3 = st.columns(3)
-                    d1.metric(
-                        "Sus datos coinciden",
-                        f"{n_correcto:,}",
-                        help="Sus campos coinciden con el dato oficial de INVIMA. No significa que el "
-                        "medicamento esté activo ni que se pueda autorizar: un medicamento dado de baja "
-                        "hace años cuenta aquí si su registro está bien copiado.",
-                    )
-                    d2.metric(
-                        "Algún campo difiere",
-                        f"{n_diferencias:,}",
-                        help="Existe en INVIMA (mismo listado Vigentes) y alguno de DESCRIPCION, "
-                        "MARCA_MEDICAMENTO o UNIDAD_MEDIDA no coincide entre las dos fuentes. Cuál "
-                        "campo y qué dice cada lado se ve en la tabla de calidades, más abajo.",
-                    )
-                    calidad_promedio = auditoria["PORCENTAJE_CALIDAD"].mean()
-                    d3.metric(
-                        "Calidad de sus campos",
-                        f"{calidad_promedio:.1f}%" if pd.notna(calidad_promedio) else "—",
-                        help=f"Promedio calculado SOLO sobre los {n_comparables:,} que se pudieron "
-                        f"comparar, no sobre los {n_auditado:,} del catálogo: de los campos que se "
-                        "pudieron contrastar, cuántos coinciden. Un medicamento con una diferencia "
-                        "puede seguir teniendo un porcentaje alto si el resto de sus campos está bien. "
-                        "Los campos sin dato salen de la cuenta: a un campo vacío no se le puede "
-                        "exigir que coincida con INVIMA.",
-                    )
-                    st.caption(
-                        f"El {calidad_promedio:.1f}% habla de estos {n_comparables:,}, no del catálogo "
-                        f"completo. Del resto no se afirma nada: no hay contra qué compararlo."
-                        if pd.notna(calidad_promedio)
-                        else ""
-                    )
-
-                with st.container(border=True):
-                    st.markdown(
-                        "**Sin contraparte en Vigentes — buscados en INVIMA Vencidos, "
-                        "Otros Estados y Trámite de Renovación**"
-                    )
-                    st.caption(
-                        f"{n_auditado - n_comparables:,} medicamentos: aquí NO se compara ningún "
-                        "campo (DESCRIPCION/MARCA/UNIDAD), solo se averigua en cuál de los otros "
-                        "tres listados de INVIMA aparece cada código."
-                    )
-                    e1, e2, e3, e4 = st.columns(4)
-                    e1.metric(
-                        "⚠ Registro vencido",
-                        f"{n_vencido:,}",
-                        delta_color="inverse",
-                        help="INVIMA lo tiene en su listado de Vencidos. Solo es un riesgo si además "
-                        "sigue ACTIVO aquí — esa cifra está en la tabla de calidades.",
-                    )
-                    e2.metric(
-                        "⚠ Registro sin vigencia",
-                        f"{n_otro_estado:,}",
-                        delta_color="inverse",
-                        help="INVIMA lo tiene en su listado de Otros Estados: Cancelado, Suspendido, "
-                        "Negado, Desistido o con pérdida de fuerza ejecutoria. El valor exacto está "
-                        "en ESTADO_INVIMA_DETALLE.",
-                    )
-                    e3.metric(
-                        "En trámite de renovación",
-                        f"{n_renovacion:,}",
-                        help="INVIMA lo tiene en su listado de Trámite de Renovación. El registro "
-                        "sigue siendo válido mientras INVIMA resuelve. Se espera, no se corrige.",
-                    )
-                    e4.metric(
-                        "No se puede verificar",
-                        f"{n_sin_corresp:,}",
-                        help="No aparece en ninguno de los cuatro listados de INVIMA. En su mayoría "
-                        "son códigos anteriores a la convención de INVIMA: no están mal cargados, "
-                        "simplemente no hay con qué buscarlos allá.",
-                    )
-                    if n_vigente_sin_comerc:
-                        st.metric(
-                            "Vigente, temporalmente sin comercializar",
-                            f"{n_vigente_sin_comerc:,}",
-                            help="Aparece en el listado Otros Estados de INVIMA, pero el propio texto "
-                            "oficial dice que el registro está VIGENTE: lo único que pasa es que el "
-                            "producto no se está comercializando ahora. No es un riesgo de vigencia, "
-                            "y por eso no se cuenta con los anteriores.",
-                        )
-
+            # Los dos bloques van en contenedores separados, cada uno con su
+            # titulo diciendo EXACTAMENTE que dos fuentes compara -- pedido
+            # explicito del usuario: "no se sabe que fuentes son las que se
+            # comparan ni tampoco se sabe cuales son los campos que se
+            # comparan". Antes eran dos `st.markdown` sueltos en el mismo
+            # scroll, sin borde que separe donde termina uno y empieza el
+            # otro.
+            with st.container(border=True):
+                st.markdown("**Comparados campo a campo — Gemma Net vs INVIMA (listado Vigentes)**")
                 st.caption(
-                    "🔎 Cambiar un filtro más abajo no vuelve a calcular esta auditoría ni relee "
-                    "archivos — solo se filtra lo que ya está en pantalla."
+                    f"{n_comparables:,} medicamentos ({n_comparables / n_auditado:.1%} del "
+                    f"catálogo): son los que INVIMA tiene en su listado vigente. Los campos "
+                    "comparados son DESCRIPCION, MARCA_MEDICAMENTO y UNIDAD_MEDIDA."
+                )
+                d1, d2, d3 = st.columns(3)
+                d1.metric(
+                    "Sus datos coinciden",
+                    f"{n_correcto:,}",
+                    help="Sus campos coinciden con el dato oficial de INVIMA. No significa que el "
+                    "medicamento esté activo ni que se pueda autorizar: un medicamento dado de baja "
+                    "hace años cuenta aquí si su registro está bien copiado.",
+                )
+                d2.metric(
+                    "Algún campo difiere",
+                    f"{n_diferencias:,}",
+                    help="Existe en INVIMA (mismo listado Vigentes) y alguno de DESCRIPCION, "
+                    "MARCA_MEDICAMENTO o UNIDAD_MEDIDA no coincide entre las dos fuentes. Cuál "
+                    "campo y qué dice cada lado se ve en la tabla de calidades, más abajo.",
+                )
+                calidad_promedio = auditoria["PORCENTAJE_CALIDAD"].mean()
+                d3.metric(
+                    "Calidad de sus campos",
+                    f"{calidad_promedio:.1f}%" if pd.notna(calidad_promedio) else "—",
+                    help=f"Promedio calculado SOLO sobre los {n_comparables:,} que se pudieron "
+                    f"comparar, no sobre los {n_auditado:,} del catálogo: de los campos que se "
+                    "pudieron contrastar, cuántos coinciden. Un medicamento con una diferencia "
+                    "puede seguir teniendo un porcentaje alto si el resto de sus campos está bien. "
+                    "Los campos sin dato salen de la cuenta: a un campo vacío no se le puede "
+                    "exigir que coincida con INVIMA.",
+                )
+                st.caption(
+                    f"El {calidad_promedio:.1f}% habla de estos {n_comparables:,}, no del catálogo "
+                    f"completo. Del resto no se afirma nada: no hay contra qué compararlo."
+                    if pd.notna(calidad_promedio)
+                    else ""
                 )
 
-                # Tarjetas de hallazgo agrupadas por dimension, colapsadas por
-                # defecto -- pedido explicito: "son tantas cifras a la vista uno
-                # asi tenga la infor al lado se desconcierta". Antes eran 9+
-                # tarjetas sueltas en una sola grilla, siempre visibles, sin
-                # importar que sub-vista (Priorizar/Entender/Explorar) se
-                # hubiera elegido. Cada grupo se abre solo si el usuario quiere
-                # ese nivel de detalle.
-                alertas_carga = list(st.session_state.get("auditoria_alertas_carga", []))
-                alertas_vigencia: list[tuple[str, str, str, pd.DataFrame]] = []
-                alertas_calidad: list[
-                    tuple[str, str, str] | tuple[str, str, str, pd.DataFrame, list[str]]
-                ] = []
+            with st.container(border=True):
+                st.markdown(
+                    "**Sin contraparte en Vigentes — buscados en INVIMA Vencidos, "
+                    "Otros Estados y Trámite de Renovación**"
+                )
+                st.caption(
+                    f"{n_auditado - n_comparables:,} medicamentos: aquí NO se compara ningún "
+                    "campo (DESCRIPCION/MARCA/UNIDAD), solo se averigua en cuál de los otros "
+                    "tres listados de INVIMA aparece cada código."
+                )
+                e1, e2, e3, e4 = st.columns(4)
+                e1.metric(
+                    "⚠ Registro vencido",
+                    f"{n_vencido:,}",
+                    delta_color="inverse",
+                    help="INVIMA lo tiene en su listado de Vencidos. Solo es un riesgo si además "
+                    "sigue ACTIVO aquí — esa cifra está en la tabla de calidades.",
+                )
+                e2.metric(
+                    "⚠ Registro sin vigencia",
+                    f"{n_otro_estado:,}",
+                    delta_color="inverse",
+                    help="INVIMA lo tiene en su listado de Otros Estados: Cancelado, Suspendido, "
+                    "Negado, Desistido o con pérdida de fuerza ejecutoria. El valor exacto está "
+                    "en ESTADO_INVIMA_DETALLE.",
+                )
+                e3.metric(
+                    "En trámite de renovación",
+                    f"{n_renovacion:,}",
+                    help="INVIMA lo tiene en su listado de Trámite de Renovación. El registro "
+                    "sigue siendo válido mientras INVIMA resuelve. Se espera, no se corrige.",
+                )
+                e4.metric(
+                    "No se puede verificar",
+                    f"{n_sin_corresp:,}",
+                    help="No aparece en ninguno de los cuatro listados de INVIMA. En su mayoría "
+                    "son códigos anteriores a la convención de INVIMA: no están mal cargados, "
+                    "simplemente no hay con qué buscarlos allá.",
+                )
+                if n_vigente_sin_comerc:
+                    st.metric(
+                        "Vigente, temporalmente sin comercializar",
+                        f"{n_vigente_sin_comerc:,}",
+                        help="Aparece en el listado Otros Estados de INVIMA, pero el propio texto "
+                        "oficial dice que el registro está VIGENTE: lo único que pasa es que el "
+                        "producto no se está comercializando ahora. No es un riesgo de vigencia, "
+                        "y por eso no se cuenta con los anteriores.",
+                    )
 
-                if n_vencido > 0:
-                    mascara_vencido = auditoria["ESTADO_COHERENCIA"] == EstadoCoherencia.VENCIDO_EN_INVIMA.value
+            st.caption(
+                "🔎 Cambiar un filtro más abajo no vuelve a calcular esta auditoría ni relee "
+                "archivos — solo se filtra lo que ya está en pantalla."
+            )
+
+            # Tarjetas de hallazgo agrupadas por dimension, colapsadas por
+            # defecto -- pedido explicito: "son tantas cifras a la vista uno
+            # asi tenga la infor al lado se desconcierta". Antes eran 9+
+            # tarjetas sueltas en una sola grilla, siempre visibles, sin
+            # importar que sub-vista (Priorizar/Entender/Explorar) se
+            # hubiera elegido. Cada grupo se abre solo si el usuario quiere
+            # ese nivel de detalle.
+            alertas_carga = list(st.session_state.get("auditoria_alertas_carga", []))
+            alertas_vigencia: list[tuple[str, str, str, pd.DataFrame]] = []
+            alertas_calidad: list[
+                tuple[str, str, str] | tuple[str, str, str, pd.DataFrame, list[str]]
+            ] = []
+
+            if n_vencido > 0:
+                mascara_vencido = auditoria["ESTADO_COHERENCIA"] == EstadoCoherencia.VENCIDO_EN_INVIMA.value
+                alertas_vigencia.append(
+                    (
+                        "error",
+                        f"⚠ {n_vencido:,} vencido(s) en INVIMA",
+                        "Gemma Net (CODIGO_INTERNO) vs INVIMA (listado de Vencidos). INVIMA "
+                        "tiene este registro sanitario en su listado de Vencidos. Es un riesgo "
+                        "de autorización SOLO si además sigue ACTIVO=SI en Gemma Net — el "
+                        "cruce de ambas condiciones ya está en la tarjeta \"activo(s) aquí sin "
+                        "vigencia en INVIMA\", más abajo. Filtra por ESTADO_COHERENCIA en la "
+                        "tabla para ver estos exactos.",
+                        auditoria[mascara_vencido],
+                    )
+                )
+            if n_otro_estado > 0:
+                mascara_otro_estado = (
+                    auditoria["ESTADO_COHERENCIA"]
+                    == EstadoCoherencia.ENCONTRADO_EN_OTRO_ESTADO_INVIMA.value
+                )
+                alertas_vigencia.append(
+                    (
+                        "error",
+                        f"⚠ {n_otro_estado:,} en otro estado INVIMA",
+                        "Gemma Net (CODIGO_INTERNO) vs INVIMA (listado Otros Estados). INVIMA "
+                        "tiene este registro como Cancelado, Suspendido, Negado, Desistido o "
+                        "con pérdida de fuerza ejecutoria — el valor EXACTO que reportó INVIMA "
+                        "para cada uno está en la columna ESTADO_INVIMA_DETALLE de la tabla, no "
+                        "es el mismo estado para todos.",
+                        auditoria[mascara_otro_estado],
+                    )
+                )
+            if "INCONSISTENCIA_FECHAS_ACTIVO" in auditoria.columns:
+                mascara_fechas = auditoria["INCONSISTENCIA_FECHAS_ACTIVO"] != ""
+                n_inconsistencia_fechas = int(mascara_fechas.sum())
+                if n_inconsistencia_fechas > 0:
                     alertas_vigencia.append(
                         (
-                            "error",
-                            f"⚠ {n_vencido:,} vencido(s) en INVIMA",
-                            "Gemma Net (CODIGO_INTERNO) vs INVIMA (listado de Vencidos). INVIMA "
-                            "tiene este registro sanitario en su listado de Vencidos. Es un riesgo "
-                            "de autorización SOLO si además sigue ACTIVO=SI en Gemma Net — el "
-                            "cruce de ambas condiciones ya está en la tarjeta \"activo(s) aquí sin "
-                            "vigencia en INVIMA\", más abajo. Filtra por ESTADO_COHERENCIA en la "
-                            "tabla para ver estos exactos.",
-                            auditoria[mascara_vencido],
+                            "warning",
+                            f"{n_inconsistencia_fechas:,} con fechas/vigencia inconsistentes",
+                            "Coherencia INTERNA de Gemma Net (no depende de INVIMA): la columna "
+                            "ACTIVO no cuadra con FECHA_INICIO/FECHA_FIN de ese mismo registro "
+                            "(ej. ACTIVO=SI sin FECHA_INICIO, o ACTIVO=NO con FECHA_FIN vacía). "
+                            "El detalle exacto de cada caso está en INCONSISTENCIA_FECHAS_ACTIVO "
+                            "en la tabla.",
+                            auditoria[mascara_fechas],
                         )
                     )
-                if n_otro_estado > 0:
-                    mascara_otro_estado = (
-                        auditoria["ESTADO_COHERENCIA"]
-                        == EstadoCoherencia.ENCONTRADO_EN_OTRO_ESTADO_INVIMA.value
-                    )
-                    alertas_vigencia.append(
-                        (
-                            "error",
-                            f"⚠ {n_otro_estado:,} en otro estado INVIMA",
-                            "Gemma Net (CODIGO_INTERNO) vs INVIMA (listado Otros Estados). INVIMA "
-                            "tiene este registro como Cancelado, Suspendido, Negado, Desistido o "
-                            "con pérdida de fuerza ejecutoria — el valor EXACTO que reportó INVIMA "
-                            "para cada uno está en la columna ESTADO_INVIMA_DETALLE de la tabla, no "
-                            "es el mismo estado para todos.",
-                            auditoria[mascara_otro_estado],
-                        )
-                    )
-                if "INCONSISTENCIA_FECHAS_ACTIVO" in auditoria.columns:
-                    mascara_fechas = auditoria["INCONSISTENCIA_FECHAS_ACTIVO"] != ""
-                    n_inconsistencia_fechas = int(mascara_fechas.sum())
-                    if n_inconsistencia_fechas > 0:
+            # Dimension 10: las novedades de vigencia contra INVIMA. Solo se
+            # muestran las accionables -- "coherente" y "no_verificable" son
+            # mayoria y no piden nada de nadie.
+            if "NOVEDAD_VIGENCIA_INVIMA" in auditoria.columns:
+                for clave, severidad, titulo, detalle in [
+                    (
+                        "riesgo_activo_sin_vigencia",
+                        "error",
+                        "activo(s) aquí sin vigencia en INVIMA",
+                        "Gemma Net (columna ACTIVO) vs INVIMA (ESTADO_CUM_INVIMA). Los únicos "
+                        "sobre los que se puede actuar hoy: están ACTIVOS en Gemma Net y su "
+                        "registro no está vigente en INVIMA, así que se pueden llegar a "
+                        "autorizar. Es la cifra del riesgo real — no el total de vencidos, que "
+                        "en su mayoría ya están inactivos aquí y nadie va a dispensar.",
+                    ),
+                    (
+                        "registro_vencido_en_invima",
+                        "error",
+                        "con registro sanitario vencido en INVIMA",
+                        "Gemma Net (FECHA_FIN) vs INVIMA (FECHA_VENCIMIENTO_INVIMA). Verificado "
+                        "dentro de la fecha de corte del catálogo usado.",
+                    ),
+                    (
+                        "revisar_reactivacion",
+                        "warning",
+                        "inactivo(s) aquí pero con registro vivo en INVIMA",
+                        "Gemma Net (columna ACTIVO) vs INVIMA (ESTADO_CUM_INVIMA). Están "
+                        "inactivos en Gemma Net y su registro sigue vigente o en renovación en "
+                        "INVIMA: se podrían reactivar. Revisar caso por caso — puede ser una "
+                        "decisión de negocio ya tomada, no un error.",
+                    ),
+                    (
+                        "actualizar_fecha_fin",
+                        "warning",
+                        "sin fecha de fin que INVIMA sí tiene",
+                        "Gemma Net (FECHA_FIN vacía) vs INVIMA (FECHA_VENCIMIENTO_INVIMA con "
+                        "dato). Novedad concreta: la fecha existe en INVIMA y se puede "
+                        "actualizar.",
+                    ),
+                ]:
+                    mascara_novedad = auditoria["NOVEDAD_VIGENCIA_INVIMA"] == clave
+                    n = int(mascara_novedad.sum())
+                    if n > 0:
                         alertas_vigencia.append(
                             (
-                                "warning",
-                                f"{n_inconsistencia_fechas:,} con fechas/vigencia inconsistentes",
-                                "Coherencia INTERNA de Gemma Net (no depende de INVIMA): la columna "
-                                "ACTIVO no cuadra con FECHA_INICIO/FECHA_FIN de ese mismo registro "
-                                "(ej. ACTIVO=SI sin FECHA_INICIO, o ACTIVO=NO con FECHA_FIN vacía). "
-                                "El detalle exacto de cada caso está en INCONSISTENCIA_FECHAS_ACTIVO "
-                                "en la tabla.",
-                                auditoria[mascara_fechas],
+                                severidad,
+                                f"{n:,} {titulo}",
+                                detalle,
+                                auditoria[mascara_novedad],
                             )
                         )
-                # Dimension 10: las novedades de vigencia contra INVIMA. Solo se
-                # muestran las accionables -- "coherente" y "no_verificable" son
-                # mayoria y no piden nada de nadie.
-                if "NOVEDAD_VIGENCIA_INVIMA" in auditoria.columns:
-                    for clave, severidad, titulo, detalle in [
-                        (
-                            "riesgo_activo_sin_vigencia",
-                            "error",
-                            "activo(s) aquí sin vigencia en INVIMA",
-                            "Gemma Net (columna ACTIVO) vs INVIMA (ESTADO_CUM_INVIMA). Los únicos "
-                            "sobre los que se puede actuar hoy: están ACTIVOS en Gemma Net y su "
-                            "registro no está vigente en INVIMA, así que se pueden llegar a "
-                            "autorizar. Es la cifra del riesgo real — no el total de vencidos, que "
-                            "en su mayoría ya están inactivos aquí y nadie va a dispensar.",
-                        ),
-                        (
-                            "registro_vencido_en_invima",
-                            "error",
-                            "con registro sanitario vencido en INVIMA",
-                            "Gemma Net (FECHA_FIN) vs INVIMA (FECHA_VENCIMIENTO_INVIMA). Verificado "
-                            "dentro de la fecha de corte del catálogo usado.",
-                        ),
-                        (
-                            "revisar_reactivacion",
-                            "warning",
-                            "inactivo(s) aquí pero con registro vivo en INVIMA",
-                            "Gemma Net (columna ACTIVO) vs INVIMA (ESTADO_CUM_INVIMA). Están "
-                            "inactivos en Gemma Net y su registro sigue vigente o en renovación en "
-                            "INVIMA: se podrían reactivar. Revisar caso por caso — puede ser una "
-                            "decisión de negocio ya tomada, no un error.",
-                        ),
-                        (
-                            "actualizar_fecha_fin",
-                            "warning",
-                            "sin fecha de fin que INVIMA sí tiene",
-                            "Gemma Net (FECHA_FIN vacía) vs INVIMA (FECHA_VENCIMIENTO_INVIMA con "
-                            "dato). Novedad concreta: la fecha existe en INVIMA y se puede "
-                            "actualizar.",
-                        ),
-                    ]:
-                        mascara_novedad = auditoria["NOVEDAD_VIGENCIA_INVIMA"] == clave
-                        n = int(mascara_novedad.sum())
-                        if n > 0:
-                            alertas_vigencia.append(
-                                (
-                                    severidad,
-                                    f"{n:,} {titulo}",
-                                    detalle,
-                                    auditoria[mascara_novedad],
-                                )
-                            )
 
-                # Una tarjeta -- con su propia tabla de medicamentos, no la tabla
-                # general con todos los filtros -- por cada campo que
-                # `campos_calidad_mascaras` (auditar_coherencia()) detecto como
-                # sistemicamente vacio, mas la capa legada ATC si aplica. Pedido
-                # explicito (2026-08-26): "una tabla por cada cifra distinta...
-                # una lista solo para vigentes, una lista solo para diferidos".
-                campos_calidad_cubiertos: set[str] = set()
-                for campo, mascara_campo in auditoria.attrs.get("campos_calidad_mascaras", {}).items():
-                    campos_calidad_cubiertos.add(campo)
-                    n = int(mascara_campo.sum())
-                    porcentaje = mascara_campo.mean() * 100 if len(mascara_campo) else 0.0
-                    alertas_calidad.append(
-                        (
-                            "warning",
-                            f"{n:,} sin dato real en {campo} ({porcentaje:.1f}%)",
-                            f"El campo {campo} no trae dato real (vacío, \"-999\" o, si es un "
-                            "código de catálogo, el código 1 \"SIN INFORMACIÓN\") en la mayoría "
-                            "de las filas del reporte de Gemma Net -- parece no estarse "
-                            "diligenciando en el proceso de origen, no un dato puntual faltante "
-                            "por medicamento.",
-                            auditoria[mascara_campo],
-                            [campo],
-                        )
+            # Una tarjeta -- con su propia tabla de medicamentos, no la tabla
+            # general con todos los filtros -- por cada campo que
+            # `campos_calidad_mascaras` (auditar_coherencia()) detecto como
+            # sistemicamente vacio, mas la capa legada ATC si aplica. Pedido
+            # explicito (2026-08-26): "una tabla por cada cifra distinta...
+            # una lista solo para vigentes, una lista solo para diferidos".
+            campos_calidad_cubiertos: set[str] = set()
+            for campo, mascara_campo in auditoria.attrs.get("campos_calidad_mascaras", {}).items():
+                campos_calidad_cubiertos.add(campo)
+                n = int(mascara_campo.sum())
+                porcentaje = mascara_campo.mean() * 100 if len(mascara_campo) else 0.0
+                alertas_calidad.append(
+                    (
+                        "warning",
+                        f"{n:,} sin dato real en {campo} ({porcentaje:.1f}%)",
+                        f"El campo {campo} no trae dato real (vacío, \"-999\" o, si es un "
+                        "código de catálogo, el código 1 \"SIN INFORMACIÓN\") en la mayoría "
+                        "de las filas del reporte de Gemma Net -- parece no estarse "
+                        "diligenciando en el proceso de origen, no un dato puntual faltante "
+                        "por medicamento.",
+                        auditoria[mascara_campo],
+                        [campo],
                     )
-
-                mascara_capa_legada = auditoria.attrs.get("capa_legada_atc_mascara")
-                if mascara_capa_legada is not None and mascara_capa_legada.any():
-                    n = int(mascara_capa_legada.sum())
-                    alertas_calidad.append(
-                        (
-                            "warning",
-                            f"{n:,} con capa legada ATC+expediente+consecutivo",
-                            "TIPO_CODIGO_INTERNO clasifica el CODIGO_INTERNO como una capa "
-                            "legada de INVIMA (código ATC + expediente + consecutivo) -- en la "
-                            "mayoría de los casos ya existe como fila CUM independiente en este "
-                            "mismo reporte. Es informativo: no se fusiona ni se deduplica "
-                            "automáticamente.",
-                            auditoria[mascara_capa_legada],
-                            ["TIPO_CODIGO_INTERNO"],
-                        )
-                    )
-
-                # El resto de advertencias (lectura del archivo, sin mascara
-                # limpia por fila) siguen como tarjeta simple -- se excluyen las
-                # que ya se representaron arriba con su tabla, que vienen del
-                # mismo texto generado por coherencia_invima.py y se repetirian.
-                for advertencia in auditoria.attrs.get("advertencias", []):
-                    if any(f"El campo {campo} " in advertencia for campo in campos_calidad_cubiertos):
-                        continue
-                    if mascara_capa_legada is not None and "capa legada de INVIMA" in advertencia:
-                        continue
-                    alertas_calidad.append(_alerta_desde_advertencia(advertencia))
-
-                # Encabezado + tarjetas directo, SIN expander alrededor del
-                # grupo -- pedido explicito y enfatico del usuario: los grupos
-                # colapsados "solo desperdician espacio". Cada tarjeta ya es
-                # compacta (icono + titulo de una linea + boton "❓" con tooltip
-                # nativo para el detalle), asi que ya no hace falta esconderlas
-                # detras de un clic extra.
-                if alertas_carga:
-                    st.markdown("**Avisos de esta corrida**")
-                    _mostrar_tarjetas_alerta(alertas_carga, grupo="carga")
-                if alertas_vigencia:
-                    st.markdown(f"**Vigencia frente a INVIMA** ({len(alertas_vigencia)} hallazgo(s))")
-                    _mostrar_tarjetas_alerta(alertas_vigencia, grupo="vigencia")
-                if alertas_calidad:
-                    st.markdown(
-                        f"**Calidad de los campos del reporte** ({len(alertas_calidad)} hallazgo(s))"
-                    )
-                    _mostrar_tarjetas_alerta(alertas_calidad, grupo="calidad")
-
-                if vista_auditoria == "Priorizar lo que requiere accion":
-                    _panel_prioridades_auditoria(auditoria)
-                    return
-                if vista_auditoria == "Entender la calidad del catalogo":
-                    _panel_entender_auditoria(auditoria)
-                    return
-
-                # Por CLASE de problema, no por campo. Es la vista que contesta
-                # "¿y ahora qué hago con esto?": lo que hay que esperar, lo que no
-                # se corrige fila por fila y lo que sí pide trabajo manual salían
-                # antes revueltos en la misma lista.
-                if "NATURALEZA_HALLAZGO" in auditoria.columns:
-                    conteo_naturaleza = auditoria["NATURALEZA_HALLAZGO"].value_counts()
-                    naturalezas = [
-                        (etiqueta, int(conteo_naturaleza.get(etiqueta, 0)))
-                        for etiqueta in ACCION_POR_NATURALEZA
-                    ]
-                    naturalezas = [(etiqueta, n) for etiqueta, n in naturalezas if n]
-                    if naturalezas:
-                        # Como TABLA y no como tarjetas sueltas, y plegado por
-                        # defecto. Tres de estas cinco cifras son exactamente las
-                        # mismas que ya estan arriba, solo renombradas: "vigencia en
-                        # riesgo" es vencido + sin vigencia, "en tramite de
-                        # renovacion" y "dato desactualizado" son identicas a sus
-                        # tarjetas. Repetirlas como metricas grandes hacia que el
-                        # mismo medicamento se contara tres veces al sumar a ojo.
-                        # Aqui aportan lo unico que las otras no dicen: QUE HACER.
-                        with st.expander(
-                            "Qué hacer con cada hallazgo — acción sugerida por clase", expanded=False
-                        ):
-                            st.caption(
-                                "Cada medicamento lleva **una sola** etiqueta: la de lo más urgente "
-                                "que pide. Varias de estas cifras son los mismos medicamentos que "
-                                "las tarjetas de arriba, agrupados por la acción que piden en vez "
-                                "de por su estado — **no se suman entre sí ni con aquellas**."
-                            )
-                            _mostrar_tabla_estandar(
-                                pd.DataFrame(
-                                    [
-                                        {
-                                            "Clase de hallazgo": etiqueta,
-                                            "Medicamentos": n,
-                                            "Qué hacer": ACCION_POR_NATURALEZA[etiqueta],
-                                        }
-                                        for etiqueta, n in naturalezas
-                                    ]
-                                ),
-                                variante="resumen",
-                            )
-
-                if "PORCENTAJE_COMPLETITUD_REPORTE" in auditoria.columns:
-                    with st.expander("10 dimensiones de calidad de dato (completitud, unicidad, dominio, razonabilidad, formato, integridad referencial, vigencia)"):
-                        n_total_auditado = len(auditoria)
-                        completitud_prom = auditoria["PORCENTAJE_COMPLETITUD_REPORTE"].mean()
-                        n_duplicados = int(auditoria["CODIGO_DUPLICADO_EN_REPORTE"].sum())
-                        n_fuera_dominio = int((auditoria["VALORES_FUERA_DE_DOMINIO"] != "").sum())
-                        n_inconsistencia_num = int((auditoria["INCONSISTENCIA_NUMERICA"] != "").sum())
-                        n_formato_invalido = int((auditoria["FORMATO_CODIGO_INTERNO_INVALIDO"] != "").sum())
-                        n_integridad_referencial = int((auditoria["INTEGRIDAD_REFERENCIAL_CATALOGO"] != "").sum())
-
-                        q1, q2, q3, q4, q5, q6 = st.columns(6)
-                        q1.metric(
-                            "Completitud", f"{completitud_prom:.1f}%" if pd.notna(completitud_prom) else "—",
-                            help="Promedio de cuántos de los 37 campos del cargue están diligenciados por medicamento.",
-                        )
-                        q2.metric(
-                            "Unicidad", f"{n_duplicados:,}", delta_color="inverse",
-                            help="CODIGO_INTERNO repetido dentro del propio reporte de Gemma Net.",
-                        )
-                        q3.metric(
-                            "Validez de dominio", f"{n_fuera_dominio:,}", delta_color="inverse",
-                            help="CLASIFICADO / CODIGO_NIVEL_SERVICIO / POS / ACTIVO con un valor fuera de lo permitido.",
-                        )
-                        q4.metric(
-                            "Razonabilidad numérica", f"{n_inconsistencia_num:,}", delta_color="inverse",
-                            help="Edades o topes de uso fuera de orden lógico, o negativos.",
-                        )
-                        q5.metric(
-                            "Conformidad de formato", f"{n_formato_invalido:,}", delta_color="inverse",
-                            help="CODIGO_INTERNO vacío o guardado como error de fórmula de Excel.",
-                        )
-                        q6.metric(
-                            "Integridad referencial", f"{n_integridad_referencial:,}", delta_color="inverse",
-                            help="MARCA_MEDICAMENTO / UNIDAD_MEDIDA con un código que NO existe en el catálogo "
-                            "interno (config/catalogos/) — distinto de \"no coincide con INVIMA\", ver columna "
-                            "INTEGRIDAD_REFERENCIAL_CATALOGO en la tabla para el mensaje exacto de qué código "
-                            "falta y dónde agregarlo.",
-                        )
-                        st.caption(
-                            f"Sobre {n_total_auditado:,} medicamentos auditados. Junto con Exactitud, Vigencia y "
-                            "Consistencia (arriba), son las 10 dimensiones de calidad de dato de esta auditoría."
-                        )
-
-                if n_sin_corresp > 0 and "TIPO_SIN_CORRESPONDENCIA" in auditoria.columns:
-                    df_sin_corresp = auditoria[auditoria["ESTADO_COHERENCIA"] == EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value]
-                    n_posible_error = int(
-                        df_sin_corresp["TIPO_SIN_CORRESPONDENCIA"].str.contains("EXPEDIENTE-CONSECUTIVO", na=False).sum()
-                    )
-                    n_legado = n_sin_corresp - n_posible_error
-                    with st.expander(f"Detalle de los {n_sin_corresp:,} \"sin correspondencia\" — no son todos iguales"):
-                        e1, e2 = st.columns(2)
-                        e1.metric(
-                            "Con formato de código INVIMA, no encontrados",
-                            f"{n_posible_error:,}",
-                            f"{n_posible_error / n_sin_corresp:.0%}",
-                            help="Sigue el formato EXPEDIENTE-CONSECUTIVO pero no aparece en INVIMA — "
-                            "posible error de digitación o el registro ya no existe ahí. Vale la pena "
-                            "revisar estos puntualmente.",
-                        )
-                        e2.metric(
-                            "Código legado (sin formato INVIMA)",
-                            f"{n_legado:,}",
-                            f"{n_legado / n_sin_corresp:.0%}",
-                            help="No sigue el formato EXPEDIENTE-CONSECUTIVO — nunca tuvo un expediente "
-                            "INVIMA asociado. No hay nada que verificar contra INVIMA para estos.",
-                        )
-
-                st.divider()
-                st.subheader("Tabla de calidades")
-                _mensaje_breve(
-                    "Cada calidad se puede **abrir** hasta los medicamentos que la componen.",
-                    "Las tarjetas de arriba dicen cuántos; esta tabla dice cuáles. Es el mismo "
-                    "cálculo, pero navegable: se elige una calidad, se ve la lista con el dato "
-                    "de Gemma Net y el de INVIMA al lado, y se puede buscar, filtrar y descargar.",
-                    etiqueta="Para qué sirve",
                 )
-                _mostrar_tabla_de_calidades(auditoria)
 
-                st.divider()
-                st.subheader("Explorar por estado y por campo")
-                estados_disponibles = sorted(auditoria["ESTADO_COHERENCIA"].unique())
-                estados_iniciales = [
-                    estado
-                    for estado in [
-                        EstadoCoherencia.VENCIDO_EN_INVIMA.value,
-                        EstadoCoherencia.ENCONTRADO_EN_OTRO_ESTADO_INVIMA.value,
-                        EstadoCoherencia.EN_TRAMITE_RENOVACION_INVIMA.value,
-                        EstadoCoherencia.CON_DIFERENCIAS.value,
-                    ]
-                    if estado in estados_disponibles
-                ] or estados_disponibles
-                columnas_mostrar = [
-                    c
-                    for c in [
-                        "CODIGO_INTERNO",
-                        "DESCRIPCION",
-                        "ESTADO_COHERENCIA",
-                        "ESTADO_INVIMA_DETALLE",
-                        "PORCENTAJE_CALIDAD",
-                        "CAMPOS_CON_DIFERENCIA",
-                        "TIPO_SIN_CORRESPONDENCIA",
-                        "INCONSISTENCIA_FECHAS_ACTIVO",
-                        "PORCENTAJE_COMPLETITUD_REPORTE",
-                        "CODIGO_DUPLICADO_EN_REPORTE",
-                        "VALORES_FUERA_DE_DOMINIO",
-                        "INCONSISTENCIA_NUMERICA",
-                        "FORMATO_CODIGO_INTERNO_INVALIDO",
-                        "INTEGRIDAD_REFERENCIAL_CATALOGO",
-                    ]
-                    if c in auditoria.columns
+            mascara_capa_legada = auditoria.attrs.get("capa_legada_atc_mascara")
+            if mascara_capa_legada is not None and mascara_capa_legada.any():
+                n = int(mascara_capa_legada.sum())
+                alertas_calidad.append(
+                    (
+                        "warning",
+                        f"{n:,} con capa legada ATC+expediente+consecutivo",
+                        "TIPO_CODIGO_INTERNO clasifica el CODIGO_INTERNO como una capa "
+                        "legada de INVIMA (código ATC + expediente + consecutivo) -- en la "
+                        "mayoría de los casos ya existe como fila CUM independiente en este "
+                        "mismo reporte. Es informativo: no se fusiona ni se deduplica "
+                        "automáticamente.",
+                        auditoria[mascara_capa_legada],
+                        ["TIPO_CODIGO_INTERNO"],
+                    )
+                )
+
+            # El resto de advertencias (lectura del archivo, sin mascara
+            # limpia por fila) siguen como tarjeta simple -- se excluyen las
+            # que ya se representaron arriba con su tabla, que vienen del
+            # mismo texto generado por coherencia_invima.py y se repetirian.
+            for advertencia in auditoria.attrs.get("advertencias", []):
+                if any(f"El campo {campo} " in advertencia for campo in campos_calidad_cubiertos):
+                    continue
+                if mascara_capa_legada is not None and "capa legada de INVIMA" in advertencia:
+                    continue
+                alertas_calidad.append(_alerta_desde_advertencia(advertencia))
+
+            # Encabezado + tarjetas directo, SIN expander alrededor del
+            # grupo -- pedido explicito y enfatico del usuario: los grupos
+            # colapsados "solo desperdician espacio". Cada tarjeta ya es
+            # compacta (icono + titulo de una linea + boton "❓" con tooltip
+            # nativo para el detalle), asi que ya no hace falta esconderlas
+            # detras de un clic extra.
+            if alertas_carga:
+                st.markdown("**Avisos de esta corrida**")
+                _mostrar_tarjetas_alerta(alertas_carga, grupo="carga")
+            if alertas_vigencia:
+                st.markdown(f"**Vigencia frente a INVIMA** ({len(alertas_vigencia)} hallazgo(s))")
+                _mostrar_tarjetas_alerta(alertas_vigencia, grupo="vigencia")
+            if alertas_calidad:
+                st.markdown(
+                    f"**Calidad de los campos del reporte** ({len(alertas_calidad)} hallazgo(s))"
+                )
+                _mostrar_tarjetas_alerta(alertas_calidad, grupo="calidad")
+
+            if vista_auditoria == "Priorizar lo que requiere accion":
+                _panel_prioridades_auditoria(auditoria)
+                return
+            if vista_auditoria == "Entender la calidad del catalogo":
+                _panel_entender_auditoria(auditoria)
+                return
+
+            # Por CLASE de problema, no por campo. Es la vista que contesta
+            # "¿y ahora qué hago con esto?": lo que hay que esperar, lo que no
+            # se corrige fila por fila y lo que sí pide trabajo manual salían
+            # antes revueltos en la misma lista.
+            if "NATURALEZA_HALLAZGO" in auditoria.columns:
+                conteo_naturaleza = auditoria["NATURALEZA_HALLAZGO"].value_counts()
+                naturalezas = [
+                    (etiqueta, int(conteo_naturaleza.get(etiqueta, 0)))
+                    for etiqueta in ACCION_POR_NATURALEZA
                 ]
-                _tabla_auditoria_esencial(
-                    auditoria,
-                    columnas_mostrar,
-                    clave="explorar_auditoria",
-                    vacio="No hay medicamentos con esos criterios en la corrida actual.",
-                    columna_categoria="ESTADO_COHERENCIA",
-                    columna_campo="CAMPOS_CON_DIFERENCIA",
-                    opciones_campo=CAMPOS_COMPARADOS_COHERENCIA,
-                    categorias_iniciales=estados_iniciales,
-                    clave_campo="coherencia_campo_diferencia",
-                )
+                naturalezas = [(etiqueta, n) for etiqueta, n in naturalezas if n]
+                if naturalezas:
+                    # Como TABLA y no como tarjetas sueltas, y plegado por
+                    # defecto. Tres de estas cinco cifras son exactamente las
+                    # mismas que ya estan arriba, solo renombradas: "vigencia en
+                    # riesgo" es vencido + sin vigencia, "en tramite de
+                    # renovacion" y "dato desactualizado" son identicas a sus
+                    # tarjetas. Repetirlas como metricas grandes hacia que el
+                    # mismo medicamento se contara tres veces al sumar a ojo.
+                    # Aqui aportan lo unico que las otras no dicen: QUE HACER.
+                    with st.expander(
+                        "Qué hacer con cada hallazgo — acción sugerida por clase", expanded=False
+                    ):
+                        st.caption(
+                            "Cada medicamento lleva **una sola** etiqueta: la de lo más urgente "
+                            "que pide. Varias de estas cifras son los mismos medicamentos que "
+                            "las tarjetas de arriba, agrupados por la acción que piden en vez "
+                            "de por su estado — **no se suman entre sí ni con aquellas**."
+                        )
+                        _mostrar_tabla_estandar(
+                            pd.DataFrame(
+                                [
+                                    {
+                                        "Clase de hallazgo": etiqueta,
+                                        "Medicamentos": n,
+                                        "Qué hacer": ACCION_POR_NATURALEZA[etiqueta],
+                                    }
+                                    for etiqueta, n in naturalezas
+                                ]
+                            ),
+                            variante="resumen",
+                        )
 
-                _descarga_diferida(
-                    "Preparar auditoría de coherencia (.xlsx, una hoja por estado)",
-                    lambda: _bytes_auditoria_coherencia(auditoria),
-                    "auditoria_coherencia_invima.xlsx",
-                    "descarga_auditoria",
-                )
+            if "PORCENTAJE_COMPLETITUD_REPORTE" in auditoria.columns:
+                with st.expander("10 dimensiones de calidad de dato (completitud, unicidad, dominio, razonabilidad, formato, integridad referencial, vigencia)"):
+                    n_total_auditado = len(auditoria)
+                    completitud_prom = auditoria["PORCENTAJE_COMPLETITUD_REPORTE"].mean()
+                    n_duplicados = int(auditoria["CODIGO_DUPLICADO_EN_REPORTE"].sum())
+                    n_fuera_dominio = int((auditoria["VALORES_FUERA_DE_DOMINIO"] != "").sum())
+                    n_inconsistencia_num = int((auditoria["INCONSISTENCIA_NUMERICA"] != "").sum())
+                    n_formato_invalido = int((auditoria["FORMATO_CODIGO_INTERNO_INVALIDO"] != "").sum())
+                    n_integridad_referencial = int((auditoria["INTEGRIDAD_REFERENCIAL_CATALOGO"] != "").sum())
 
-    _navegacion_y_contenido()
+                    q1, q2, q3, q4, q5, q6 = st.columns(6)
+                    q1.metric(
+                        "Completitud", f"{completitud_prom:.1f}%" if pd.notna(completitud_prom) else "—",
+                        help="Promedio de cuántos de los 37 campos del cargue están diligenciados por medicamento.",
+                    )
+                    q2.metric(
+                        "Unicidad", f"{n_duplicados:,}", delta_color="inverse",
+                        help="CODIGO_INTERNO repetido dentro del propio reporte de Gemma Net.",
+                    )
+                    q3.metric(
+                        "Validez de dominio", f"{n_fuera_dominio:,}", delta_color="inverse",
+                        help="CLASIFICADO / CODIGO_NIVEL_SERVICIO / POS / ACTIVO con un valor fuera de lo permitido.",
+                    )
+                    q4.metric(
+                        "Razonabilidad numérica", f"{n_inconsistencia_num:,}", delta_color="inverse",
+                        help="Edades o topes de uso fuera de orden lógico, o negativos.",
+                    )
+                    q5.metric(
+                        "Conformidad de formato", f"{n_formato_invalido:,}", delta_color="inverse",
+                        help="CODIGO_INTERNO vacío o guardado como error de fórmula de Excel.",
+                    )
+                    q6.metric(
+                        "Integridad referencial", f"{n_integridad_referencial:,}", delta_color="inverse",
+                        help="MARCA_MEDICAMENTO / UNIDAD_MEDIDA con un código que NO existe en el catálogo "
+                        "interno (config/catalogos/) — distinto de \"no coincide con INVIMA\", ver columna "
+                        "INTEGRIDAD_REFERENCIAL_CATALOGO en la tabla para el mensaje exacto de qué código "
+                        "falta y dónde agregarlo.",
+                    )
+                    st.caption(
+                        f"Sobre {n_total_auditado:,} medicamentos auditados. Junto con Exactitud, Vigencia y "
+                        "Consistencia (arriba), son las 10 dimensiones de calidad de dato de esta auditoría."
+                    )
+
+            if n_sin_corresp > 0 and "TIPO_SIN_CORRESPONDENCIA" in auditoria.columns:
+                df_sin_corresp = auditoria[auditoria["ESTADO_COHERENCIA"] == EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value]
+                n_posible_error = int(
+                    df_sin_corresp["TIPO_SIN_CORRESPONDENCIA"].str.contains("EXPEDIENTE-CONSECUTIVO", na=False).sum()
+                )
+                n_legado = n_sin_corresp - n_posible_error
+                with st.expander(f"Detalle de los {n_sin_corresp:,} \"sin correspondencia\" — no son todos iguales"):
+                    e1, e2 = st.columns(2)
+                    e1.metric(
+                        "Con formato de código INVIMA, no encontrados",
+                        f"{n_posible_error:,}",
+                        f"{n_posible_error / n_sin_corresp:.0%}",
+                        help="Sigue el formato EXPEDIENTE-CONSECUTIVO pero no aparece en INVIMA — "
+                        "posible error de digitación o el registro ya no existe ahí. Vale la pena "
+                        "revisar estos puntualmente.",
+                    )
+                    e2.metric(
+                        "Código legado (sin formato INVIMA)",
+                        f"{n_legado:,}",
+                        f"{n_legado / n_sin_corresp:.0%}",
+                        help="No sigue el formato EXPEDIENTE-CONSECUTIVO — nunca tuvo un expediente "
+                        "INVIMA asociado. No hay nada que verificar contra INVIMA para estos.",
+                    )
+
+            st.divider()
+            st.subheader("Tabla de calidades")
+            _mensaje_breve(
+                "Cada calidad se puede **abrir** hasta los medicamentos que la componen.",
+                "Las tarjetas de arriba dicen cuántos; esta tabla dice cuáles. Es el mismo "
+                "cálculo, pero navegable: se elige una calidad, se ve la lista con el dato "
+                "de Gemma Net y el de INVIMA al lado, y se puede buscar, filtrar y descargar.",
+                etiqueta="Para qué sirve",
+            )
+            _mostrar_tabla_de_calidades(auditoria)
+
+            st.divider()
+            st.subheader("Explorar por estado y por campo")
+            estados_disponibles = sorted(auditoria["ESTADO_COHERENCIA"].unique())
+            estados_iniciales = [
+                estado
+                for estado in [
+                    EstadoCoherencia.VENCIDO_EN_INVIMA.value,
+                    EstadoCoherencia.ENCONTRADO_EN_OTRO_ESTADO_INVIMA.value,
+                    EstadoCoherencia.EN_TRAMITE_RENOVACION_INVIMA.value,
+                    EstadoCoherencia.CON_DIFERENCIAS.value,
+                ]
+                if estado in estados_disponibles
+            ] or estados_disponibles
+            columnas_mostrar = [
+                c
+                for c in [
+                    "CODIGO_INTERNO",
+                    "DESCRIPCION",
+                    "ESTADO_COHERENCIA",
+                    "ESTADO_INVIMA_DETALLE",
+                    "PORCENTAJE_CALIDAD",
+                    "CAMPOS_CON_DIFERENCIA",
+                    "TIPO_SIN_CORRESPONDENCIA",
+                    "INCONSISTENCIA_FECHAS_ACTIVO",
+                    "PORCENTAJE_COMPLETITUD_REPORTE",
+                    "CODIGO_DUPLICADO_EN_REPORTE",
+                    "VALORES_FUERA_DE_DOMINIO",
+                    "INCONSISTENCIA_NUMERICA",
+                    "FORMATO_CODIGO_INTERNO_INVALIDO",
+                    "INTEGRIDAD_REFERENCIAL_CATALOGO",
+                ]
+                if c in auditoria.columns
+            ]
+            _tabla_auditoria_esencial(
+                auditoria,
+                columnas_mostrar,
+                clave="explorar_auditoria",
+                vacio="No hay medicamentos con esos criterios en la corrida actual.",
+                columna_categoria="ESTADO_COHERENCIA",
+                columna_campo="CAMPOS_CON_DIFERENCIA",
+                opciones_campo=CAMPOS_COMPARADOS_COHERENCIA,
+                categorias_iniciales=estados_iniciales,
+                clave_campo="coherencia_campo_diferencia",
+            )
+
+            _descarga_diferida(
+                "Preparar auditoría de coherencia (.xlsx, una hoja por estado)",
+                lambda: _bytes_auditoria_coherencia(auditoria),
+                "auditoria_coherencia_invima.xlsx",
+                "descarga_auditoria",
+            )
 
 
 def _exportar_a_bytes(escribir) -> bytes:
