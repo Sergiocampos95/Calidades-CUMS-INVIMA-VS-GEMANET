@@ -17,6 +17,7 @@ contra el export real -- ver exportacion/cargue.py.
 from __future__ import annotations
 
 import datetime as dt
+import html
 import json
 import os
 import tempfile
@@ -466,6 +467,15 @@ def _inyectar_css(tokens: dict) -> None:
             opacity: 1 !important;
             transition: none !important;
         }}
+        /* Icono "?" de _mostrar_detalle_alerta: HTML puro (atributo title),
+        no un boton -- por eso el cursor "help" y el color, no hay estado
+        hover/focus de Streamlit que estilar aqui. */
+        .icono-ayuda {{
+            cursor: help;
+            color: {color["primario"]["valor"]};
+            font-size: 0.85rem;
+            opacity: 0.8;
+        }}
         /* Tablas estandar: el contenedor separa el bloque de datos del resto
         de la pantalla y la cabecera azul deja clara la jerarquía. Se usan
         exclusivamente los tokens ya definidos para Gemma Net. */
@@ -847,20 +857,47 @@ def _buscar_auditoria(df: pd.DataFrame, busqueda: str) -> pd.DataFrame:
     )
 
 
+_PREFIJO_OPCIONES_FILTRO = "_opc_filtro_"
+
+
 def _opciones_filtro(
-    df: pd.DataFrame, columna: str | None, opciones: list[str] | None = None
+    df: pd.DataFrame,
+    columna: str | None,
+    opciones: list[str] | None = None,
+    *,
+    clave_cache: str | None = None,
 ) -> list[str]:
-    """Opciones manejables de una categoria o de una columna tipo lista."""
+    """Opciones manejables de una categoria o de una columna tipo lista.
+
+    `clave_cache`, cuando se pasa, memoiza el resultado en `session_state`
+    por el resto de la corrida (via `_derivado`). Pedido explicito
+    (2026-08-26): "en todas las tablas... deberemos cargar absolutamente
+    todos los filtros para que cuando cambiemos la configuracion... no
+    empiece las mismas validaciones". Calcular las opciones escanea la
+    columna completa (`.unique()`) y sin esto se repetia en CADA rerun de la
+    seccion -- escribir en el buscador, abrir un popover -- aunque el
+    DataFrame base de esa tabla no cambia mientras se sigue viendo la misma
+    vista. `len(df)` entra en la clave como huella barata del subconjunto:
+    dos vistas con el mismo `key_prefix` pero distinto DataFrame de fondo
+    (ej. `_panel_prioridades_auditoria`, que reusa un unico key_prefix para
+    cualquier calidad elegida) no deben compartir cache.
+    """
     if opciones is not None:
         return list(dict.fromkeys(opciones))
     if columna is None or columna not in df.columns:
         return []
-    texto = df[columna].fillna("").astype(str)
-    valores_sueltos = _valores_de_columna_lista(texto)
-    if valores_sueltos is not None:
-        return valores_sueltos
-    valores = sorted(valor for valor in texto.unique() if valor.strip())
-    return valores if len(valores) <= _MAX_OPCIONES_CATEGORIA else []
+
+    def _calcular() -> list[str]:
+        texto = df[columna].fillna("").astype(str)
+        valores_sueltos = _valores_de_columna_lista(texto)
+        if valores_sueltos is not None:
+            return valores_sueltos
+        valores = sorted(valor for valor in texto.unique() if valor.strip())
+        return valores if len(valores) <= _MAX_OPCIONES_CATEGORIA else []
+
+    if clave_cache is None:
+        return _calcular()
+    return _derivado(f"{_PREFIJO_OPCIONES_FILTRO}{clave_cache}_{columna}_{len(df)}", _calcular)
 
 
 def _migrar_seleccion_compatible(
@@ -999,12 +1036,18 @@ def _filtros_estandar(
         help="Busca en la lista ya cargada; no vuelve a consultar ninguna fuente.",
     )
 
-    categorias = _opciones_filtro(df, columna_categoria, opciones_categoria)
+    categorias = _opciones_filtro(
+        df, columna_categoria, opciones_categoria, clave_cache=key_prefix
+    )
     if columna_campo is not None:
-        campos = _opciones_filtro(df, columna_campo, opciones_campo)
+        campos = _opciones_filtro(df, columna_campo, opciones_campo, clave_cache=key_prefix)
     else:
         campos = list(dict.fromkeys(opciones_campo or []))
-    tipos = _opciones_filtro(df, columna_tipo, opciones_tipo) if columna_tipo is not None else []
+    tipos = (
+        _opciones_filtro(df, columna_tipo, opciones_tipo, clave_cache=key_prefix)
+        if columna_tipo is not None
+        else []
+    )
     _migrar_seleccion_compatible(
         clave_categoria,
         categorias,
@@ -1184,24 +1227,27 @@ _ICONO_SEVERIDAD_ALERTA = {"error": "🔴", "warning": "🟡"}
 
 def _mostrar_detalle_alerta(detalle: str, etiqueta: str) -> None:
     """Icono chico "❓" con tooltip nativo al pasar el mouse -- NO un
-    desplegable. Pedido explicito y enfatico del usuario: los expanders y
-    popovers de detalle "solo desperdician espacio" y hay que abrirlos para
-    leer una linea de contexto. `help=` en un boton usa el tooltip nativo de
-    Streamlit (aparece con el mouse encima, no reserva espacio en la
-    pagina, no empuja nada). El texto largo NO se pierde -- sigue siendo el
-    mismo `detalle`, solo cambia el mecanismo para verlo.
+    desplegable, y ahora tampoco un `st.button`. Pedido explicito (2026-08-25):
+    los expanders/popovers "solo desperdician espacio". Pedido explicito
+    ADEMAS (2026-08-26): "si le doy clic [...] empieza a hacer algun proceso
+    [...] es innecesario y solo gasta recursos" -- tenia razon: un
+    `st.button`, aunque no se lea su valor, SI dispara un rerun completo de
+    Streamlit al hacer clic. Un tooltip que solo debe aparecer al pasar el
+    mouse no necesita ningun widget interactivo. Esto es HTML/CSS puro
+    (atributo `title`, soportado nativamente por el navegador): cero clics,
+    cero reruns, cero costo. El texto largo NO se pierde -- sigue siendo el
+    mismo `detalle`, solo que ahora nunca ejecuta Python al mostrarse.
 
-    Bug real (2026-08-25): la clave se derivaba del contenido
-    (`hash(etiqueta + detalle)`) y se asumia que dos tarjetas nunca iban a
-    traer el mismo texto exacto. Dos advertencias de
-    `auditoria.attrs["advertencias"]` SI coincidieron -- `StreamlitDuplicateElementKey`
-    en produccion. La clave ahora es un contador que solo sube durante la
-    corrida (`st.session_state`, reiniciado al arrancar `main()`): unico
-    siempre, sin importar si el contenido se repite.
+    `etiqueta` se conserva en la firma por compatibilidad con los llamadores
+    existentes aunque ya no se use (era el label del boton) -- no vale la
+    pena tocar cada sitio que llama a esta funcion por un parametro que ya
+    no hace nada.
     """
-    contador = st.session_state.get("_contador_detalle_alerta", 0)
-    st.session_state["_contador_detalle_alerta"] = contador + 1
-    st.button("❓", help=detalle, key=f"detalle_alerta_{contador}")
+    del etiqueta
+    st.markdown(
+        f'<span class="icono-ayuda" title="{html.escape(detalle)}">❓</span>',
+        unsafe_allow_html=True,
+    )
 
 
 def _ejemplos_evidencia_vigencia(auditoria: pd.DataFrame, mascara: pd.Series, limite: int = 3) -> str:
@@ -1231,7 +1277,22 @@ def _ejemplos_evidencia_vigencia(auditoria: pd.DataFrame, mascara: pd.Series, li
     return f"\n\nEjemplos con el dato exacto de cada lado:\n{ejemplos}{pie}"
 
 
-def _mostrar_tarjetas_alerta(alertas: list[tuple[str, str, str]]) -> None:
+_COLUMNAS_DRILLDOWN_ALERTA = [
+    "CODIGO_INTERNO",
+    "DESCRIPCION",
+    "ESTADO_COHERENCIA",
+    "ESTADO_INVIMA_DETALLE",
+    "NOVEDAD_VIGENCIA_INVIMA",
+    "DETALLE_VIGENCIA_INVIMA",
+    "TIPO_CODIGO_INTERNO",
+]
+
+
+def _mostrar_tarjetas_alerta(
+    alertas: list[tuple[str, str, str] | tuple[str, str, str, pd.DataFrame]],
+    *,
+    grupo: str = "alerta",
+) -> None:
     """Muestra cada advertencia como una tarjeta compacta (icono + título
     corto de una línea) en vez del párrafo completo en un banner ancho de
     color -- pedido explícito del usuario: los mensajes de advertencia eran
@@ -1239,16 +1300,50 @@ def _mostrar_tarjetas_alerta(alertas: list[tuple[str, str, str]]) -> None:
     "por qué"/"qué hacer") sigue disponible, pero un clic aparte, no forzado
     en pantalla. Los detalles extensos se muestran en una tarjeta emergente.
 
-    `alertas`: lista de (severidad, título_corto, detalle_largo) --
-    severidad es "error" (riesgo alto: vencido/otro estado INVIMA) o
-    "warning" (todo lo demás).
+    `alertas`: lista de (severidad, título_corto, detalle_largo) o, cuando
+    hay un subconjunto de medicamentos detrás del hallazgo, (severidad,
+    título_corto, detalle_largo, subconjunto). Pedido explícito
+    (2026-08-26): "se muestre la información de los medicamentos que
+    salieron seleccionados según su validación" -- el subconjunto YA está
+    calculado por el llamador (una máscara sobre `auditoria`, que ya vive en
+    `session_state`), así que mostrarlo es un filtrado en memoria, no un
+    recálculo: "cargado junto con el apartado", sin costo de eficiencia
+    aparte del de dibujar la tabla que el usuario pida ver.
+
+    `grupo` entra en la clave del toggle "Ver medicamentos" para que dos
+    grupos de tarjetas distintos (vigencia, calidad...) en la misma pantalla
+    no colisionen aunque reusen el mismo índice de posición.
+
+    La grilla de tarjetas y las tablas de medicamentos van en DOS pasadas
+    separadas -- una tabla no cabe legible dentro de una columna de 1/3 de
+    ancho. La grilla se dibuja completa primero; las tablas de lo que quedó
+    activado con el toggle se dibujan despues, a todo el ancho.
     """
     columnas = st.columns(3)
-    for i, (severidad, titulo, detalle) in enumerate(alertas):
+    pendientes_de_tabla: list[tuple[int, pd.DataFrame]] = []
+    for i, alerta in enumerate(alertas):
+        severidad, titulo, detalle = alerta[0], alerta[1], alerta[2]
+        subconjunto = alerta[3] if len(alerta) > 3 else None
         with columnas[i % 3], st.container(border=True):
             st.markdown(f"{_ICONO_SEVERIDAD_ALERTA.get(severidad, '🟡')} **{titulo}**")
             if detalle:
                 _mostrar_detalle_alerta(detalle, "Detalle")
+            if subconjunto is not None and not subconjunto.empty:
+                ver = st.toggle(
+                    f"Ver medicamentos ({len(subconjunto):,})",
+                    key=f"ver_meds_{grupo}_{i}",
+                )
+                if ver:
+                    pendientes_de_tabla.append((i, subconjunto))
+
+    for i, subconjunto in pendientes_de_tabla:
+        columnas_presentes = [c for c in _COLUMNAS_DRILLDOWN_ALERTA if c in subconjunto.columns]
+        _tabla_auditoria_esencial(
+            subconjunto,
+            columnas_presentes,
+            clave=f"tabla_{grupo}_{i}",
+            vacio="Ningún medicamento con esos criterios en la corrida actual.",
+        )
 
 
 def _mensaje_breve(
@@ -2350,6 +2445,14 @@ def _derivado(clave: str, calcular):
 def _limpiar_derivados() -> None:
     for clave in _CLAVES_DERIVADAS_DE_LA_CORRIDA:
         st.session_state.pop(clave, None)
+    # Las opciones de filtro cacheadas (ver _opciones_filtro) usan claves
+    # dinamicas -- no caben en la tupla fija de arriba. Se purgan por
+    # prefijo para que una corrida nueva no herede opciones calculadas
+    # sobre datos de la corrida anterior.
+    for clave in [
+        clave for clave in st.session_state if clave.startswith(_PREFIJO_OPCIONES_FILTRO)
+    ]:
+        del st.session_state[clave]
 
 
 # Escribir a .xlsx y releer los bytes es I/O real (no solo calculo) -- sin
@@ -2616,10 +2719,6 @@ def main() -> None:
     tokens = _cargar_tokens()
     _inyectar_css(tokens)
     _barra_superior()
-    # Reiniciado en cada rerun -- ver `_mostrar_detalle_alerta`, es lo que le
-    # da una clave unica al boton "❓" de cada tarjeta sin depender de que su
-    # contenido nunca se repita.
-    st.session_state["_contador_detalle_alerta"] = 0
 
     # Una vez procesado, este bloque completo deja de dibujarse -- ni
     # siquiera como expander colapsado, que seguia ocupando una fila entera.
@@ -2632,28 +2731,20 @@ def main() -> None:
     mostrar_seleccion_fuentes = not procesado_ya or editando_fuentes
 
     if procesado_ya and not editando_fuentes:
-        # Solo una linea, no un panel: la fuente ya elegida sigue siendo
-        # visible (degradacion explicita, no silenciosa) pero sin el espacio
-        # del expander completo.
-        _usar_api_prev, _archivo_invima_prev, _archivo_gn_prev, _archivo_malla_prev, _usar_bd_prev, _usar_det_prev = (
-            st.session_state["archivos"]
-        )
-        col_fuente, col_boton_fuente = st.columns([5, 1])
-        col_fuente.caption(
-            "Fuente: "
-            + ("INVIMA API" if _usar_api_prev else "INVIMA archivo")
-            + " · "
-            + ("Gemma Net en vivo" if _usar_bd_prev else "Gemma Net archivos locales")
-        )
-        if col_boton_fuente.button("Cambiar fuente de datos", key="btn_cambiar_fuente"):
-            st.session_state["editando_fuentes"] = True
-            st.rerun()
-        usar_api_invima = _usar_api_prev
-        archivo_invima = _archivo_invima_prev
-        archivo_gemma_net = _archivo_gn_prev
-        archivo_malla_referencia = _archivo_malla_prev
-        usar_bd_catalogos = _usar_bd_prev
-        usar_detectados = _usar_det_prev
+        # Sin renderizar nada aqui -- pedido explicito (2026-08-26): "sigue
+        # saliendo el recuadro... pedi que lo quitaramos de la vista". Ni
+        # siquiera la linea compacta de una sola fila va en el cuerpo
+        # principal; el resumen de fuente + "Cambiar fuente de datos" vive
+        # en el sidebar (ver el bloque de navegacion, mas abajo), fuera de
+        # la vista de cada seccion. Aqui solo se recuperan las variables.
+        (
+            usar_api_invima,
+            archivo_invima,
+            archivo_gemma_net,
+            archivo_malla_referencia,
+            usar_bd_catalogos,
+            usar_detectados,
+        ) = st.session_state["archivos"]
 
     if mostrar_seleccion_fuentes:
         if editando_fuentes:
@@ -3180,6 +3271,30 @@ def main() -> None:
                     on_click=_activar_subvista,
                     args=(clave_subvista, opcion_subvista),
                 )
+
+        # Resumen de fuente + "Cambiar fuente de datos", en el sidebar y NO
+        # en el cuerpo principal -- pedido explicito (2026-08-26): el
+        # usuario ya habia pedido sacar "Archivos de entrada" de la vista
+        # tras procesar, y la linea compacta que quedo en su lugar (arriba
+        # de cada seccion) seguia leyendose como el mismo recuadro. Aca
+        # ocupa el espacio del sidebar, que ya esta dedicado a controles de
+        # sesion, no el ancho completo de la pantalla.
+        if st.session_state.get("procesado", False) and not st.session_state.get(
+            "editando_fuentes", False
+        ):
+            _usar_api_prev, _, _, _, _usar_bd_prev, _ = st.session_state["archivos"]
+            st.divider()
+            st.caption(
+                "Fuente: "
+                + ("INVIMA API" if _usar_api_prev else "INVIMA archivo")
+                + " · "
+                + ("Gemma Net en vivo" if _usar_bd_prev else "Gemma Net archivos locales")
+            )
+            if st.button(
+                "Cambiar fuente de datos", key="btn_cambiar_fuente", use_container_width=True
+            ):
+                st.session_state["editando_fuentes"] = True
+                st.rerun()
 
     seccion = st.session_state["seccion_activa"]
     vista_resumen = st.session_state["resumen_vista"]
@@ -3865,25 +3980,55 @@ def main() -> None:
             # hubiera elegido. Cada grupo se abre solo si el usuario quiere
             # ese nivel de detalle.
             alertas_carga = list(st.session_state.get("auditoria_alertas_carga", []))
-            alertas_vigencia: list[tuple[str, str, str]] = []
+            alertas_vigencia: list[tuple[str, str, str, pd.DataFrame]] = []
             alertas_calidad: list[tuple[str, str, str]] = []
 
             if n_vencido > 0:
+                mascara_vencido = auditoria["ESTADO_COHERENCIA"] == EstadoCoherencia.VENCIDO_EN_INVIMA.value
                 alertas_vigencia.append(
-                    ("error", f"⚠ {n_vencido:,} vencido(s) en INVIMA", "riesgo de autorización")
+                    (
+                        "error",
+                        f"⚠ {n_vencido:,} vencido(s) en INVIMA",
+                        "Gemma Net (CODIGO_INTERNO) vs INVIMA (listado de Vencidos). INVIMA "
+                        "tiene este registro sanitario en su listado de Vencidos. Es un riesgo "
+                        "de autorización SOLO si además sigue ACTIVO=SI en Gemma Net — el "
+                        "cruce de ambas condiciones ya está en la tarjeta \"activo(s) aquí sin "
+                        "vigencia en INVIMA\", más abajo. Filtra por ESTADO_COHERENCIA en la "
+                        "tabla para ver estos exactos.",
+                        auditoria[mascara_vencido],
+                    )
                 )
             if n_otro_estado > 0:
+                mascara_otro_estado = (
+                    auditoria["ESTADO_COHERENCIA"]
+                    == EstadoCoherencia.ENCONTRADO_EN_OTRO_ESTADO_INVIMA.value
+                )
                 alertas_vigencia.append(
-                    ("error", f"⚠ {n_otro_estado:,} en otro estado INVIMA", "Cancelado/Suspendido/Inactivo/etc.")
+                    (
+                        "error",
+                        f"⚠ {n_otro_estado:,} en otro estado INVIMA",
+                        "Gemma Net (CODIGO_INTERNO) vs INVIMA (listado Otros Estados). INVIMA "
+                        "tiene este registro como Cancelado, Suspendido, Negado, Desistido o "
+                        "con pérdida de fuerza ejecutoria — el valor EXACTO que reportó INVIMA "
+                        "para cada uno está en la columna ESTADO_INVIMA_DETALLE de la tabla, no "
+                        "es el mismo estado para todos.",
+                        auditoria[mascara_otro_estado],
+                    )
                 )
             if "INCONSISTENCIA_FECHAS_ACTIVO" in auditoria.columns:
-                n_inconsistencia_fechas = int((auditoria["INCONSISTENCIA_FECHAS_ACTIVO"] != "").sum())
+                mascara_fechas = auditoria["INCONSISTENCIA_FECHAS_ACTIVO"] != ""
+                n_inconsistencia_fechas = int(mascara_fechas.sum())
                 if n_inconsistencia_fechas > 0:
                     alertas_vigencia.append(
                         (
                             "warning",
                             f"{n_inconsistencia_fechas:,} con fechas/vigencia inconsistentes",
-                            "ACTIVO vs FECHA_INICIO/FECHA_FIN no cuadran",
+                            "Coherencia INTERNA de Gemma Net (no depende de INVIMA): la columna "
+                            "ACTIVO no cuadra con FECHA_INICIO/FECHA_FIN de ese mismo registro "
+                            "(ej. ACTIVO=SI sin FECHA_INICIO, o ACTIVO=NO con FECHA_FIN vacía). "
+                            "El detalle exacto de cada caso está en INCONSISTENCIA_FECHAS_ACTIVO "
+                            "en la tabla.",
+                            auditoria[mascara_fechas],
                         )
                     )
             # Dimension 10: las novedades de vigencia contra INVIMA. Solo se
@@ -3932,7 +4077,14 @@ def main() -> None:
                         detalle_con_evidencia = detalle + _ejemplos_evidencia_vigencia(
                             auditoria, mascara_novedad
                         )
-                        alertas_vigencia.append((severidad, f"{n:,} {titulo}", detalle_con_evidencia))
+                        alertas_vigencia.append(
+                            (
+                                severidad,
+                                f"{n:,} {titulo}",
+                                detalle_con_evidencia,
+                                auditoria[mascara_novedad],
+                            )
+                        )
 
             for advertencia in auditoria.attrs.get("advertencias", []):
                 alertas_calidad.append(_alerta_desde_advertencia(advertencia))
@@ -3945,15 +4097,15 @@ def main() -> None:
             # detras de un clic extra.
             if alertas_carga:
                 st.markdown("**Avisos de esta corrida**")
-                _mostrar_tarjetas_alerta(alertas_carga)
+                _mostrar_tarjetas_alerta(alertas_carga, grupo="carga")
             if alertas_vigencia:
                 st.markdown(f"**Vigencia frente a INVIMA** ({len(alertas_vigencia)} hallazgo(s))")
-                _mostrar_tarjetas_alerta(alertas_vigencia)
+                _mostrar_tarjetas_alerta(alertas_vigencia, grupo="vigencia")
             if alertas_calidad:
                 st.markdown(
                     f"**Calidad de los campos del reporte** ({len(alertas_calidad)} hallazgo(s))"
                 )
-                _mostrar_tarjetas_alerta(alertas_calidad)
+                _mostrar_tarjetas_alerta(alertas_calidad, grupo="calidad")
 
             if vista_auditoria == "Priorizar lo que requiere accion":
                 _panel_prioridades_auditoria(auditoria)

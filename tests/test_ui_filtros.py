@@ -13,7 +13,8 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "ui_revision"))
 
-from app_streamlit import (  # noqa: E402
+import streamlit as st
+from app_streamlit import (
     _buscar_auditoria,
     _conteo_por_campo,
     _ejemplos_evidencia_vigencia,
@@ -22,6 +23,7 @@ from app_streamlit import (  # noqa: E402
     _filtrar_por_campos,
     _filtrar_por_valores,
     _legible,
+    _opciones_filtro,
     _valores_de_columna_lista,
 )
 
@@ -313,3 +315,40 @@ def test_filtrar_por_tipo_de_codigo_sin_seleccion_no_filtra():
     df = pd.DataFrame({"TIPO_CODIGO_INTERNO": ["cum", "ium"]})
 
     assert _filtrar_por_valores(df, "TIPO_CODIGO_INTERNO", []) is df
+
+
+# --- Cache de opciones de filtro (2026-08-26: "cargar todos los filtros una vez") ---
+
+
+def test_opciones_filtro_sin_clave_cache_no_toca_session_state():
+    df = pd.DataFrame({"X": ["b", "a", "a"]})
+    claves_antes = {k for k in st.session_state if k.startswith("_opc_filtro_")}
+
+    assert _opciones_filtro(df, "X") == ["a", "b"]
+
+    claves_despues = {k for k in st.session_state if k.startswith("_opc_filtro_")}
+    assert claves_antes == claves_despues
+
+
+def test_opciones_filtro_con_clave_cache_se_calcula_una_sola_vez():
+    df = pd.DataFrame({"Y": ["m", "n", "m"]})
+    clave = f"prueba_cache_{id(df)}"
+
+    primera = _opciones_filtro(df, "Y", clave_cache=clave)
+    segunda = _opciones_filtro(df, "Y", clave_cache=clave)
+
+    assert primera == ["m", "n"] == segunda
+    assert primera is segunda  # el segundo llamado devuelve el MISMO objeto: no se recalculo
+    assert f"_opc_filtro_{clave}_Y_3" in st.session_state
+
+
+def test_opciones_filtro_cache_distingue_subconjuntos_de_distinto_tamano():
+    """Mismo key_prefix, DataFrame de fondo distinto (ej.
+    _panel_prioridades_auditoria reusa un unico key_prefix para cualquier
+    calidad elegida) -- no deben compartir cache."""
+    clave = "prioridad_auditoria"
+    chico = pd.DataFrame({"Z": ["p", "q"]})
+    grande = pd.DataFrame({"Z": ["p", "q", "r", "s"]})
+
+    assert _opciones_filtro(chico, "Z", clave_cache=clave) == ["p", "q"]
+    assert _opciones_filtro(grande, "Z", clave_cache=clave) == ["p", "q", "r", "s"]
