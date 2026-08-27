@@ -31,3 +31,14 @@ export interface EslabonResumen {
   universo: number;
   porcentaje_total: number | null;
 }
+
+export interface ResumenCargue {
+  listos?: number;
+  pendientes?: number;
+  [clave: string]: number | undefined;
+}
+
+export interface AdvertenciaMalla {
+  campo: string;
+  advertencia: string;
+}

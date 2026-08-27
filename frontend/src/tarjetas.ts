@@ -14,7 +14,7 @@ export interface DefinicionTarjeta {
 export function renderTarjetas(
   contenedor: HTMLElement,
   definiciones: DefinicionTarjeta[],
-  valores: Record<string, number>,
+  valores: Record<string, number | undefined>,
 ): void {
   contenedor.innerHTML = "";
   contenedor.className = "fila-tarjetas";

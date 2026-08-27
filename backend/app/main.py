@@ -14,7 +14,14 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.app.routers import auditoria, cadena_calidad, candidatos, salud, universo
+from backend.app.routers import (
+    auditoria,
+    cadena_calidad,
+    candidatos,
+    cargue,
+    salud,
+    universo,
+)
 
 app = FastAPI(
     title="Gemma CUM Loader API",
@@ -37,6 +44,7 @@ app.include_router(candidatos.router)
 app.include_router(auditoria.router)
 app.include_router(cadena_calidad.router)
 app.include_router(universo.router)
+app.include_router(cargue.router)
 
 
 @app.get("/")

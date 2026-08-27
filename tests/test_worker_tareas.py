@@ -36,6 +36,11 @@ def _kwargs_comunes(tmp_path):
         "procesador": _procesador_fake,
         "auditor": _auditor_fake,
         "clasificador": _clasificador_fake,
+        # Sin esto, el default real (_localizar_malla_referencia_defecto)
+        # escanearia data/ de verdad -- en esta maquina de desarrollo SI
+        # existe una Estructura Cargue Medicamentos real ahi, y las pruebas
+        # nunca deben depender de lo que haya o no en el filesystem local.
+        "localizador_malla": lambda: None,
         "carpeta_snapshots": tmp_path / "snapshots",
         "ruta_estado": tmp_path / "estado.sqlite3",
     }
@@ -89,6 +94,99 @@ def test_fallo_deja_registrado_el_estado_error_consultable(tmp_path):
     ultimo = ultimo_refresco(tmp_path / "estado.sqlite3")
     assert ultimo.estado == ESTADO_ERROR
     assert "dato invalido" in ultimo.detalle_error
+
+
+def test_sin_malla_de_referencia_no_hay_tablas_de_cargue(tmp_path):
+    """Degradacion explicita: sin Estructura Cargue Medicamentos no hay con
+    que derivar POS/Modelo de Servicio/edad/copagos -- no se inventa nada,
+    esas 4 tablas simplemente no se escriben (el resto del snapshot si)."""
+    ejecutar_refresco(**_kwargs_comunes(tmp_path))
+    for tabla in ("cargue_evaluados", "cargue_estructura", "cargue_final", "cargue_reglas_advertencias"):
+        assert leer_tabla(tabla, tmp_path / "snapshots") is None
+
+
+def _procesador_fake_con_cargue(df_invima, reporte_gemanet, fuente_catalogos=None):
+    return pd.DataFrame(
+        {
+            "CODIGO_INTERNO": ["100-1"],
+            "accion": ["candidato"],
+            "DESCRIPCION": ["ACETAMINOFEN 500MG TABLETA"],
+            "CONCENTRACION": ["500 MG"],
+            "marca_codigo": [200],
+            "EXPEDIENTE": [100],
+            "CONSECUTIVO": [1],
+            "unidad_codigo": [10],
+            "FORMA_FARMACEUTICA": ["TABLETA"],
+            "PRINCIPIO_ACTIVO": ["ACETAMINOFEN"],
+            "ATC": ["N02BE01"],
+            "unidad_metodo": ["exacto_sigla"],
+            "marca_metodo": ["exacto_sigla"],
+        }
+    )
+
+
+def _malla_referencia_fake():
+    # Solo EXPEDIENTE + POS + Modelo de Servicio -- los 22 campos
+    # "constantes" quedan ausentes a proposito, para probar tambien que
+    # faltar una columna termina en advertencia, no en un valor inventado.
+    return pd.DataFrame(
+        {
+            "EXPEDIENTE": [100],
+            "POS(SI/NO)": ["SI"],
+            "CÓDIGO INTERNO MODELO SERVICIO": [1],
+        }
+    )
+
+
+def test_con_malla_de_referencia_disponible_arma_las_4_tablas_de_cargue(tmp_path):
+    kwargs = _kwargs_comunes(tmp_path)
+    kwargs["procesador"] = _procesador_fake_con_cargue
+    kwargs["localizador_malla"] = lambda: "ruta/falsa/estructura_cargue.xlsx"
+    kwargs["lector_malla"] = lambda ruta: _malla_referencia_fake()
+
+    evento = ejecutar_refresco(**kwargs)
+    assert evento.estado == ESTADO_OK
+
+    carpeta = tmp_path / "snapshots"
+    evaluados = leer_tabla("cargue_evaluados", carpeta)
+    estructura = leer_tabla("cargue_estructura", carpeta)
+    cargue_final = leer_tabla("cargue_final", carpeta)
+    advertencias = leer_tabla("cargue_reglas_advertencias", carpeta)
+
+    # EXPEDIENTE 100 tiene POS/modelo consistentes en la malla y unidad/marca
+    # ya resueltas -- este candidato queda "listo_para_cargue".
+    assert evaluados["listo_para_cargue"].tolist() == [True]
+    assert len(estructura) == 1
+    assert len(cargue_final) == 1
+    assert "ESTADO" not in cargue_final.columns  # esquema del cargue final, no el de auditoria
+    # a los 22 campos "constantes" les falta su columna en la malla fake --
+    # tienen que quedar como advertencia, no silenciosos.
+    assert len(advertencias) >= 20
+
+
+def test_cargue_final_vacio_conserva_el_esquema_correcto_no_el_de_auditoria(tmp_path):
+    """Bug real encontrado corriendo esto contra produccion: con 0 filas
+    'listas', el DataFrame vacio tenia las columnas de `cargue_estructura`
+    (ESTADO, CAMPOS_CON_ERROR...) en vez de las 37 columnas reales del
+    Excel de cargue -- confundiria a quien lo abra pensando que es el
+    archivo de auditoria."""
+    kwargs = _kwargs_comunes(tmp_path)
+
+    def _procesador_no_listo(df_invima, reporte_gemanet, fuente_catalogos=None):
+        fila = _procesador_fake_con_cargue(df_invima, reporte_gemanet, fuente_catalogos)
+        fila["unidad_metodo"] = ["sin_resolver"]  # nunca queda listo
+        return fila
+
+    kwargs["procesador"] = _procesador_no_listo
+    kwargs["localizador_malla"] = lambda: "ruta/falsa/estructura_cargue.xlsx"
+    kwargs["lector_malla"] = lambda ruta: _malla_referencia_fake()
+
+    ejecutar_refresco(**kwargs)
+
+    cargue_final = leer_tabla("cargue_final", tmp_path / "snapshots")
+    assert len(cargue_final) == 0
+    assert "ESTADO" not in cargue_final.columns
+    assert "DESCRIPCION" in cargue_final.columns
 
 
 def test_snapshot_anterior_se_conserva_si_el_siguiente_refresco_falla(tmp_path):

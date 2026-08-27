@@ -1,4 +1,12 @@
-import type { EslabonResumen, EstadoSalud, PaginaTabla, Resumen, ResumenMetodos } from "./tipos";
+import type {
+  AdvertenciaMalla,
+  EslabonResumen,
+  EstadoSalud,
+  PaginaTabla,
+  Resumen,
+  ResumenCargue,
+  ResumenMetodos,
+} from "./tipos";
 
 // Configurable via .env (VITE_API_BASE_URL) para cuando el backend viva en
 // otro host -- ver frontend/.env.example. Por defecto, el puerto local de
@@ -99,4 +107,24 @@ export interface ParametrosEslabon extends ParametrosTabla {
 
 export function obtenerEslabon(nombre: string, parametros: ParametrosEslabon = {}): Promise<PaginaTabla> {
   return obtenerJSON<PaginaTabla>(`/auditoria/cadena/${nombre}`, parametros);
+}
+
+export interface ParametrosEstructuraCargue extends ParametrosTabla {
+  listo?: boolean;
+}
+
+export function obtenerEstructuraCargue(parametros: ParametrosEstructuraCargue = {}): Promise<PaginaTabla> {
+  return obtenerJSON<PaginaTabla>("/cargue/estructura", parametros);
+}
+
+export function obtenerCargueFinal(parametros: ParametrosTabla = {}): Promise<PaginaTabla> {
+  return obtenerJSON<PaginaTabla>("/cargue/final", parametros);
+}
+
+export function obtenerResumenCargue(): Promise<ResumenCargue> {
+  return obtenerJSON<ResumenCargue>("/cargue/resumen");
+}
+
+export function obtenerAdvertenciasMalla(): Promise<AdvertenciaMalla[]> {
+  return obtenerJSON<AdvertenciaMalla[]>("/cargue/advertencias");
 }
