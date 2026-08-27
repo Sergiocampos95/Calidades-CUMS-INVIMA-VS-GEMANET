@@ -30,3 +30,9 @@ cargue_*.xlsx
 # publicable ni deben entrar por accidente en el primer commit.
 ui_revision/app_streamlit.py.bak
 consultas/verificar_auditoria.sql
+
+# Snapshots del worker (worker/almacen_snapshots.py) y su registro de salud
+# (worker/estado.py) -- artefactos DERIVADOS y regenerables, no fuente de
+# verdad. Distinto de data/: no son el archivo original de INVIMA/Gemma Net,
+# son el resultado ya procesado que el worker recalcula cada ~50 min.
+data_runtime/

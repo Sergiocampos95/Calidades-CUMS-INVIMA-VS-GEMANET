@@ -18,6 +18,16 @@ dependencies = [
     # del proceso. psycopg 3 y no psycopg2: es la version mantenida, y
     # [binary] evita exigir un compilador de C en las maquinas del equipo.
     "psycopg[binary]>=3.2",
+    # worker/ (Fase 1 de la migracion fuera de Streamlit, ver
+    # .claude/plans -- plan de arquitectura del 2026-08-27): scheduler del
+    # proceso en segundo plano que refresca los datos cada ~50 min. Sin
+    # broker externo (Celery+Redis seria infraestructura de mas para una
+    # sola tarea periodica en un solo proceso).
+    "apscheduler>=3.10",
+    # worker/almacen_snapshots.py: motor Parquet para pandas. Se eligio
+    # sobre JSON/SQLite para los snapshots grandes (~535 MB) porque es
+    # columnar y pandas ya lo integra nativamente (to_parquet/read_parquet).
+    "pyarrow>=17.0",
 ]
 
 [project.scripts]
