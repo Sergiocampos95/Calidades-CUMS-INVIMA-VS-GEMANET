@@ -64,6 +64,8 @@ def listar_cadena(carpeta: Path = Depends(carpeta_snapshots)) -> list[EslabonRes
             campos_acumulados=list(e.campos_acumulados),
             universo=e.universo,
             porcentaje_total=e.porcentaje_total,
+            columnas_trio=list(e.columnas_trio),
+            columna_estado=e.columna_estado,
         )
         for e in _cadena(carpeta)
     ]

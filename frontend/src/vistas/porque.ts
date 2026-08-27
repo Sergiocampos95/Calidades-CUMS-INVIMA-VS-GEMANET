@@ -16,7 +16,7 @@ export function montarPorqueDiferencias(contenedor: HTMLElement): void {
   const seccionTabla = document.createElement("div");
   contenedor.appendChild(seccionTabla);
   new TablaFiltrable(seccionTabla, {
-    columnas: ["CODIGO_INTERNO", "PRODUCTO", "CAMPOS_CON_DIFERENCIA", "PORCENTAJE_CALIDAD"],
+    columnas: ["CODIGO_INTERNO", "DESCRIPCION", "CAMPOS_CON_DIFERENCIA", "PORCENTAJE_CALIDAD"],
     cargarPagina: (p) => obtenerAuditoria({ ...p, estado_coherencia: "con_diferencias" }),
   });
 }
@@ -26,7 +26,7 @@ export function montarPorqueVigencia(contenedor: HTMLElement): void {
   const seccionTabla = document.createElement("div");
   contenedor.appendChild(seccionTabla);
   new TablaFiltrable(seccionTabla, {
-    columnas: ["CODIGO_INTERNO", "PRODUCTO", "ESTADO_COHERENCIA", "NOVEDAD_VIGENCIA_INVIMA", "DETALLE_VIGENCIA_INVIMA"],
+    columnas: ["CODIGO_INTERNO", "DESCRIPCION", "ESTADO_COHERENCIA", "NOVEDAD_VIGENCIA_INVIMA", "DETALLE_VIGENCIA_INVIMA"],
     cargarPagina: (p) => obtenerAuditoria(p),
   });
 }

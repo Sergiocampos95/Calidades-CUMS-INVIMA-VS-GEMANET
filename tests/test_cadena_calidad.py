@@ -158,6 +158,19 @@ def test_columnas_acumuladas_de_h3_incluyen_las_de_h1_y_h2():
     assert "PRINCIPIO_ACTIVO_VALIDACION" in h3.columnas_trio
 
 
+def test_df_tabla_trae_descripcion_como_columna_identificadora():
+    """Bug real (2026-08-27): la columna identificadora pedida era
+    "PRODUCTO" -- un campo del lado INVIMA que no existe en `auditoria`
+    (el lado Gemma Net usa DESCRIPCION) -- el filtro `if c in
+    auditoria.columns` lo descartaba en silencio y df_tabla quedaba sin
+    ninguna columna identificadora."""
+    auditoria = _auditar([_fila_gemanet("500-1")], [_fila_invima("500-1")])
+    cadena = construir_cadena_calidad(auditoria)
+    for eslabon in cadena:
+        assert "DESCRIPCION" in eslabon.df_tabla.columns
+        assert "PRODUCTO" not in eslabon.df_tabla.columns
+
+
 def test_construir_cadena_calidad_solo_recibe_el_dataframe_ya_auditado():
     """Contrato de rendimiento: la funcion no debe necesitar df_invima ni
     catalogos crudos -- todo lo que usa ya esta materializado en `auditoria`

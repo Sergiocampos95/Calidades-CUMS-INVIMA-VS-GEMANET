@@ -32,12 +32,24 @@ class EslabonResumen(BaseModel):
     `auditoria/cadena_calidad.py`): que campos valida hasta este punto,
     cuantas filas entraron a evaluarse, y que porcentaje paso -- sin la
     tabla completa, que se pide aparte (GET /auditoria/cadena/{nombre})
-    porque puede ser grande."""
+    porque puede ser grande.
+
+    `columnas_trio` y `columna_estado` son las columnas REALES de esa tabla
+    (INVIMA/Gemma Net/veredicto + vigencia desde H1, acumuladas) -- el
+    frontend las usa tal cual para armar la tabla en vez de re-derivarlas a
+    mano. Bug real (2026-08-27): la version anterior del frontend
+    reconstruia las columnas solo a partir de `campos_acumulados`, que para
+    H1 esta vacio (no agrega un campo del trio, valida la correspondencia
+    misma) -- eso dejaba a H1 mostrando unicamente CODIGO_INTERNO/PRODUCTO,
+    sin ESTADO_COHERENCIA ni NOVEDAD_VIGENCIA_INVIMA/DETALLE_VIGENCIA_INVIMA,
+    justo la vigencia que el usuario pidio poder ver."""
 
     nombre: str
     campos_acumulados: list[str]
     universo: int
     porcentaje_total: float | None
+    columnas_trio: list[str]
+    columna_estado: str
 
 
 class EstadoSalud(BaseModel):

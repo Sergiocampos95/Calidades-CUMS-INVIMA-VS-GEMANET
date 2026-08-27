@@ -30,6 +30,8 @@ export interface EslabonResumen {
   campos_acumulados: string[];
   universo: number;
   porcentaje_total: number | null;
+  columnas_trio: string[];
+  columna_estado: string;
 }
 
 export interface ResumenCargue {

@@ -1,6 +1,13 @@
 import { obtenerAuditoria, obtenerCadena, obtenerEslabon, obtenerResumenAuditoria } from "../api";
 import { cabeceraConDescarga } from "../descargas";
-import { ESTADOS_COHERENCIA, etiquetaEstadoCoherencia, pildoraEstadoCoherencia } from "../pildoras";
+import {
+  ESTADOS_COHERENCIA,
+  etiquetaEstadoCoherencia,
+  pildoraEstadoCadena,
+  pildoraEstadoCoherencia,
+  pildoraNovedadVigencia,
+  pildoraValidacion,
+} from "../pildoras";
 import { renderTarjetas } from "../tarjetas";
 import { TablaFiltrable } from "../tabla";
 import type { EslabonResumen } from "../tipos";
@@ -43,7 +50,7 @@ export async function montarAuditPriorizar(contenedor: HTMLElement): Promise<voi
   const seccionTabla = document.createElement("div");
   contenedor.appendChild(seccionTabla);
   new TablaFiltrable(seccionTabla, {
-    columnas: ["CODIGO_INTERNO", "PRODUCTO", "ESTADO_COHERENCIA"],
+    columnas: ["CODIGO_INTERNO", "DESCRIPCION", "ESTADO_COHERENCIA"],
     controlesExtra: select,
     formatearCelda: FORMATEADOR_ESTADO,
     cargarPagina: (p) => obtenerAuditoria({ ...p, estado_coherencia: select.value || undefined }),
@@ -93,7 +100,7 @@ export async function montarAuditExplorar(contenedor: HTMLElement): Promise<void
   const seccionTabla = document.createElement("div");
   contenedor.appendChild(seccionTabla);
   new TablaFiltrable(seccionTabla, {
-    columnas: ["CODIGO_INTERNO", "PRODUCTO", "ESTADO_COHERENCIA", "CAMPOS_CON_DIFERENCIA", "PORCENTAJE_CALIDAD"],
+    columnas: ["CODIGO_INTERNO", "DESCRIPCION", "ESTADO_COHERENCIA", "CAMPOS_CON_DIFERENCIA", "PORCENTAJE_CALIDAD"],
     controlesExtra: select,
     formatearCelda: FORMATEADOR_ESTADO,
     cargarPagina: (p) => obtenerAuditoria({ ...p, estado_coherencia: select.value || undefined }),
@@ -123,9 +130,24 @@ export async function montarCadenaCalidad(contenedor: HTMLElement): Promise<void
   function mostrarEslabon(eslabon: EslabonResumen): void {
     columnaPasos.querySelectorAll(".cadena-paso").forEach((el) => el.classList.toggle("activo", el.getAttribute("data-nombre") === eslabon.nombre));
     columnaTabla.innerHTML = "";
-    const columnas = ["CODIGO_INTERNO", "PRODUCTO", ...eslabon.campos_acumulados.flatMap((c) => [`${c}_GEMANET`, `${c}_INVIMA`, `${c}_VALIDACION`])];
+    // Columnas REALES que trae esa tabla (ver EslabonResumen.columnas_trio
+    // en el backend) -- no se re-derivan a mano a partir de
+    // campos_acumulados: para H1 esa lista viene vacia (no agrega un campo
+    // del trio, valida la correspondencia misma) y dejaba a H1 sin
+    // ESTADO_COHERENCIA ni NOVEDAD_VIGENCIA_INVIMA/DETALLE_VIGENCIA_INVIMA
+    // -- justo la vigencia que se necesita ver (bug real reportado por el
+    // usuario, 2026-08-27).
+    const columnas = ["CODIGO_INTERNO", "DESCRIPCION", ...eslabon.columnas_trio, eslabon.columna_estado];
     new TablaFiltrable(columnaTabla, {
       columnas,
+      formatearCelda: (columna, valor) => {
+        if (valor === null || valor === undefined || valor === "") return null; // deja el "—" del default
+        if (columna === "ESTADO_COHERENCIA") return pildoraEstadoCoherencia(valor);
+        if (columna === "NOVEDAD_VIGENCIA_INVIMA") return pildoraNovedadVigencia(valor);
+        if (columna === eslabon.columna_estado) return pildoraEstadoCadena(valor);
+        if (columna.endsWith("_VALIDACION")) return pildoraValidacion(valor);
+        return null;
+      },
       cargarPagina: (p) => obtenerEslabon(eslabon.nombre, p),
     });
   }

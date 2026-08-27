@@ -21,6 +21,7 @@ def _auditoria_muestra():
     return pd.DataFrame(
         {
             "CODIGO_INTERNO": ["1-1", "2-2", "3-3"],
+            "DESCRIPCION": ["ACETAMINOFEN 500MG TABLETA", "IBUPROFENO 400MG TABLETA", "NAPROXENO 250MG TABLETA"],
             "ESTADO_COHERENCIA": [
                 EstadoCoherencia.CORRECTO.value,
                 EstadoCoherencia.CON_DIFERENCIAS.value,
@@ -80,6 +81,43 @@ def test_eslabon_desconocido_da_404(tmp_path):
     try:
         escribir_snapshot({"auditoria": _auditoria_muestra()}, carpeta=carpeta)
         assert cliente.get("/auditoria/cadena/H99").status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_columnas_trio_y_columna_estado_expuestas_en_h1(tmp_path):
+    """Bug real (2026-08-27): el frontend re-derivaba las columnas a mano a
+    partir de campos_acumulados, que para H1 esta vacio -- se perdian
+    ESTADO_COHERENCIA/NOVEDAD_VIGENCIA_INVIMA/DETALLE_VIGENCIA_INVIMA, justo
+    la vigencia que hay que poder ver. Ahora el backend expone las columnas
+    reales de la tabla, y el frontend las usa tal cual."""
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        escribir_snapshot({"auditoria": _auditoria_muestra()}, carpeta=carpeta)
+        cadena = {e["nombre"]: e for e in cliente.get("/auditoria/cadena").json()}
+        h1 = cadena["H1"]
+        assert set(h1["columnas_trio"]) == {
+            "ESTADO_COHERENCIA",
+            "NOVEDAD_VIGENCIA_INVIMA",
+            "DETALLE_VIGENCIA_INVIMA",
+        }
+        assert h1["columna_estado"] == "ESTADO_CADENA_H1"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_tabla_de_un_eslabon_trae_descripcion_no_producto(tmp_path):
+    """PRODUCTO es un campo del lado INVIMA (universo); auditoria trae el
+    lado Gemma Net, donde el texto identificador es DESCRIPCION. Bug real:
+    pedir "PRODUCTO" se descartaba en silencio y la tabla quedaba sin
+    columna identificadora (se veia como una columna de guiones)."""
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        escribir_snapshot({"auditoria": _auditoria_muestra()}, carpeta=carpeta)
+        r = cliente.get("/auditoria/cadena/H1")
+        fila = r.json()["filas"][0]
+        assert "DESCRIPCION" in fila
+        assert "PRODUCTO" not in fila
     finally:
         app.dependency_overrides.clear()
 

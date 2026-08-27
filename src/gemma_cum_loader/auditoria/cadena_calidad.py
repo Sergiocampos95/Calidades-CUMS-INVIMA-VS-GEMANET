@@ -175,7 +175,14 @@ def construir_cadena_calidad(
         estado_columna = pd.Series(ESTADO_CADENA_NO_PASA, index=auditoria.index, dtype="object")
         estado_columna[pasa_acumulada] = ESTADO_CADENA_PASA
 
-        columnas_tabla = [c for c in ("CODIGO_INTERNO", "PRODUCTO") if c in auditoria.columns]
+        # DESCRIPCION, no PRODUCTO -- PRODUCTO es un campo del lado INVIMA
+        # (universo_invima_clasificado), auditoria trae el lado Gemma Net,
+        # donde el texto identificador es DESCRIPCION (ver
+        # CAMPOS_COMPARADOS_COHERENCIA en coherencia_invima.py). Bug real
+        # (2026-08-27): con "PRODUCTO" el filtro `if c in auditoria.columns`
+        # lo descartaba en silencio -- df_tabla nunca tuvo columna
+        # identificadora, se veia como una columna de guiones en la UI.
+        columnas_tabla = [c for c in ("CODIGO_INTERNO", "DESCRIPCION") if c in auditoria.columns]
         columnas_tabla += [c for c in columnas_trio_acumuladas if c in auditoria.columns]
         df_tabla = auditoria[columnas_tabla].copy()
         df_tabla[columna_estado] = estado_columna
