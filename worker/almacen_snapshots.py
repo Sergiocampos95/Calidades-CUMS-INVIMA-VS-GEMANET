@@ -127,6 +127,23 @@ def snapshot_actual(carpeta: Path | None = None) -> Snapshot | None:
     return Snapshot(nombre=datos["nombre"], generado_utc=datos["generado_utc"], tablas=datos["tablas"])
 
 
+# Cache de tablas ya leidas -- cada router de backend/app/routers/ llama
+# leer_tabla() por su cuenta en cada request, y sin esto cada uno releia el
+# Parquet completo del disco cada vez (en auditoria, ~200.000 filas / 535 MB
+# en memoria) -- mismo cuello de botella ya corregido una vez en Streamlit
+# (commit "cache sin limite") reaparecido aca porque el backend no existia
+# todavia en ese momento. Los Parquet de un snapshot son inmutables una vez
+# escritos, asi que cachear es seguro: una entrada por (carpeta,
+# nombre_logico), y al llegar un snapshot nuevo la marca de tiempo no calza
+# mas y la entrada se reemplaza sola -- nunca crece sin limite, acotado por
+# la cantidad de tablas logicas distintas que existan (hoy 7).
+#
+# El DataFrame que devuelve esta funcion queda COMPARTIDO entre requests:
+# ningun llamador debe mutarlo in place (filtros booleanos, .copy() explicito
+# antes de modificar, etc. -- todos los routers actuales ya lo hacen asi).
+_CACHE_TABLAS: dict[tuple[str, str], tuple[str, pd.DataFrame]] = {}
+
+
 def leer_tabla(nombre_logico: str, carpeta: Path | None = None) -> pd.DataFrame | None:
     """El DataFrame de `nombre_logico` (ej. "auditoria") del snapshot
     vigente, o `None` si no hay snapshot todavia o esa tabla no esta en el
@@ -135,10 +152,16 @@ def leer_tabla(nombre_logico: str, carpeta: Path | None = None) -> pd.DataFrame 
     actual = snapshot_actual(carpeta)
     if actual is None or nombre_logico not in actual.tablas:
         return None
+    clave = (str(carpeta), nombre_logico)
+    en_cache = _CACHE_TABLAS.get(clave)
+    if en_cache is not None and en_cache[0] == actual.nombre:
+        return en_cache[1]
     ruta = carpeta / actual.tablas[nombre_logico]
     if not ruta.is_file():
         return None
-    return pd.read_parquet(ruta)
+    df = pd.read_parquet(ruta)
+    _CACHE_TABLAS[clave] = (actual.nombre, df)
+    return df
 
 
 def _podar_snapshots_viejos(carpeta: Path, *, conservar: int) -> None:

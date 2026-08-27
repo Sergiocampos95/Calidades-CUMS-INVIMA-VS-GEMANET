@@ -19,13 +19,24 @@ from backend.app.schemas import (
     EslabonResumen,
     PaginaTabla,
 )
-from gemma_cum_loader.auditoria.cadena_calidad import construir_cadena_calidad
-from worker.almacen_snapshots import leer_tabla
+from gemma_cum_loader.auditoria.cadena_calidad import (
+    EslabonCalidad,
+    construir_cadena_calidad,
+)
+from worker.almacen_snapshots import leer_tabla, snapshot_actual
 
 router = APIRouter(prefix="/auditoria/cadena", tags=["cadena de calidad"])
 
+# construir_cadena_calidad() es vectorizada (ver docstring del router), pero
+# sobre 200.000 filas sigue costando algo -- y tanto listar_cadena() como
+# obtener_eslabon() la llamaban de nuevo en CADA click de H1..H6 y en cada
+# pagina/filtro dentro de una tabla del eslabon. Mismo criterio de "una
+# entrada, se reemplaza sola al llegar snapshot nuevo" que el cache de
+# leer_tabla en almacen_snapshots.py -- no crece sin limite.
+_CACHE_CADENA: dict[str, tuple[str, list[EslabonCalidad]]] = {}
 
-def _cadena(carpeta: Path):
+
+def _cadena(carpeta: Path) -> list[EslabonCalidad]:
     auditoria = leer_tabla("auditoria", carpeta)
     if auditoria is None:
         raise HTTPException(
@@ -33,7 +44,16 @@ def _cadena(carpeta: Path):
             detail="El worker todavia no genero ningun snapshot de auditoria. "
             "Consulta /salud para ver el estado del ultimo refresco.",
         )
-    return construir_cadena_calidad(auditoria)
+    actual = snapshot_actual(carpeta)
+    assert actual is not None  # leer_tabla ya encontro datos -> tiene que haber snapshot
+
+    clave = str(carpeta)
+    en_cache = _CACHE_CADENA.get(clave)
+    if en_cache is not None and en_cache[0] == actual.nombre:
+        return en_cache[1]
+    cadena = construir_cadena_calidad(auditoria)
+    _CACHE_CADENA[clave] = (actual.nombre, cadena)
+    return cadena
 
 
 @router.get("", response_model=list[EslabonResumen])
