@@ -28,6 +28,11 @@ dependencies = [
     # sobre JSON/SQLite para los snapshots grandes (~535 MB) porque es
     # columnar y pandas ya lo integra nativamente (to_parquet/read_parquet).
     "pyarrow>=17.0",
+    # backend/ (Fase 2 de la migracion fuera de Streamlit): API tipada que
+    # solo LEE los snapshots del worker -- nunca ejecuta el pipeline pesado
+    # ni habla con Gemma Net/INVIMA directo (ver backend/app/dependencies.py).
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
 ]
 
 [project.scripts]
@@ -36,11 +41,14 @@ gemma-cum-loader = "gemma_cum_loader.cli:main"
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
+    # TestClient de FastAPI (backend/tests/) lo requiere en tiempo de prueba.
+    "httpx>=0.27",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=8.0",
+    "httpx>=0.27",
 ]
 
 [build-system]
@@ -52,3 +60,9 @@ packages = ["src/gemma_cum_loader"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff.lint.flake8-bugbear]
+# `Depends(...)`/`Query(...)` como valor por defecto es el patron OBLIGATORIO
+# de FastAPI (backend/app/routers/*.py) -- no el bug de "llamada mutable en
+# default" que B008 busca detectar. Ruff no distingue esto sin esta lista.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Body", "fastapi.Path"]
