@@ -33,12 +33,16 @@ def _tabla_candidatos(carpeta: Path):
 @router.get("", response_model=PaginaTabla)
 def listar_candidatos(
     q: str | None = None,
+    accion: str | None = None,
     limite: int = LIMITE_PREVISUALIZACION_DEFECTO,
     offset: int = 0,
     todo: bool = False,
     carpeta: Path = Depends(carpeta_snapshots),
 ) -> PaginaTabla:
-    return paginar(_tabla_candidatos(carpeta), q=q, limite=limite, offset=offset, todo=todo)
+    df = _tabla_candidatos(carpeta)
+    if accion and "accion" in df.columns:
+        df = df[df["accion"] == accion]
+    return paginar(df, q=q, limite=limite, offset=offset, todo=todo)
 
 
 @router.get("/resumen")
@@ -49,3 +53,17 @@ def resumen_candidatos(carpeta: Path = Depends(carpeta_snapshots)) -> dict[str, 
     if "accion" not in df.columns:
         return {}
     return df["accion"].value_counts().to_dict()
+
+
+@router.get("/resumen-metodos")
+def resumen_metodos(carpeta: Path = Depends(carpeta_snapshots)) -> dict[str, dict[str, int]]:
+    """Como se resolvieron UNIDAD_DE_MEDIDA y MARCA_MEDICAMENTO contra el
+    catalogo interno (exacto/alias/fuzzy/sin_resolver) -- alimenta la
+    sub-vista "Como se resolvio". No es un dato de negocio: es el nivel de
+    confianza del proceso de traduccion texto->codigo."""
+    df = _tabla_candidatos(carpeta)
+    resultado: dict[str, dict[str, int]] = {}
+    for columna, clave in (("unidad_metodo", "unidad"), ("marca_metodo", "marca")):
+        if columna in df.columns:
+            resultado[clave] = df[columna].value_counts().to_dict()
+    return resultado

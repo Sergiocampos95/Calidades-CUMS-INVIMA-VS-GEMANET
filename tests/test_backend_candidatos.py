@@ -84,3 +84,38 @@ def test_resumen_candidatos_cuenta_por_accion(tmp_path):
         assert r.json() == {"candidato": 2, "ya_existe": 1, "cuarentena": 1}
     finally:
         app.dependency_overrides.clear()
+
+
+def test_filtro_por_accion(tmp_path):
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        df = pd.DataFrame(
+            {"CODIGO_INTERNO": ["1-1", "2-2"], "accion": ["candidato", "ya_existe"]}
+        )
+        escribir_snapshot({"candidatos": df}, carpeta=carpeta)
+
+        r = cliente.get("/candidatos", params={"accion": "candidato"})
+        cuerpo = r.json()
+        assert cuerpo["total"] == 1
+        assert cuerpo["filas"][0]["CODIGO_INTERNO"] == "1-1"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_resumen_metodos_desglosa_unidad_y_marca(tmp_path):
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        df = pd.DataFrame(
+            {
+                "unidad_metodo": ["exacto_sigla", "exacto_sigla", "fuzzy"],
+                "marca_metodo": ["sin_resolver", "sin_resolver", "exacto_sigla"],
+            }
+        )
+        escribir_snapshot({"candidatos": df}, carpeta=carpeta)
+
+        r = cliente.get("/candidatos/resumen-metodos")
+        cuerpo = r.json()
+        assert cuerpo["unidad"] == {"exacto_sigla": 2, "fuzzy": 1}
+        assert cuerpo["marca"] == {"sin_resolver": 2, "exacto_sigla": 1}
+    finally:
+        app.dependency_overrides.clear()

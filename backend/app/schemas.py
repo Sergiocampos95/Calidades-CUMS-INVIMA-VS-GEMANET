@@ -27,6 +27,19 @@ class PaginaTabla(BaseModel):
     filas: list[dict[str, Any]]
 
 
+class EslabonResumen(BaseModel):
+    """Un peldano de la cadena de calidad H1-H6 (ver
+    `auditoria/cadena_calidad.py`): que campos valida hasta este punto,
+    cuantas filas entraron a evaluarse, y que porcentaje paso -- sin la
+    tabla completa, que se pide aparte (GET /auditoria/cadena/{nombre})
+    porque puede ser grande."""
+
+    nombre: str
+    campos_acumulados: list[str]
+    universo: int
+    porcentaje_total: float | None
+
+
 class EstadoSalud(BaseModel):
     """Sostiene la regla de "degradacion explicita, nunca fallo silencioso":
     cualquier cliente (Streamlit hoy, el frontend nuevo despues) puede

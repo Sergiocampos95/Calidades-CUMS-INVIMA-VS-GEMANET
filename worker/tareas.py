@@ -19,6 +19,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from gemma_cum_loader.armado.malla import universo_invima_clasificado
 from gemma_cum_loader.catalogos.fuentes import (
     FuenteCatalogos,
     FuenteCatalogosConRespaldo,
@@ -44,6 +45,7 @@ def ejecutar_refresco(
     lector_invima_api: Callable[..., pd.DataFrame] = leer_catalogo_invima_api,
     procesador: Callable[..., pd.DataFrame] = procesar_desde_catalogo_invima,
     auditor: Callable[..., pd.DataFrame] = auditar_coherencia_gemanet,
+    clasificador: Callable[[pd.DataFrame], pd.DataFrame] = universo_invima_clasificado,
     fuente_catalogos: FuenteCatalogos | None = None,
     carpeta_snapshots: Path | None = None,
     ruta_estado: Path | None = None,
@@ -82,8 +84,15 @@ def ejecutar_refresco(
             df_invima_renovacion=df_invima_renovacion,
             fuente_catalogos=fuente,
         )
+        # Universo COMPLETO de INVIMA clasificado (los 101.183 registros del
+        # corte, no solo los "candidato") -- alimenta la sub-vista "Detalle
+        # por registro". candidatos_creacion() ya lo calcula internamente
+        # pero descarta las filas que no son candidato; se recalcula aca
+        # sobre el mismo df_invima ya en memoria, sin releer nada.
+        universo = clasificador(df_invima)
         escribir_snapshot(
-            {"candidatos": candidatos, "auditoria": auditoria}, carpeta=carpeta_snapshots
+            {"candidatos": candidatos, "auditoria": auditoria, "universo": universo},
+            carpeta=carpeta_snapshots,
         )
         fin = datetime.now(UTC)
         evento = EstadoRefresco(

@@ -25,12 +25,17 @@ def _auditor_fake(df_invima, reporte_gemanet, df_invima_vencidos, **kwargs):
     return pd.DataFrame({"CODIGO_INTERNO": ["1-1"], "PORCENTAJE_CALIDAD": [100.0]})
 
 
+def _clasificador_fake(df_invima):
+    return pd.DataFrame({"CODIGO_INTERNO": ["1-1"], "CLASIFICACION_CREACION": ["candidato"]})
+
+
 def _kwargs_comunes(tmp_path):
     return {
         "lector_gemanet": lambda: object(),
         "lector_invima_api": _lector_invima_api_fake,
         "procesador": _procesador_fake,
         "auditor": _auditor_fake,
+        "clasificador": _clasificador_fake,
         "carpeta_snapshots": tmp_path / "snapshots",
         "ruta_estado": tmp_path / "estado.sqlite3",
     }
@@ -44,8 +49,10 @@ def test_refresco_exitoso_escribe_snapshot_y_registra_ok(tmp_path):
 
     auditoria = leer_tabla("auditoria", tmp_path / "snapshots")
     candidatos = leer_tabla("candidatos", tmp_path / "snapshots")
+    universo = leer_tabla("universo", tmp_path / "snapshots")
     assert auditoria["PORCENTAJE_CALIDAD"].tolist() == [100.0]
     assert candidatos["accion"].tolist() == ["candidato"]
+    assert universo["CLASIFICACION_CREACION"].tolist() == ["candidato"]
 
 
 def test_refresco_exitoso_queda_registrado_en_el_estado(tmp_path):
