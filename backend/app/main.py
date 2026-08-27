@@ -19,6 +19,7 @@ from backend.app.routers import (
     cadena_calidad,
     candidatos,
     cargue,
+    descargas,
     salud,
     universo,
 )
@@ -45,6 +46,7 @@ app.include_router(auditoria.router)
 app.include_router(cadena_calidad.router)
 app.include_router(universo.router)
 app.include_router(cargue.router)
+app.include_router(descargas.router)
 
 
 @app.get("/")
