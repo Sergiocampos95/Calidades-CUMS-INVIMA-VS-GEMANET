@@ -1,7 +1,10 @@
 import type {
   AdvertenciaMalla,
+  CalidadResumen,
+  DimensionesCalidad,
   EslabonResumen,
   EstadoSalud,
+  HallazgoNaturaleza,
   PaginaTabla,
   Resumen,
   ResumenCargue,
@@ -99,6 +102,22 @@ export function obtenerResumenUniverso(): Promise<Resumen> {
 
 export function obtenerCadena(): Promise<EslabonResumen[]> {
   return obtenerJSON<EslabonResumen[]>("/auditoria/cadena");
+}
+
+export function obtenerCalidades(): Promise<CalidadResumen[]> {
+  return obtenerJSON<CalidadResumen[]>("/auditoria/calidades");
+}
+
+export function obtenerCalidad(nombre: string, parametros: ParametrosTabla = {}): Promise<PaginaTabla> {
+  return obtenerJSON<PaginaTabla>(`/auditoria/calidades/${encodeURIComponent(nombre)}`, parametros);
+}
+
+export function obtenerDimensionesCalidad(): Promise<DimensionesCalidad> {
+  return obtenerJSON<DimensionesCalidad>("/auditoria/dimensiones");
+}
+
+export function obtenerNaturalezaHallazgos(): Promise<HallazgoNaturaleza[]> {
+  return obtenerJSON<HallazgoNaturaleza[]>("/auditoria/naturaleza");
 }
 
 export interface ParametrosEslabon extends ParametrosTabla {

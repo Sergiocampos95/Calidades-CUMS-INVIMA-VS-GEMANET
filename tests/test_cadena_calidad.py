@@ -171,6 +171,17 @@ def test_df_tabla_trae_descripcion_como_columna_identificadora():
         assert "PRODUCTO" not in eslabon.df_tabla.columns
 
 
+def test_columnas_trio_incluyen_similitud_del_campo():
+    """Pedido del usuario (2026-08-27): ver el porcentaje de calidad por
+    cada campo, no solo el veredicto coincide/difiere. SIMILITUD_{campo} ya
+    la calculaba auditar_coherencia(), solo faltaba incluirla en el trio."""
+    auditoria = _auditar([_fila_gemanet("500-1")], [_fila_invima("500-1")])
+    cadena = construir_cadena_calidad(auditoria)
+    h2 = cadena[1]
+    assert "SIMILITUD_DESCRIPCION" in h2.columnas_trio
+    assert "SIMILITUD_DESCRIPCION" in h2.df_tabla.columns
+
+
 def test_construir_cadena_calidad_solo_recibe_el_dataframe_ya_auditado():
     """Contrato de rendimiento: la funcion no debe necesitar df_invima ni
     catalogos crudos -- todo lo que usa ya esta materializado en `auditoria`

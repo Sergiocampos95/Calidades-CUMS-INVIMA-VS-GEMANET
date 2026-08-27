@@ -51,7 +51,7 @@ function formatearCeldaDefecto(columna: string, valor: unknown): string {
   // explicacion -- "—" dice explicitamente "no hay dato", igual que hace
   // la UI de Streamlit con PORCENTAJE_CALIDAD vacio.
   if (valor === null || valor === undefined || valor === "") return `<span class="celda-muda">—</span>`;
-  if (typeof valor === "number" && columna.startsWith("PORCENTAJE")) {
+  if (typeof valor === "number" && (columna.startsWith("PORCENTAJE") || columna.startsWith("SIMILITUD_"))) {
     return `<span class="celda-mono">${valor.toFixed(1)}%</span>`;
   }
   if (columna === "CODIGO_INTERNO" || columna.endsWith("_INTERNO")) {

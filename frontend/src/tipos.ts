@@ -34,6 +34,30 @@ export interface EslabonResumen {
   columna_estado: string;
 }
 
+export interface CalidadResumen {
+  nombre: string;
+  explica: string;
+  medicamentos: number;
+  porcentaje_del_catalogo: number;
+  columnas: string[];
+}
+
+export interface DimensionesCalidad {
+  n_total_auditado: number;
+  completitud_promedio: number | null;
+  duplicados: number;
+  fuera_de_dominio: number;
+  inconsistencia_numerica: number;
+  formato_invalido: number;
+  integridad_referencial: number;
+}
+
+export interface HallazgoNaturaleza {
+  naturaleza: string;
+  medicamentos: number;
+  que_hacer: string;
+}
+
 export interface ResumenCargue {
   listos?: number;
   pendientes?: number;

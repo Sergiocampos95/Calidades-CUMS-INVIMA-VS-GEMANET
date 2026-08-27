@@ -1,4 +1,13 @@
-import { obtenerAuditoria, obtenerCadena, obtenerEslabon, obtenerResumenAuditoria } from "../api";
+import {
+  obtenerAuditoria,
+  obtenerCadena,
+  obtenerCalidad,
+  obtenerCalidades,
+  obtenerDimensionesCalidad,
+  obtenerEslabon,
+  obtenerNaturalezaHallazgos,
+  obtenerResumenAuditoria,
+} from "../api";
 import { cabeceraConDescarga } from "../descargas";
 import {
   ESTADOS_COHERENCIA,
@@ -10,10 +19,14 @@ import {
 } from "../pildoras";
 import { renderTarjetas } from "../tarjetas";
 import { TablaFiltrable } from "../tabla";
-import type { EslabonResumen } from "../tipos";
+import type { CalidadResumen, EslabonResumen } from "../tipos";
 
 const FORMATEADOR_ESTADO = (columna: string, valor: unknown) =>
   columna === "ESTADO_COHERENCIA" ? pildoraEstadoCoherencia(valor) : null;
+
+function esc(valor: unknown): string {
+  return String(valor).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] as string);
+}
 
 function selectorEstado(): HTMLSelectElement {
   const select = document.createElement("select");
@@ -57,24 +70,92 @@ export async function montarAuditPriorizar(contenedor: HTMLElement): Promise<voi
   });
 }
 
+function tarjetaDimension(etiqueta: string, valorTexto: string, ayuda: string): string {
+  return `<div class="tarjeta-metrica"><div class="tarjeta-metrica__encabezado"><span>${etiqueta}</span><span class="tarjeta-metrica__ayuda" title="${esc(ayuda)}">?</span></div><div class="tarjeta-metrica__numero">${valorTexto}</div></div>`;
+}
+
 export async function montarAuditEntender(contenedor: HTMLElement): Promise<void> {
-  contenedor.innerHTML =
-    `<p class="vista__intro">Distribución del catálogo por estado de coherencia frente a INVIMA. ` +
-    `Vista simplificada del backend actual (7 estados reales) — la versión de 11 calidades de Streamlit todavía no tiene endpoint propio.</p>`;
-  const panel = document.createElement("div");
-  panel.className = "panel";
-  contenedor.appendChild(panel);
+  contenedor.innerHTML = `<p class="vista__intro">Las 10 dimensiones de calidad de dato de esta auditoría (Exactitud, Vigencia, Consistencia y Correspondencia ya se ven como estado/pildora en las demás vistas). Elegí una fila de la tabla de calidades para ver los medicamentos que la componen — cada cifra se puede <strong>abrir</strong>, no solo mirar.</p>`;
+
+  const dimensiones = document.createElement("div");
+  dimensiones.className = "fila-tarjetas";
+  contenedor.appendChild(dimensiones);
   try {
-    const resumen = await obtenerResumenAuditoria();
-    const total = Object.values(resumen).reduce((a, b) => a + b, 0) || 1;
-    const filas = Object.entries(resumen)
-      .sort((a, b) => b[1] - a[1])
-      .map(([clave, n]) => `<tr><td>${pildoraEstadoCoherencia(clave)}</td><td class="celda-mono">${n.toLocaleString("es-CO")}</td><td class="celda-mono">${((n / total) * 100).toFixed(1)}%</td></tr>`)
-      .join("");
-    panel.innerHTML = `<div class="tabla-filtrable__envoltorio" style="max-height:360px"><table><thead><tr><th>Estado</th><th>Medicamentos</th><th>% del catálogo</th></tr></thead><tbody>${filas}</tbody></table></div>`;
+    const d = await obtenerDimensionesCalidad();
+    dimensiones.innerHTML = [
+      tarjetaDimension(
+        "Completitud",
+        d.completitud_promedio === null ? "—" : `${d.completitud_promedio.toFixed(1)}%`,
+        "Promedio de cuántos de los 37 campos del cargue están diligenciados por medicamento.",
+      ),
+      tarjetaDimension("Unicidad", d.duplicados.toLocaleString("es-CO"), "CODIGO_INTERNO repetido dentro del propio reporte de Gemma Net."),
+      tarjetaDimension(
+        "Validez de dominio",
+        d.fuera_de_dominio.toLocaleString("es-CO"),
+        "CLASIFICADO / CODIGO_NIVEL_SERVICIO / POS / ACTIVO con un valor fuera de lo permitido.",
+      ),
+      tarjetaDimension("Razonabilidad numérica", d.inconsistencia_numerica.toLocaleString("es-CO"), "Edades o topes de uso fuera de orden lógico, o negativos."),
+      tarjetaDimension("Conformidad de formato", d.formato_invalido.toLocaleString("es-CO"), "CODIGO_INTERNO vacío o guardado como error de fórmula de Excel."),
+      tarjetaDimension(
+        "Integridad referencial",
+        d.integridad_referencial.toLocaleString("es-CO"),
+        "MARCA_MEDICAMENTO / UNIDAD_MEDIDA con un código que NO existe en el catálogo interno.",
+      ),
+    ].join("");
   } catch (error) {
-    panel.innerHTML = `<p class="aviso aviso--error">${error instanceof Error ? error.message : String(error)}</p>`;
+    dimensiones.innerHTML = `<p class="aviso aviso--error">${error instanceof Error ? error.message : String(error)}</p>`;
   }
+
+  const grid = document.createElement("div");
+  grid.className = "grid-2";
+  grid.style.marginTop = "18px";
+  contenedor.appendChild(grid);
+  const columnaLista = document.createElement("div");
+  const columnaTabla = document.createElement("div");
+  grid.append(columnaLista, columnaTabla);
+
+  let calidades: CalidadResumen[];
+  try {
+    calidades = await obtenerCalidades();
+  } catch (error) {
+    grid.innerHTML = `<p class="aviso aviso--error">${error instanceof Error ? error.message : String(error)}</p>`;
+    return;
+  }
+
+  function mostrarCalidad(calidad: CalidadResumen): void {
+    columnaLista.querySelectorAll(".cadena-paso").forEach((el) => el.classList.toggle("activo", el.getAttribute("data-nombre") === calidad.nombre));
+    columnaTabla.innerHTML = `<p class="vista__intro" style="margin-bottom:10px">${esc(calidad.explica)}</p>`;
+    if (calidad.medicamentos === 0) {
+      columnaTabla.innerHTML += `<p class="tabla-filtrable__vacio">Ningún medicamento cae en esta calidad en la corrida actual.</p>`;
+      return;
+    }
+    const tablaEl = document.createElement("div");
+    columnaTabla.appendChild(tablaEl);
+    new TablaFiltrable(tablaEl, {
+      columnas: calidad.columnas,
+      formatearCelda: FORMATEADOR_ESTADO,
+      cargarPagina: (p) => obtenerCalidad(calidad.nombre, p),
+    });
+  }
+
+  columnaLista.innerHTML = calidades
+    .map(
+      (c) => `<div class="cadena-paso" data-nombre="${esc(c.nombre)}">
+        <div class="cadena-paso__marca">${c.porcentaje_del_catalogo.toFixed(0)}%</div>
+        <div class="cadena-paso__cuerpo">
+          <div class="cadena-paso__titulo">${esc(c.nombre)}</div>
+          <div class="cadena-paso__campos">${c.medicamentos.toLocaleString("es-CO")} medicamentos</div>
+        </div>
+      </div>`,
+    )
+    .join("");
+  columnaLista.querySelectorAll(".cadena-paso").forEach((el) => {
+    el.addEventListener("click", () => {
+      const calidad = calidades.find((c) => c.nombre === el.getAttribute("data-nombre"));
+      if (calidad) mostrarCalidad(calidad);
+    });
+  });
+  if (calidades.length) mostrarCalidad(calidades[0]);
 }
 
 export async function montarAuditExplorar(contenedor: HTMLElement): Promise<void> {
@@ -94,6 +175,30 @@ export async function montarAuditExplorar(contenedor: HTMLElement): Promise<void
     );
   } catch {
     /* la tabla de abajo ya muestra el error si lo hay */
+  }
+
+  // "Que hacer con cada hallazgo" -- recuperado de Streamlit (el usuario lo
+  // recordaba: "un filtro que nos daba recomendaciones de como tratar x
+  // datos"). Agrupa por NATURALEZA_HALLAZGO (una etiqueta por medicamento,
+  // la de la accion mas urgente que pide) en vez de por ESTADO_COHERENCIA
+  // -- no se suma con las tarjetas de arriba, contestan preguntas distintas.
+  const naturaleza = document.createElement("div");
+  contenedor.appendChild(naturaleza);
+  try {
+    const hallazgos = await obtenerNaturalezaHallazgos();
+    if (hallazgos.length) {
+      naturaleza.className = "panel";
+      naturaleza.style.marginTop = "18px";
+      const filas = hallazgos
+        .map(
+          (h) =>
+            `<tr><td>${esc(h.naturaleza)}</td><td class="celda-mono">${h.medicamentos.toLocaleString("es-CO")}</td><td>${esc(h.que_hacer)}</td></tr>`,
+        )
+        .join("");
+      naturaleza.innerHTML = `<div class="panel__cab"><div class="panel__titulo">Qué hacer con cada hallazgo — acción sugerida por clase</div></div><div class="panel__cuerpo"><div class="tabla-filtrable__envoltorio"><table><thead><tr><th>Clase de hallazgo</th><th>Medicamentos</th><th>Qué hacer</th></tr></thead><tbody>${filas}</tbody></table></div></div>`;
+    }
+  } catch {
+    /* no bloquea el resto de la vista */
   }
 
   const select = selectorEstado();

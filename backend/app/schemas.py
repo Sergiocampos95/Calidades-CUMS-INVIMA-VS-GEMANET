@@ -52,6 +52,47 @@ class EslabonResumen(BaseModel):
     columna_estado: str
 
 
+class CalidadResumen(BaseModel):
+    """Una fila de la "tabla de calidades" (ver
+    `auditoria/calidades.py::calidades_auditoria`) -- el entregable que pide
+    el negocio: cuantos medicamentos caen en ella y que significa, sin la
+    tabla completa (se pide aparte, GET /auditoria/calidades/{nombre})."""
+
+    nombre: str
+    explica: str
+    medicamentos: int
+    porcentaje_del_catalogo: float
+    columnas: list[str]
+
+
+class DimensionesCalidad(BaseModel):
+    """Las 6 dimensiones de calidad de dato que todavia no tenian endpoint
+    propio (Completitud, Unicidad, Validez de dominio, Razonabilidad
+    numerica, Conformidad de formato, Integridad referencial) -- las otras
+    4 (Exactitud, Vigencia, Consistencia, Correspondencia) ya se ven en
+    ESTADO_COHERENCIA/NOVEDAD_VIGENCIA_INVIMA. `completitud_promedio` es
+    `None` (no 0.0) cuando no hay filas que promediar."""
+
+    n_total_auditado: int
+    completitud_promedio: float | None
+    duplicados: int
+    fuera_de_dominio: int
+    inconsistencia_numerica: int
+    formato_invalido: int
+    integridad_referencial: int
+
+
+class HallazgoNaturaleza(BaseModel):
+    """"Que hacer con cada hallazgo" (auditoria/coherencia_invima.py::
+    ACCION_POR_NATURALEZA) -- cada medicamento lleva UNA sola etiqueta, la
+    de la accion mas urgente que pide; estas cifras no se suman con las de
+    ESTADO_COHERENCIA ni entre si."""
+
+    naturaleza: str
+    medicamentos: int
+    que_hacer: str
+
+
 class EstadoSalud(BaseModel):
     """Sostiene la regla de "degradacion explicita, nunca fallo silencioso":
     cualquier cliente (Streamlit hoy, el frontend nuevo despues) puede

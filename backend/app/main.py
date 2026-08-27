@@ -17,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.app.routers import (
     auditoria,
     cadena_calidad,
+    calidades,
     candidatos,
     cargue,
     descargas,
@@ -36,7 +37,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
@@ -44,6 +45,7 @@ app.include_router(salud.router)
 app.include_router(candidatos.router)
 app.include_router(auditoria.router)
 app.include_router(cadena_calidad.router)
+app.include_router(calidades.router)
 app.include_router(universo.router)
 app.include_router(cargue.router)
 app.include_router(descargas.router)

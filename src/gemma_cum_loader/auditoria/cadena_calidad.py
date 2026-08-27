@@ -47,6 +47,7 @@ import pandas as pd
 
 from gemma_cum_loader.auditoria.coherencia_invima import (
     CAMPOS_COMPARADOS_COHERENCIA,
+    PREFIJO_SIMILITUD,
     SUFIJO_GEMANET,
     SUFIJO_INVIMA,
     SUFIJO_VALIDACION,
@@ -153,10 +154,18 @@ def construir_cadena_calidad(
             nuevas_columnas = ()
         else:
             pasa_incremental = _pasa_campo(auditoria, campo_nuevo)
+            # SIMILITUD_{campo} al final del cuarteto -- el veredicto
+            # (_VALIDACION) dice SI hay un problema, el porcentaje dice si
+            # es una tilde o son dos medicamentos distintos (pedido del
+            # usuario, 2026-08-27: "ver tambien el porcentaje de calidad
+            # por cada campo"). No es una columna nueva: ya la calcula
+            # auditar_coherencia() via similitud_de_campo(), solo faltaba
+            # incluirla aca.
             nuevas_columnas = (
                 f"{campo_nuevo}{SUFIJO_GEMANET}",
                 f"{campo_nuevo}{SUFIJO_INVIMA}",
                 f"{campo_nuevo}{SUFIJO_VALIDACION}",
+                f"{PREFIJO_SIMILITUD}{campo_nuevo}",
             )
 
         pasa_acumulada = universo_previo & pasa_incremental
