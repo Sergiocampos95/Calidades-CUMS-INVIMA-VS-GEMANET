@@ -20,7 +20,9 @@ import datetime as dt
 import html
 import json
 import os
+import sys
 import tempfile
+import time
 import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
@@ -2951,11 +2953,34 @@ def _seccion_resumen_detalle_registro(df_invima: pd.DataFrame) -> None:
     )
 
 
+_TIEMPO_INICIO_RERUN = time.perf_counter()
+
+
+def _checkpoint(nombre: str) -> None:
+    """Imprime a la TERMINAL (no a la pantalla) cuanto lleva este rerun de
+    Streamlit hasta este punto. Diagnostico temporal, pedido por el usuario
+    (2026-08-27): "cada clic es un proceso" en TODA la app, no en una
+    seccion puntual -- los 3 cuellos de botella ya medidos y arreglados
+    (doble lectura de Gemma Net, cache de filtros sin limite, sugerencias
+    por fila) no explican una demora pareja en cualquier boton. Streamlit
+    reejecuta el script COMPLETO desde arriba en cada interaccion de
+    cualquier widget -- `_TIEMPO_INICIO_RERUN` se reinicia en cada una de
+    esas ejecuciones porque es codigo a nivel de modulo, no de funcion. Con
+    esto impreso en la terminal donde corre `streamlit run`, se puede ver EN
+    QUE FASE se va el tiempo la proxima vez que un clic se sienta lento, en
+    vez de seguir adivinando. Quitar una vez identificada la causa real."""
+    print(
+        f"[timing] {nombre}: {time.perf_counter() - _TIEMPO_INICIO_RERUN:.2f}s desde que arranco este rerun",
+        file=sys.stderr,
+    )
+
+
 def main() -> None:
     st.set_page_config(page_title="Gemma CUM Loader", layout="wide")
     tokens = _cargar_tokens()
     _inyectar_css(tokens)
     _barra_superior()
+    _checkpoint("inicio de main()")
 
     # Una vez procesado, este bloque completo deja de dibujarse -- ni
     # siquiera como expander colapsado, que seguia ocupando una fila entera.
@@ -3190,6 +3215,8 @@ def main() -> None:
             st.session_state["editando_fuentes"] = False
             st.rerun()
 
+    _checkpoint("tras seccion de archivos")
+
     if not st.session_state.get("procesado"):
         st.info("Selecciona los archivos necesarios y presiona Procesar.")
         return
@@ -3294,6 +3321,7 @@ def main() -> None:
 
     resultado = st.session_state["resultado_candidatos"]
     df_invima = st.session_state["df_invima_cache"]
+    _checkpoint("tras candidatos")
 
     # La auditoria corre al ARRANCAR, no detras de un boton.
     #
@@ -3463,6 +3491,7 @@ def main() -> None:
         _avisar_desactualizacion_invima(df_invima)
 
     auditoria = st.session_state.get("auditoria_coherencia")
+    _checkpoint("tras auditoria")
 
     # NAVEGACION LATERAL, no st.tabs -- y la razon es de rendimiento, no de
     # estetica. Streamlit ejecuta el cuerpo de TODAS las pestañas en cada
@@ -3558,6 +3587,7 @@ def main() -> None:
     vista_cargue = st.session_state["cargue_vista"]
     origen = st.session_state["diagnostico_origen"]
     vista_auditoria = st.session_state["vista_auditoria"]
+    _checkpoint(f"antes de dibujar seccion '{seccion}'")
 
     if seccion == "Resumen de resolución":
         total = len(resultado)
@@ -4595,6 +4625,8 @@ def main() -> None:
                 "auditoria_coherencia_invima.xlsx",
                 "descarga_auditoria",
             )
+
+    _checkpoint("fin de main()")
 
 
 def _exportar_a_bytes(escribir) -> bytes:
