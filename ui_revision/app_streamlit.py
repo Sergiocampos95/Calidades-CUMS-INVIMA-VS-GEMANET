@@ -1173,7 +1173,7 @@ def _filtros_estandar(
         f"{tuple(sorted(categorias_elegidas))}_{tuple(sorted(campos_elegidos))}_"
         f"{tuple(sorted(tipos_elegidos))}"
     )
-    filtrado = _derivado(clave_resultado, _calcular_filtrado)
+    filtrado = _derivado_filtro(key_prefix, clave_resultado, _calcular_filtrado)
     st.caption(f"{len(filtrado):,} medicamento(s) con los filtros actuales.")
     return filtrado
 
@@ -2609,6 +2609,7 @@ def _preparar_filas_cargue_cacheada(resultado: pd.DataFrame, reglas: ReglasNegoc
 # 2026-08-25: una clave olvidada deja en pantalla el resultado de la fuente
 # anterior sin avisar, la suposicion silenciosa que prohibe CLAUDE.md.
 _CLAVES_DERIVADAS_DE_LA_CORRIDA = (
+    "reporte_gemanet_parseado",
     "resultado_candidatos",
     "df_invima_cache",
     "auditoria_coherencia",
@@ -2626,6 +2627,36 @@ def _derivado(clave: str, calcular):
     `session_state[clave]`; en los reruns siguientes lo devuelve tal cual,
     sin volver a hashear argumentos grandes."""
     if clave not in st.session_state:
+        st.session_state[clave] = calcular()
+    return st.session_state[clave]
+
+
+def _derivado_filtro(prefijo_tabla: str, clave: str, calcular):
+    """Como `_derivado`, pero para el cache de RESULTADOS de filtro
+    (`_PREFIJO_FILTRO_RESULTADO`) -- ahi la clave incluye el texto de
+    busqueda, asi que cada tecla que se escribe en el buscador arma una
+    clave nueva y distinta. `_derivado` a secas nunca desaloja: escribir
+    "aceta" letra por letra dejaba 5 DataFrames filtrados completos vivos en
+    `session_state` (uno por prefijo de busqueda), y ninguno de los
+    intermedios se vuelve a leer jamas -- solo el ultimo importa. Medido el
+    2026-08-27 sobre un frame de auditoria de 200k x 60: 296 MB retenidos
+    POR CADA tecla, ~1,48 GB tras escribir 5 caracteres en una sola tabla, y
+    la auditoria real puede tener varias tablas abiertas a la vez.
+
+    Antes de guardar el resultado nuevo, se borran los demas resultados de
+    ESTA MISMA tabla (`prefijo_tabla`, ver `key_prefix` en
+    `_filtros_estandar`) -- nunca los de otra, para no invalidar tablas
+    hermanas que siguen mostrando su propio filtro. Deja como maximo un
+    resultado cacheado por tabla abierta, en vez de uno por cada busqueda
+    que alguna vez se escribio."""
+    prefijo_completo = f"{_PREFIJO_FILTRO_RESULTADO}{prefijo_tabla}_"
+    if clave not in st.session_state:
+        for clave_vieja in [
+            k
+            for k in st.session_state
+            if k.startswith(prefijo_completo) and k != clave
+        ]:
+            del st.session_state[clave_vieja]
         st.session_state[clave] = calcular()
     return st.session_state[clave]
 
@@ -3171,6 +3202,24 @@ def main() -> None:
         usar_bd_catalogos,
         usar_detectados,
     ) = st.session_state["archivos"]
+
+    # Parsear el reporte de Gemma Net UNA sola vez por corrida, no una vez
+    # por consumidor. Medido el 2026-08-27: `_procesar_candidatos` y
+    # `_auditar_coherencia` recibian el mismo `archivo_gemma_net` SIN
+    # parsear (una ruta o un UploadedFile) y cada uno lo volvia a leer desde
+    # cero con `leer_reporte_gemanet`/`leer_codigos_gemanet` -- 57,7 s cada
+    # lectura sobre un .xlsx de 200.000 filas, 115,5 s los dos. Resolverlo
+    # aca a un `ReporteGemaNet` y pasar ESE objeto a ambos evita la segunda
+    # lectura: `leer_reporte_gemanet` ya tiene el atajo de devolver el mismo
+    # objeto si se le pasa uno (linea "si archivo YA es un ReporteGemaNet se
+    # devuelve tal cual" en cruce_gemanet.py), asi que via BD (que YA entrega
+    # un ReporteGemaNet, ver `_reporte_gemanet_desde_bd`) esto no hace nada
+    # de mas. `_derivado`, no una llamada directa: sin esto, se reparsearia
+    # en CADA rerun de Streamlit -- cualquier clic en cualquier filtro de
+    # cualquier pestana -- no solo una vez por corrida.
+    archivo_gemma_net = _derivado(
+        "reporte_gemanet_parseado", lambda: leer_reporte_gemanet(archivo_gemma_net)
+    )
 
     # Ver la nota junto al boton de auditoria: un panel visible en el sitio
     # en vez de un texto chico que puede quedar fuera de la pantalla.

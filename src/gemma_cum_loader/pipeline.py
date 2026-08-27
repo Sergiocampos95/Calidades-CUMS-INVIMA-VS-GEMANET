@@ -264,7 +264,37 @@ def procesar_desde_catalogo_invima(
 
     # sugerencias aproximadas solo para candidatos sin_resolver -- son la
     # mayoria de las filas normalmente resueltas, calcularlas para todas
-    # seria trabajo desperdiciado (y mas lento) sin ningun uso
+    # seria trabajo desperdiciado (y mas lento) sin ningun uso.
+    #
+    # Memoizadas por VALOR distinto, no por fila -- mismo bug que
+    # `_resolver_serie` ya documenta haber arreglado para `resolver()`, vivo
+    # aca porque `sugerencias()` es una llamada aparte. Medido el 2026-08-27
+    # con el catalogo real de marca (894 entradas) sobre 464 titulares de
+    # INVIMA sin marca (ver marcas_faltantes_gemma_net): 17,3 s por 20.000
+    # filas llamando `sugerencias()` por fila, 0,4 s llamando por valor
+    # distinto (43x) -- los 464 valores se reparten entre miles de filas
+    # candidatas. Un dict simple alcanza: a diferencia de `resolver()`
+    # (determinista y llamado para TODAS las filas), `sugerencias()` solo se
+    # necesita para el subconjunto candidato+sin_resolver, asi que un
+    # `pd.factorize` sobre la columna completa desperdiciaria trabajo sobre
+    # filas que nunca la piden.
+    _cache_sugerencia_unidad: dict[object, str] = {}
+    _cache_sugerencia_marca: dict[object, str] = {}
+
+    def _sugerencia_unidad_de(valor: object) -> str:
+        if valor not in _cache_sugerencia_unidad:
+            _cache_sugerencia_unidad[valor] = _formatear_sugerencias(
+                resolver_unidad.sugerencias(valor)
+            )
+        return _cache_sugerencia_unidad[valor]
+
+    def _sugerencia_marca_de(valor: object) -> str:
+        if valor not in _cache_sugerencia_marca:
+            _cache_sugerencia_marca[valor] = _formatear_sugerencias(
+                resolver_marca.sugerencias(valor)
+            )
+        return _cache_sugerencia_marca[valor]
+
     sugerencia_unidad: list[str] = []
     sugerencia_marca: list[str] = []
     for accion, r_unidad, r_marca, valor_unidad, valor_marca in zip(
@@ -273,12 +303,12 @@ def procesar_desde_catalogo_invima(
     ):
         necesita_sugerencia = accion == "candidato"
         sugerencia_unidad.append(
-            _formatear_sugerencias(resolver_unidad.sugerencias(valor_unidad))
+            _sugerencia_unidad_de(valor_unidad)
             if necesita_sugerencia and r_unidad.metodo == "sin_resolver"
             else ""
         )
         sugerencia_marca.append(
-            _formatear_sugerencias(resolver_marca.sugerencias(valor_marca))
+            _sugerencia_marca_de(valor_marca)
             if necesita_sugerencia and r_marca.metodo == "sin_resolver"
             else ""
         )
