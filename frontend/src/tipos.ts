@@ -19,3 +19,15 @@ export interface EstadoSalud {
 }
 
 export type Resumen = Record<string, number>;
+
+export interface ResumenMetodos {
+  unidad?: Resumen;
+  marca?: Resumen;
+}
+
+export interface EslabonResumen {
+  nombre: string;
+  campos_acumulados: string[];
+  universo: number;
+  porcentaje_total: number | null;
+}

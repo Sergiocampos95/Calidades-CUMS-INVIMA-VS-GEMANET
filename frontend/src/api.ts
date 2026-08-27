@@ -1,4 +1,4 @@
-import type { EstadoSalud, PaginaTabla, Resumen } from "./tipos";
+import type { EslabonResumen, EstadoSalud, PaginaTabla, Resumen, ResumenMetodos } from "./tipos";
 
 // Configurable via .env (VITE_API_BASE_URL) para cuando el backend viva en
 // otro host -- ver frontend/.env.example. Por defecto, el puerto local de
@@ -49,12 +49,20 @@ export interface ParametrosTabla {
   [clave: string]: string | number | boolean | undefined;
 }
 
-export function obtenerCandidatos(parametros: ParametrosTabla = {}): Promise<PaginaTabla> {
+export interface ParametrosCandidatos extends ParametrosTabla {
+  accion?: string;
+}
+
+export function obtenerCandidatos(parametros: ParametrosCandidatos = {}): Promise<PaginaTabla> {
   return obtenerJSON<PaginaTabla>("/candidatos", parametros);
 }
 
 export function obtenerResumenCandidatos(): Promise<Resumen> {
   return obtenerJSON<Resumen>("/candidatos/resumen");
+}
+
+export function obtenerResumenMetodos(): Promise<ResumenMetodos> {
+  return obtenerJSON<ResumenMetodos>("/candidatos/resumen-metodos");
 }
 
 export interface ParametrosAuditoria extends ParametrosTabla {
@@ -67,4 +75,28 @@ export function obtenerAuditoria(parametros: ParametrosAuditoria = {}): Promise<
 
 export function obtenerResumenAuditoria(): Promise<Resumen> {
   return obtenerJSON<Resumen>("/auditoria/resumen");
+}
+
+export interface ParametrosUniverso extends ParametrosTabla {
+  clasificacion?: string;
+}
+
+export function obtenerUniverso(parametros: ParametrosUniverso = {}): Promise<PaginaTabla> {
+  return obtenerJSON<PaginaTabla>("/universo", parametros);
+}
+
+export function obtenerResumenUniverso(): Promise<Resumen> {
+  return obtenerJSON<Resumen>("/universo/resumen");
+}
+
+export function obtenerCadena(): Promise<EslabonResumen[]> {
+  return obtenerJSON<EslabonResumen[]>("/auditoria/cadena");
+}
+
+export interface ParametrosEslabon extends ParametrosTabla {
+  solo_pasa?: boolean;
+}
+
+export function obtenerEslabon(nombre: string, parametros: ParametrosEslabon = {}): Promise<PaginaTabla> {
+  return obtenerJSON<PaginaTabla>(`/auditoria/cadena/${nombre}`, parametros);
 }

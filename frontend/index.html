@@ -4,18 +4,49 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Gemma CUM Loader</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+    />
     <link rel="stylesheet" href="/src/estilo.css" />
   </head>
   <body>
-    <header class="barra-superior">
-      <h1>Gemma CUM Loader</h1>
-      <nav class="navegacion" id="navegacion">
-        <button data-vista="candidatos" class="boton-nav boton-nav--activo">Candidatos</button>
-        <button data-vista="auditoria" class="boton-nav">Auditoría de coherencia</button>
-      </nav>
-    </header>
-    <div id="banner-salud" class="banner-salud" hidden></div>
-    <main id="contenido"></main>
+    <div class="app-shell">
+      <aside class="rail" id="rail">
+        <div class="rail__marca">
+          <div class="rail__logo"></div>
+          <div class="rail__marca-texto">
+            <strong>Gemma CUM Loader</strong>
+            <span>Pijao Salud · EPSI</span>
+          </div>
+        </div>
+        <nav id="rail-nav"></nav>
+        <div class="rail__pie">
+          <div class="rail__beta"><strong>BETA</strong> frontend nuevo</div>
+        </div>
+      </aside>
+
+      <div class="col-principal">
+        <header class="topbar">
+          <div class="miga">
+            <span class="miga__ruta" id="miga-ruta">Candidatos para cargue</span>
+            <h1 class="miga__titulo" id="miga-titulo">Resumen de resolución</h1>
+          </div>
+          <div class="refresco" id="refresco" title="Antigüedad del snapshot que dejó el worker (se recalcula cada ~50 min).">
+            <div class="refresco__anillo" id="anillo-refresco"></div>
+            <div class="refresco__texto"><strong id="texto-refresco">—</strong><span id="subtexto-refresco">consultando…</span></div>
+          </div>
+          <button class="toggle-tema" id="toggle-tema" title="Cambiar tema">◐</button>
+        </header>
+
+        <div class="banner oculto" id="banner-salud"></div>
+
+        <nav class="subnav" id="subnav"></nav>
+
+        <main class="vista" id="vista"></main>
+      </div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

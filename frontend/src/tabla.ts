@@ -20,17 +20,29 @@ export interface OpcionesTablaFiltrable {
    * ya montados por el llamador -- este componente solo los ubica arriba
    * de la busqueda y escucha su evento "cambio-filtro" para re-consultar. */
   controlesExtra?: HTMLElement;
+  /** Formateador de celda por columna, opcional. Devuelve HTML (para
+   * pildoras de estado, texto mono, etc) -- SOLO usarlo para columnas de
+   * valores controlados (enums como accion/ESTADO_COHERENCIA), nunca para
+   * texto libre: el default (sin esto) escapa todo via textContent. */
+  formatearCelda?: (columna: string, valor: unknown, fila: Record<string, unknown>) => string | null;
 }
 
-function formatearCelda(columna: string, valor: unknown): string {
+function esc(valor: unknown): string {
+  return String(valor).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] as string);
+}
+
+function formatearCeldaDefecto(columna: string, valor: unknown): string {
   // null (JSON de NaN/None) nunca se muestra como "0" ni en blanco sin
   // explicacion -- "—" dice explicitamente "no hay dato", igual que hace
   // la UI de Streamlit con PORCENTAJE_CALIDAD vacio.
-  if (valor === null || valor === undefined) return "—";
+  if (valor === null || valor === undefined || valor === "") return `<span class="celda-muda">—</span>`;
   if (typeof valor === "number" && columna.startsWith("PORCENTAJE")) {
-    return `${valor.toFixed(1)}%`;
+    return `<span class="celda-mono">${valor.toFixed(1)}%</span>`;
   }
-  return String(valor);
+  if (columna === "CODIGO_INTERNO" || columna.endsWith("_INTERNO")) {
+    return `<span class="celda-mono">${esc(valor)}</span>`;
+  }
+  return esc(valor);
 }
 
 export class TablaFiltrable {
@@ -163,7 +175,8 @@ export class TablaFiltrable {
         const tr = document.createElement("tr");
         for (const columna of this.opciones.columnas) {
           const td = document.createElement("td");
-          td.textContent = formatearCelda(columna, fila[columna]);
+          const html = this.opciones.formatearCelda?.(columna, fila[columna], fila);
+          td.innerHTML = html ?? formatearCeldaDefecto(columna, fila[columna]);
           tr.appendChild(td);
         }
         cuerpo.appendChild(tr);
