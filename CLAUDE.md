@@ -111,6 +111,18 @@ Los archivos reales son la fuente para medir rendimiento, no para versionar.
   decision · Cargue a Gemma Net · Por que no se cargo · Consultar INVIMA ·
   Auditoria de coherencia. Varias tienen sub-vistas propias (ver
   `SUBVISTAS_POR_SECCION` en `app_streamlit.py`).
+- **Toda tabla dibujada en pantalla recorta su previsualizacion a
+  `_LIMITE_PREVISUALIZACION_MEDICAMENTOS` (1.000) filas, con la opcion
+  explicita de cargar la tabla completa.** Pedido explicito del usuario
+  (2026-08-27): antes solo la variante "medicamentos" de
+  `_mostrar_tabla_estandar` tenia tope; una tabla de resumen que creciera no
+  lo tenia. El unico lugar donde se dibuja un DataFrame en toda la app es
+  `_mostrar_tabla_estandar` (`app_streamlit.py`) -- no crear un segundo
+  mecanismo de render de tablas. El recorte es solo de lo que se ENVIA al
+  navegador: `df` nunca se modifica, y las descargas siempre usan el
+  DataFrame completo. Un checkbox ("Cargar la tabla completa") guardado en
+  `session_state` por una `key` unica por tabla ofrece ver todas las filas
+  cuando hace falta -- nunca se asume en silencio que el limite alcanza.
 
 ## Equipo de agentes
 

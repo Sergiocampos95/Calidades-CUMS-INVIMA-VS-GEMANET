@@ -273,7 +273,9 @@ def _tabla_metodos(destino, serie: pd.Series, total: int) -> None:
             "%": (conteo.to_numpy() / total * 100).round(1) if total else 0.0,
         }
     )
-    _mostrar_tabla_estandar(tabla, variante="resumen", destino=destino)
+    _mostrar_tabla_estandar(
+        tabla, variante="resumen", key=f"tabla_metodos_{serie.name}", destino=destino
+    )
     destino.caption(f"Suman {int(conteo.sum()):,} de {total:,}: no se perdió ninguna fila.")
 
 
@@ -651,6 +653,7 @@ def _etiqueta_valor_filtro(valor: object) -> str:
 
 
 _LIMITE_PREVISUALIZACION_MEDICAMENTOS = 1_000
+_PREFIJO_MOSTRAR_TODO = "_mostrar_todo_"
 _ALTURA_TABLA_RESUMEN = 260
 _ALTURA_TABLA_MEDICAMENTOS = 420
 
@@ -801,37 +804,61 @@ def _mostrar_tabla_estandar(
     df: pd.DataFrame,
     *,
     variante: str,
+    key: str,
     destino=st,
 ) -> None:
     """Muestra resúmenes o medicamentos con un único contrato visual.
 
-    La variante de medicamentos recorta exclusivamente la previsualización:
-    `df` no se modifica, por lo que quien llama conserva todas las filas para
-    descargas y demás decisiones de negocio.
+    Regla de la aplicacion (pedido explicito del usuario, 2026-08-27):
+    TODA tabla que se dibuja en pantalla recorta su previsualizacion a
+    `_LIMITE_PREVISUALIZACION_MEDICAMENTOS` filas por defecto -- antes solo
+    la variante "medicamentos" lo hacia, "resumen" se enviaba completa al
+    navegador sin limite. Sin este tope, una tabla de resumen que crezca
+    (una calidad nueva, un catalogo mas grande) puede volverse tan pesada de
+    renderizar como una de medicamentos, y hasta ahora no habia manera de
+    saberlo de antemano. `df` NUNCA se modifica: quien llama sigue teniendo
+    todas las filas para descargas y demas decisiones de negocio -- el
+    recorte es solo de lo que se ENVIA al navegador para dibujar.
+
+    El limite tiene una salida explicita, no una pared: un checkbox "Cargar
+    la tabla completa" (guardado en `session_state` por `key`, asi que cada
+    tabla recuerda su propia eleccion) permite ver TODAS las filas cuando
+    hace falta, avisando que puede tardar mas. Nunca se asume en silencio
+    que 1.000 filas alcanzan -- se ofrece la opcion y se deja elegir.
     """
     if variante not in {"resumen", "medicamentos"}:
         raise ValueError("La tabla debe ser de resumen o de medicamentos.")
 
     total = len(df)
-    if variante == "medicamentos":
-        envio_navegador = df.head(_LIMITE_PREVISUALIZACION_MEDICAMENTOS)
+    clave_mostrar_todo = f"{_PREFIJO_MOSTRAR_TODO}{key}"
+    altura = _ALTURA_TABLA_MEDICAMENTOS if variante == "medicamentos" else _ALTURA_TABLA_RESUMEN
+    sustantivo = "medicamentos" if variante == "medicamentos" else "filas"
+
+    if total > _LIMITE_PREVISUALIZACION_MEDICAMENTOS:
+        mostrar_todo = destino.checkbox(
+            f"Cargar la tabla completa ({total:,} {sustantivo}, puede tardar más)",
+            value=st.session_state.get(clave_mostrar_todo, False),
+            key=clave_mostrar_todo,
+            help="Por defecto se muestran las primeras "
+            f"{_LIMITE_PREVISUALIZACION_MEDICAMENTOS:,} filas para que la pantalla "
+            "siga ágil. La lista completa siempre está disponible para descargar, "
+            "se marque esto o no.",
+        )
+        envio_navegador = df if mostrar_todo else df.head(_LIMITE_PREVISUALIZACION_MEDICAMENTOS)
         visibles = len(envio_navegador)
-        if total > visibles:
-            mensaje = (
-                f"Total: {total:,} medicamentos · visibles en pantalla: {visibles:,}. "
-                "Para que la bandeja siga ágil, se muestran los primeros 1.000; "
-                "la lista completa permanece disponible para descargar."
-            )
+        if mostrar_todo:
+            mensaje = f"Total: {total:,} {sustantivo} · mostrando la tabla completa."
         else:
             mensaje = (
-                f"Total: {total:,} medicamentos · visibles en pantalla: {visibles:,}. "
-                "Todos los resultados actuales caben en esta vista."
+                f"Total: {total:,} {sustantivo} · visibles en pantalla: {visibles:,}. "
+                f"Para que la bandeja siga ágil, se muestran las primeras "
+                f"{_LIMITE_PREVISUALIZACION_MEDICAMENTOS:,}; la lista completa permanece "
+                "disponible para descargar, o marca la casilla de arriba para verla toda."
             )
         destino.caption(mensaje)
-        altura = _ALTURA_TABLA_MEDICAMENTOS
     else:
         envio_navegador = df
-        altura = _ALTURA_TABLA_RESUMEN
+        destino.caption(f"Total: {total:,} {sustantivo} · todos caben en esta vista.")
 
     vista = _previsualizacion_tabla(envio_navegador)
     destino.dataframe(
@@ -1255,7 +1282,7 @@ def _tabla_filtrable(
     if columna_tipo in filtrado.columns and columna_tipo not in columnas_visibles:
         columnas_visibles.append(columna_tipo)
     salida = filtrado[columnas_visibles]
-    _mostrar_tabla_estandar(salida, variante="medicamentos")
+    _mostrar_tabla_estandar(salida, variante="medicamentos", key=key_prefix)
     return filtrado
 
 
@@ -1546,7 +1573,7 @@ def _panel_archivos_detectados(hallados: dict) -> None:
         }
         for tipo, a in hallados.items()
     ]
-    _mostrar_tabla_estandar(pd.DataFrame(filas), variante="resumen")
+    _mostrar_tabla_estandar(pd.DataFrame(filas), variante="resumen", key="archivos_detectados")
 
 
 def _conteo_por_campo(serie: pd.Series, campos: list[str]) -> dict[str, int]:
@@ -1732,7 +1759,7 @@ def _mostrar_tabla_de_calidades(auditoria: pd.DataFrame) -> None:
             for c in calidades
         ]
     )
-    _mostrar_tabla_estandar(resumen, variante="resumen")
+    _mostrar_tabla_estandar(resumen, variante="resumen", key="tabla_de_calidades_resumen")
 
     _mensaje_breve(
         "Falta una calidad que hoy no se puede responder: **vencidos que se siguen "
@@ -1850,7 +1877,7 @@ def _panel_cadena_calidad(auditoria: pd.DataFrame) -> None:
             for eslabon in cadena
         ]
     )
-    _mostrar_tabla_estandar(resumen, variante="resumen")
+    _mostrar_tabla_estandar(resumen, variante="resumen", key="cadena_calidad_resumen")
 
     st.divider()
     nombres_cadena = [eslabon.nombre for eslabon in cadena]
@@ -1960,7 +1987,7 @@ def _tabla_auditoria_esencial(
         presentes.append(campo)
     if tipo in filtrado.columns and tipo not in presentes:
         presentes.append(tipo)
-    _mostrar_tabla_estandar(filtrado[presentes], variante="medicamentos")
+    _mostrar_tabla_estandar(filtrado[presentes], variante="medicamentos", key=clave)
     return filtrado
 
 
@@ -1989,7 +2016,7 @@ def _panel_prioridades_auditoria(auditoria: pd.DataFrame) -> None:
             for calidad in relevantes
         ]
     )
-    _mostrar_tabla_estandar(resumen, variante="resumen")
+    _mostrar_tabla_estandar(resumen, variante="resumen", key="panel_prioridades_resumen")
     opciones = [calidad["nombre"] for calidad in relevantes]
     elegida = st.selectbox("Ver medicamentos de esta prioridad", opciones, key="prioridad_auditoria")
     calidad = next(calidad for calidad in relevantes if calidad["nombre"] == elegida)
@@ -2070,7 +2097,7 @@ def _mostrar_distribucion_tipo_codigo_interno(auditoria: pd.DataFrame) -> None:
         ]
     )
     st.caption("Tipos de estructura de CODIGO_INTERNO en este reporte:")
-    _mostrar_tabla_estandar(resumen, variante="resumen")
+    _mostrar_tabla_estandar(resumen, variante="resumen", key="distribucion_tipo_codigo_interno")
     if n_legado:
         with st.expander(
             f"+ {n_legado:,} en una capa legada de INVIMA (inactiva, no participa en la prioridad)"
@@ -4494,6 +4521,7 @@ def main() -> None:
                                 ]
                             ),
                             variante="resumen",
+                            key="naturaleza_hallazgo_resumen",
                         )
 
             if "PORCENTAJE_COMPLETITUD_REPORTE" in auditoria.columns:

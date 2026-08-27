@@ -15,8 +15,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "ui_revision"))
 
 import streamlit as st
 from app_streamlit import (
+    _PREFIJO_FILTRO_RESULTADO,
     _buscar_auditoria,
     _conteo_por_campo,
+    _derivado_filtro,
     _fechas_legibles,
     _filtrar_exploracion_auditoria,
     _filtrar_por_campos,
@@ -327,3 +329,40 @@ def test_filtros_estandar_cache_distingue_subconjuntos_de_distinto_tamano():
 
     assert len(_filtros_estandar(chico, key_prefix=clave)) == 1
     assert len(_filtros_estandar(grande, key_prefix=clave)) == 2
+
+
+def test_derivado_filtro_desaloja_resultados_viejos_de_la_misma_tabla():
+    """Escribir "aceta" letra por letra armaba una clave nueva por cada
+    tecla (a, ac, ace...) y `_derivado` a secas nunca las borraba -- 5
+    DataFrames filtrados completos quedaban huerfanos en `session_state`.
+    `_derivado_filtro` debe dejar como maximo 1 resultado cacheado por
+    tabla (`prefijo_tabla`), sin importar cuantas claves distintas se
+    hayan pedido antes."""
+    prefijo = f"prueba_derivado_filtro_{id(object())}"
+
+    for busqueda in ("a", "ac", "ace", "acet", "aceta"):
+        clave = f"{_PREFIJO_FILTRO_RESULTADO}{prefijo}_{busqueda}"
+        _derivado_filtro(prefijo, clave, lambda b=busqueda: pd.DataFrame({"busqueda": [b]}))
+
+    claves_vivas = [
+        k for k in st.session_state if k.startswith(f"{_PREFIJO_FILTRO_RESULTADO}{prefijo}_")
+    ]
+    assert len(claves_vivas) == 1
+    # y es la ULTIMA que se pidio, no una cualquiera
+    assert st.session_state[claves_vivas[0]]["busqueda"].iloc[0] == "aceta"
+
+
+def test_derivado_filtro_no_desaloja_tablas_hermanas():
+    """Purgar por `prefijo_tabla` (el `key_prefix` de la tabla que esta
+    filtrando), nunca por el prefijo generico de TODAS las tablas -- dos
+    tablas abiertas a la vez no deben invalidarse entre si."""
+    prefijo_a = f"prueba_derivado_filtro_hermana_a_{id(object())}"
+    prefijo_b = f"prueba_derivado_filtro_hermana_b_{id(object())}"
+    clave_a = f"{_PREFIJO_FILTRO_RESULTADO}{prefijo_a}_x"
+    clave_b = f"{_PREFIJO_FILTRO_RESULTADO}{prefijo_b}_y"
+
+    _derivado_filtro(prefijo_a, clave_a, lambda: pd.DataFrame({"tabla": ["a"]}))
+    _derivado_filtro(prefijo_b, clave_b, lambda: pd.DataFrame({"tabla": ["b"]}))
+
+    assert clave_a in st.session_state
+    assert clave_b in st.session_state
