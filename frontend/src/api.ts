@@ -128,3 +128,10 @@ export function obtenerResumenCargue(): Promise<ResumenCargue> {
 export function obtenerAdvertenciasMalla(): Promise<AdvertenciaMalla[]> {
   return obtenerJSON<AdvertenciaMalla[]>("/cargue/advertencias");
 }
+
+/** URL completa de un endpoint /descargas/* -- son GET simples con
+ * Content-Disposition: attachment, asi que un <a href> nativo alcanza
+ * (el navegador dispara la descarga solo, sin fetch+blob de por medio). */
+export function urlDescarga(ruta: "candidatos" | "auditoria" | "cargue-estructura" | "cargue-final"): string {
+  return `${BASE_URL}/descargas/${ruta}`;
+}

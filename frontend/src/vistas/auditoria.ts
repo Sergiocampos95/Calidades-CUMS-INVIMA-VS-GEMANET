@@ -1,4 +1,5 @@
 import { obtenerAuditoria, obtenerCadena, obtenerEslabon, obtenerResumenAuditoria } from "../api";
+import { cabeceraConDescarga } from "../descargas";
 import { ESTADOS_COHERENCIA, etiquetaEstadoCoherencia, pildoraEstadoCoherencia } from "../pildoras";
 import { renderTarjetas } from "../tarjetas";
 import { TablaFiltrable } from "../tabla";
@@ -70,7 +71,11 @@ export async function montarAuditEntender(contenedor: HTMLElement): Promise<void
 }
 
 export async function montarAuditExplorar(contenedor: HTMLElement): Promise<void> {
-  contenedor.innerHTML = `<p class="vista__intro">Todos los hallazgos, filtrables por estado. Buscá por código o producto para llegar directo a un medicamento.</p>`;
+  contenedor.innerHTML = cabeceraConDescarga(
+    "Todos los hallazgos, filtrables por estado. Buscá por código o producto para llegar directo a un medicamento.",
+    "Descargar auditoría completa (.xlsx)",
+    "auditoria",
+  );
   const tarjetas = document.createElement("div");
   contenedor.appendChild(tarjetas);
   try {

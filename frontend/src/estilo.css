@@ -187,6 +187,12 @@ button, select, input { font-family: inherit; }
 .vista { padding: 18px 28px 48px; animation: entrar 0.22s ease both; }
 @keyframes entrar { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 .vista__intro { max-width: 68ch; color: var(--text-muted); font-size: 0.88rem; margin-bottom: 18px; line-height: 1.5; }
+/* Fila intro + boton de descarga -- mismo lugar que ocupaba
+   st.download_button en Streamlit, arriba de la seccion, no enterrado
+   junto a la tabla. */
+.vista__cabecera { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.vista__cabecera .vista__intro { margin-bottom: 0; }
+.btn--descarga { flex-shrink: 0; white-space: nowrap; }
 
 /* ============================= TARJETAS METRICA (tarjetas.ts) ============================= */
 .fila-tarjetas { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 20px; }

@@ -1,4 +1,5 @@
 import { obtenerResumenCandidatos, obtenerResumenMetodos, obtenerResumenUniverso, obtenerUniverso } from "../api";
+import { cabeceraConDescarga } from "../descargas";
 import { renderTarjetas } from "../tarjetas";
 import { TablaFiltrable } from "../tabla";
 
@@ -15,7 +16,11 @@ function panel(titulo: string): { panel: HTMLElement; cuerpo: HTMLElement } {
 }
 
 export async function montarResumenPrincipal(contenedor: HTMLElement): Promise<void> {
-  contenedor.innerHTML = `<p class="vista__intro">Lo que INVIMA da por válido, cruzado contra lo que ya existe en Gemma Net.</p>`;
+  contenedor.innerHTML = cabeceraConDescarga(
+    "Lo que INVIMA da por válido, cruzado contra lo que ya existe en Gemma Net.",
+    "Descargar reporte de cruce (.xlsx)",
+    "candidatos",
+  );
   const tarjetas = document.createElement("div");
   contenedor.appendChild(tarjetas);
   try {
