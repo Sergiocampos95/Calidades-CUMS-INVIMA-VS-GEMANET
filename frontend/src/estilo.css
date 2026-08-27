@@ -237,16 +237,43 @@ button, select, input { font-family: inherit; }
 .tabla-filtrable__leyenda { font-size: 0.74rem; color: var(--text-faint); padding: 0 16px 8px; margin: 0; }
 .tabla-filtrable__cargar-todo { display: flex; align-items: center; gap: 6px; font-size: 0.78rem; color: var(--text-muted); padding: 0 16px 10px; }
 .tabla-filtrable__cargando { color: var(--text-faint); padding: 0 16px 14px; margin: 0; }
-.tabla-filtrable__envoltorio { overflow-x: auto; overflow-y: auto; max-height: 460px; border-top: 1px solid var(--border); }
+.tabla-filtrable__envoltorio {
+  overflow-x: auto; overflow-y: auto; max-height: 460px; border-top: 1px solid var(--border);
+  /* Aisla el repintado de la tabla del resto de la pagina durante el
+     scroll -- junto con table-layout:fixed de abajo es lo que arregla el
+     scroll lento reportado: antes el navegador media el contenido de cada
+     celda (una de COMO_VERIFICAR con un parrafo entero) para decidir el
+     ancho de columna en CADA frame. */
+  contain: layout paint;
+}
 .tabla-filtrable__vacio { text-align: center; color: var(--text-faint); padding: 20px !important; }
 
 table { border-collapse: collapse; width: 100%; font-size: 0.8rem; }
+/* Ancho de columna FIJO (viene del <colgroup>, ver tabla.ts) en vez de
+   "lo que pida el contenido mas largo" -- soluciona a la vez el ancho
+   descontrolado y el costo de layout que hacia lento el scroll. */
+table.tabla-ancho-fijo { table-layout: fixed; }
 thead th {
-  position: sticky; top: 0; background: var(--surface-2); text-align: left; padding: 8px 12px;
+  position: sticky; top: 0; background: var(--surface-2); text-align: left; padding: 0;
   font-weight: 700; font-size: 0.68rem; letter-spacing: 0.04em; text-transform: uppercase;
-  color: var(--text-muted); white-space: nowrap; border-bottom: 1px solid var(--border); z-index: 1;
+  color: var(--text-muted); border-bottom: 1px solid var(--border); z-index: 1;
 }
-td { padding: 8px 12px; white-space: nowrap; border-bottom: 1px solid var(--border); color: var(--text); }
+.th-etiqueta {
+  display: block; padding: 8px 14px 8px 12px; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.th-manija {
+  position: absolute; top: 0; right: 0; bottom: 0; width: 8px; cursor: col-resize;
+  touch-action: none; transition: background 0.1s ease;
+}
+.th-manija:hover, .th-manija.redimensionando { background: var(--accent); opacity: 0.55; }
+/* `position: sticky` en thead th ya establece el contenedor de posicion
+   para `.th-manija` (absolute) -- un elemento sticky es tan valido como
+   "relative" para eso, no hace falta agregar nada mas. */
+td {
+  padding: 8px 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  border-bottom: 1px solid var(--border); color: var(--text); max-width: 0;
+}
 tbody tr { transition: background 0.1s ease; }
 tbody tr:hover { background: var(--accent-soft); }
 

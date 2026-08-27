@@ -6,10 +6,25 @@ import type { PaginaTabla } from "./tipos";
  * busqueda libre siempre visible y el recorte de previsualizacion + opcion
  * explicita de "Cargar la tabla completa" (regla de CLAUDE.md, seccion UI).
  * Ninguna tabla de esta app se dibuja fuera de este componente.
+ *
+ * Ancho de columna FIJO + texto truncado (con tooltip nativo del valor
+ * completo) + arrastrar el borde del encabezado para redimensionar, como en
+ * Excel. Antes las columnas crecian al ancho del contenido mas largo (una
+ * celda de COMO_VERIFICAR con un parrafo entero estiraba la tabla entera) --
+ * eso es lo que reportó el usuario como "los campos se extienden
+ * innecesariamente" Y como el scroll lento (~5 fps): con `table-layout:
+ * fixed` el navegador no tiene que medir el contenido de cada celda para
+ * decidir el ancho de cada columna, que es justo el trabajo caro que se
+ * repetia en cada frame de scroll.
  */
 
 const LIMITE_PREVISUALIZACION = 1000;
 const DEMORA_BUSQUEDA_MS = 300;
+const ANCHO_COLUMNA_DEFECTO_PX = 150;
+const ANCHO_COLUMNA_ANCHA_PX = 280; // columnas de texto largo conocidas -- ver ES_COLUMNA_ANCHA
+const ANCHO_COLUMNA_MINIMO_PX = 60;
+
+const ES_COLUMNA_ANCHA = /DESCRIPCION|MOTIVO|COMO_VERIFICAR|DETALLE|CAMPOS_CON/i;
 
 export interface OpcionesTablaFiltrable {
   columnas: string[];
@@ -50,6 +65,10 @@ export class TablaFiltrable {
   private mostrarTodo = false;
   private cargando = false;
   private raiz: HTMLElement;
+  /** Ancho por columna en pixeles, sobrevive a los re-render (busqueda,
+   * cargar todo) mientras esta instancia siga viva -- redimensionar una vez
+   * no se pierde con cada tecla que se escribe en el buscador. */
+  private anchosColumna = new Map<string, number>();
 
   constructor(
     contenedor: HTMLElement,
@@ -91,6 +110,45 @@ export class TablaFiltrable {
   private onCargarTodo(marcado: boolean): void {
     this.mostrarTodo = marcado;
     this.recargar();
+  }
+
+  private anchoColumna(columna: string): number {
+    const guardado = this.anchosColumna.get(columna);
+    if (guardado !== undefined) return guardado;
+    return ES_COLUMNA_ANCHA.test(columna) ? ANCHO_COLUMNA_ANCHA_PX : ANCHO_COLUMNA_DEFECTO_PX;
+  }
+
+  /** Arrastrar el borde derecho de un <th> para redimensionar su columna --
+   * mismo gesto que Excel/Streamlit dataframe. Ajusta el <col> del
+   * colgroup, no el <th> directo: con table-layout:fixed eso alcanza para
+   * redimensionar TODA la columna sin recalcular el resto. */
+  private habilitarRedimension(manija: HTMLElement, columna: string, col: HTMLTableColElement): void {
+    manija.addEventListener("pointerdown", (evento) => {
+      evento.preventDefault();
+      const inicioX = evento.clientX;
+      const anchoInicial = this.anchoColumna(columna);
+      manija.setPointerCapture(evento.pointerId);
+      manija.classList.add("redimensionando");
+
+      const mover = (e: PointerEvent) => {
+        const nuevoAncho = Math.max(ANCHO_COLUMNA_MINIMO_PX, anchoInicial + (e.clientX - inicioX));
+        this.anchosColumna.set(columna, nuevoAncho);
+        col.style.width = `${nuevoAncho}px`;
+      };
+      const soltar = () => {
+        manija.classList.remove("redimensionando");
+        manija.removeEventListener("pointermove", mover);
+        manija.removeEventListener("pointerup", soltar);
+      };
+      manija.addEventListener("pointermove", mover);
+      manija.addEventListener("pointerup", soltar);
+    });
+    // Doble clic: volver al ancho por defecto de esa columna, escape rapido
+    // si alguien la angosto/ensancho demasiado.
+    manija.addEventListener("dblclick", () => {
+      this.anchosColumna.delete(columna);
+      col.style.width = `${this.anchoColumna(columna)}px`;
+    });
   }
 
   private render(pagina?: PaginaTabla, error?: string): void {
@@ -150,14 +208,33 @@ export class TablaFiltrable {
     const envoltorio = document.createElement("div");
     envoltorio.className = "tabla-filtrable__envoltorio"; // overflow-x: auto -- nunca scroll horizontal de toda la pagina
     const tabla = document.createElement("table");
+    tabla.className = "tabla-ancho-fijo";
+
+    const colgroup = document.createElement("colgroup");
+    const columnasEl: HTMLTableColElement[] = [];
+    for (const columna of this.opciones.columnas) {
+      const col = document.createElement("col");
+      col.style.width = `${this.anchoColumna(columna)}px`;
+      colgroup.appendChild(col);
+      columnasEl.push(col);
+    }
+    tabla.appendChild(colgroup);
 
     const encabezado = document.createElement("thead");
     const filaEncabezado = document.createElement("tr");
-    for (const columna of this.opciones.columnas) {
+    this.opciones.columnas.forEach((columna, i) => {
       const th = document.createElement("th");
-      th.textContent = columna;
+      const etiqueta = document.createElement("span");
+      etiqueta.className = "th-etiqueta";
+      etiqueta.textContent = columna;
+      etiqueta.title = columna;
+      const manija = document.createElement("span");
+      manija.className = "th-manija";
+      manija.title = "Arrastrar para cambiar el ancho · doble clic para restablecer";
+      th.append(etiqueta, manija);
+      this.habilitarRedimension(manija, columna, columnasEl[i]);
       filaEncabezado.appendChild(th);
-    }
+    });
     encabezado.appendChild(filaEncabezado);
     tabla.appendChild(encabezado);
 
@@ -171,16 +248,22 @@ export class TablaFiltrable {
       fila.appendChild(celda);
       cuerpo.appendChild(fila);
     } else {
+      const fragmento = document.createDocumentFragment();
       for (const fila of pagina.filas) {
         const tr = document.createElement("tr");
         for (const columna of this.opciones.columnas) {
           const td = document.createElement("td");
-          const html = this.opciones.formatearCelda?.(columna, fila[columna], fila);
-          td.innerHTML = html ?? formatearCeldaDefecto(columna, fila[columna]);
+          const valor = fila[columna];
+          const html = this.opciones.formatearCelda?.(columna, valor, fila);
+          td.innerHTML = html ?? formatearCeldaDefecto(columna, valor);
+          // Tooltip nativo con el valor completo -- la celda trunca con
+          // ellipsis (ver CSS), esto es lo que reemplaza el texto cortado.
+          if (valor !== null && valor !== undefined && valor !== "") td.title = String(valor);
           tr.appendChild(td);
         }
-        cuerpo.appendChild(tr);
+        fragmento.appendChild(tr);
       }
+      cuerpo.appendChild(fragmento);
     }
     tabla.appendChild(cuerpo);
     envoltorio.appendChild(tabla);
