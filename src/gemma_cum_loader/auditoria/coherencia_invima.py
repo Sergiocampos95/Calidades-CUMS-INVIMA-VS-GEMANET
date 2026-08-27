@@ -158,6 +158,20 @@ class EstadoCoherencia(Enum):
 #                      advertencia agregada (_detectar_capa_legada_atc), no
 #                      fila por fila -- y nunca dispara fusion ni
 #                      deduplicado de CODIGO_INTERNO.
+#
+# CADENA DE CALIDAD H1-H6 (auditoria/cadena_calidad.py) -- NO es una
+#                      dimension nueva de dato: es una VISTA acumulativa
+#                      sobre las dimensiones 1 (exactitud) y 2 (vigencia) que
+#                      ya calcula esta funcion. Pedido explicito de negocio
+#                      (ing. Sergio, 2026-08-27) de presentar la exactitud
+#                      como una secuencia de tablas cada vez mas estricta
+#                      (H1 valida correspondencia con INVIMA, H2 agrega
+#                      DESCRIPCION, H3 PRINCIPIO_ACTIVO, H4 CONCENTRACION, H6
+#                      UNIDAD_MEDIDA -- H5/laboratorio pendiente de
+#                      confirmar), cada una acumulando las columnas
+#                      GEMANET/INVIMA/VALIDACION de las anteriores. No
+#                      recalcula el merge ni la similitud de campo: lee
+#                      columnas que esta funcion ya deja en el resultado.
 
 
 # campo de salida -> (columna en el Reporte de Gemma Net, columna en INVIMA)

@@ -53,6 +53,7 @@ from gemma_cum_loader.exportacion.estructura_cargue import (
     generar_excel_estructura_cargue,
     nombre_periodo,
 )
+from gemma_cum_loader.auditoria.cadena_calidad import construir_cadena_calidad
 from gemma_cum_loader.auditoria.coherencia_invima import (
     ACCION_POR_NATURALEZA,
     CAMPOS_COMPARADOS_COHERENCIA,
@@ -350,6 +351,7 @@ SUBVISTAS_POR_SECCION = {
             "Priorizar lo que requiere accion",
             "Entender la calidad del catalogo",
             "Explorar todos los hallazgos",
+            "Trazabilidad de calidad (H1-H6)",
         ),
     },
 }
@@ -1023,6 +1025,8 @@ def _filtros_estandar(
     clave_campo: str | None = None,
     clave_tipo: str | None = None,
     formato_categoria=None,
+    mostrar_categoria: bool = True,
+    mostrar_campo: bool = True,
 ) -> pd.DataFrame:
     """El unico patron de filtro para tablas de medicamentos.
 
@@ -1033,6 +1037,15 @@ def _filtros_estandar(
     de antes, ni un tercer `st.columns` se dibuja). Todo opera sobre el
     DataFrame recibido, que ya esta en memoria; cambiar un filtro no vuelve
     a leer archivos, consultar la base ni llamar a IA.
+
+    `mostrar_categoria` / `mostrar_campo` en `False` quitan del todo el
+    popover correspondiente (ni se dibuja ni se calculan sus opciones).
+    Pedido explicito del usuario (2026-08-27) para la tabla de "Detalle por
+    registro": ahi "Acotar por Campo" ofrecia columnas identificadoras
+    (EXPEDIENTE, CONSECUTIVO...) que el universo INVIMA siempre trae
+    pobladas, asi que filtrar por ellas nunca quitaba una fila -- un control
+    sin efecto real, no un filtro simplemente vacio. El default sigue siendo
+    `True` para no tocar ninguna otra tabla que use este patron.
     """
     if df.empty:
         return df
@@ -1050,62 +1063,73 @@ def _filtros_estandar(
         help="Busca en la lista ya cargada; no vuelve a consultar ninguna fuente.",
     )
 
-    categorias = _opciones_filtro(
-        df, columna_categoria, opciones_categoria, clave_cache=key_prefix
-    )
-    if columna_campo is not None:
-        campos = _opciones_filtro(df, columna_campo, opciones_campo, clave_cache=key_prefix)
-    else:
-        campos = list(dict.fromkeys(opciones_campo or []))
+    categorias_elegidas: list[str] = []
+    campos_elegidos: list[str] = []
+    if mostrar_categoria:
+        categorias = _opciones_filtro(
+            df, columna_categoria, opciones_categoria, clave_cache=key_prefix
+        )
+        _migrar_seleccion_compatible(
+            clave_categoria,
+            categorias,
+            f"{key_prefix}_f_{columna_categoria}" if columna_categoria is not None else None,
+        )
+    if mostrar_campo:
+        if columna_campo is not None:
+            campos = _opciones_filtro(df, columna_campo, opciones_campo, clave_cache=key_prefix)
+        else:
+            campos = list(dict.fromkeys(opciones_campo or []))
+        _migrar_seleccion_compatible(
+            clave_campo,
+            campos,
+            f"{key_prefix}_f_{columna_campo}" if columna_campo is not None else None,
+        )
     tipos = (
         _opciones_filtro(df, columna_tipo, opciones_tipo, clave_cache=key_prefix)
         if columna_tipo is not None
         else []
     )
-    _migrar_seleccion_compatible(
-        clave_categoria,
-        categorias,
-        f"{key_prefix}_f_{columna_categoria}" if columna_categoria is not None else None,
-    )
-    _migrar_seleccion_compatible(
-        clave_campo,
-        campos,
-        f"{key_prefix}_f_{columna_campo}" if columna_campo is not None else None,
-    )
 
+    n_columnas = sum([mostrar_categoria, mostrar_campo, columna_tipo is not None])
+    columnas = st.columns(n_columnas) if n_columnas else []
+    col_categoria = col_campo = col_tipo = None
+    _resto = iter(columnas)
+    if mostrar_categoria:
+        col_categoria = next(_resto)
+    if mostrar_campo:
+        col_campo = next(_resto)
     if columna_tipo is not None:
-        col_categoria, col_campo, col_tipo = st.columns(3)
-    else:
-        col_categoria, col_campo = st.columns(2)
-        col_tipo = None
-    with col_categoria, st.popover(
-        f"Filtrar por {etiqueta_categoria or _etiqueta_columna_filtro(columna_categoria or 'categoría')}",
-        use_container_width=True,
-    ):
-        categorias_elegidas = _multiseleccion_compatible(
-            etiqueta_categoria or _etiqueta_columna_filtro(columna_categoria or "Categoría"),
-            categorias,
-            clave=clave_categoria,
-            iniciales=categorias_iniciales if categorias_iniciales is not None else categorias,
-            ayuda="Elige uno o varios estados o categorías. Vacío significa no acotar por este dato.",
-            formato=formato_categoria or _etiqueta_valor_filtro,
-        )
-    with col_campo, st.popover(
-        f"Acotar por {etiqueta_campo or _etiqueta_columna_filtro(columna_campo or 'campo')}",
-        use_container_width=True,
-    ):
-        campos_elegidos = _multiseleccion_compatible(
-            etiqueta_campo or _etiqueta_columna_filtro(columna_campo or "Campo"),
-            campos,
-            clave=clave_campo,
-            iniciales=campos_iniciales or [],
-            ayuda=(
-                "Una fila se conserva si contiene cualquiera de los campos elegidos."
-                if columna_campo is not None
-                else "Una fila se conserva si trae dato en cualquiera de las columnas elegidas."
-            ),
-            formato=_etiqueta_columna_filtro,
-        )
+        col_tipo = next(_resto)
+    if mostrar_categoria:
+        with col_categoria, st.popover(
+            f"Filtrar por {etiqueta_categoria or _etiqueta_columna_filtro(columna_categoria or 'categoría')}",
+            use_container_width=True,
+        ):
+            categorias_elegidas = _multiseleccion_compatible(
+                etiqueta_categoria or _etiqueta_columna_filtro(columna_categoria or "Categoría"),
+                categorias,
+                clave=clave_categoria,
+                iniciales=categorias_iniciales if categorias_iniciales is not None else categorias,
+                ayuda="Elige uno o varios estados o categorías. Vacío significa no acotar por este dato.",
+                formato=formato_categoria or _etiqueta_valor_filtro,
+            )
+    if mostrar_campo:
+        with col_campo, st.popover(
+            f"Acotar por {etiqueta_campo or _etiqueta_columna_filtro(columna_campo or 'campo')}",
+            use_container_width=True,
+        ):
+            campos_elegidos = _multiseleccion_compatible(
+                etiqueta_campo or _etiqueta_columna_filtro(columna_campo or "Campo"),
+                campos,
+                clave=clave_campo,
+                iniciales=campos_iniciales or [],
+                ayuda=(
+                    "Una fila se conserva si contiene cualquiera de los campos elegidos."
+                    if columna_campo is not None
+                    else "Una fila se conserva si trae dato en cualquiera de las columnas elegidas."
+                ),
+                formato=_etiqueta_columna_filtro,
+            )
     tipos_elegidos: list[str] = []
     if columna_tipo is not None:
         with col_tipo, st.popover(
@@ -1171,6 +1195,8 @@ def _tabla_filtrable(
     tipos_iniciales: list[str] | None = None,
     clave_campo: str | None = None,
     formato_categoria=None,
+    mostrar_categoria: bool = True,
+    mostrar_campo: bool = True,
 ) -> pd.DataFrame:
     """Dibuja una tabla de medicamentos solo despues de aplicar el patron comun.
 
@@ -1192,7 +1218,7 @@ def _tabla_filtrable(
     categoria = columna_categoria or next(
         (columna for columna in columnas_filtro if columna in df.columns), None
     )
-    if columna_campo is None and opciones_campo is None:
+    if mostrar_campo and columna_campo is None and opciones_campo is None:
         opciones_campo = [
             columna
             for columna in (columnas_filtro[1:] or (columnas_mostrar or list(df.columns)))
@@ -1212,6 +1238,8 @@ def _tabla_filtrable(
         tipos_iniciales=tipos_iniciales,
         clave_campo=clave_campo,
         formato_categoria=formato_categoria,
+        mostrar_categoria=mostrar_categoria,
+        mostrar_campo=mostrar_campo,
     )
     if filtrado.empty:
         st.caption("No hay medicamentos con esos criterios.")
@@ -1764,6 +1792,108 @@ def _mostrar_tabla_de_calidades(auditoria: pd.DataFrame) -> None:
         ),
         f"calidad_{nombres.index(elegida) + 1}.xlsx",
         f"descarga_calidad_{nombres.index(elegida)}",
+    )
+
+
+def _panel_cadena_calidad(auditoria: pd.DataFrame) -> None:
+    """Trazabilidad de calidad H1-H6: cadena por teoria de conjuntos.
+
+    Pedido explicito de Sergio, via el usuario (2026-08-27): poder ver COMO
+    se llega a cada porcentaje de calidad, no solo el numero agregado. Cada
+    tabla (H1..H6) agrega un campo mas que la anterior -- H3 trae las
+    columnas de H1 y H2 mas la suya propia, no solo la nueva -- y cada fila
+    se marca si sigue "pasando" hasta ese eslabon. Ningun eslabon recalcula
+    el cruce ni la similitud de campo: todo sale de columnas que
+    `auditar_coherencia()` ya dejo en `auditoria`. Ver
+    `auditoria/cadena_calidad.py` para la logica y las preguntas todavia
+    abiertas (H5/laboratorio, criterio exacto de "pasa").
+    """
+    if auditoria.empty:
+        st.caption("No hay medicamentos auditados en esta corrida.")
+        return
+
+    cadena = _derivado(
+        f"{_PREFIJO_FILTRO_RESULTADO}cadena_calidad_{len(auditoria)}",
+        lambda: construir_cadena_calidad(auditoria),
+    )
+
+    _mensaje_breve(
+        "Cada tabla valida un campo más que la anterior, sobre las mismas filas.",
+        "H1 valida si el medicamento tiene correspondencia con INVIMA "
+        "(CODIGO_INTERNO contra EXPEDIENTE-CONSECUTIVO). H2 agrega DESCRIPCION, "
+        "H3 el principio activo, H4 la concentración y H6 la unidad de medida -- "
+        "cada tabla trae las columnas de las anteriores más la suya, para ver de "
+        "un vistazo por qué campo se cae un medicamento. H5 (laboratorio) no está "
+        "todavía: falta confirmar con Sergio si es el mismo dato que hoy se "
+        "compara como marca/titular o uno distinto que Gemma Net no captura.",
+        etiqueta="Cómo leer esta cadena",
+    )
+
+    resumen = pd.DataFrame(
+        [
+            {
+                "Tabla": eslabon.nombre,
+                "Campos que valida": (
+                    ", ".join(eslabon.campos_acumulados)
+                    if eslabon.campos_acumulados
+                    else "correspondencia con INVIMA"
+                ),
+                "Universo evaluado": eslabon.universo,
+                "% que pasa este campo": (
+                    f"{eslabon.porcentaje_total:.1f}%"
+                    if eslabon.porcentaje_total is not None
+                    else "—"
+                ),
+            }
+            for eslabon in cadena
+        ]
+    )
+    _mostrar_tabla_estandar(resumen, variante="resumen")
+
+    st.divider()
+    nombres_cadena = [eslabon.nombre for eslabon in cadena]
+    elegida = st.selectbox(
+        "Abrir una tabla de la cadena y ver los medicamentos",
+        nombres_cadena,
+        key="cadena_calidad_elegida",
+    )
+    eslabon = next(e for e in cadena if e.nombre == elegida)
+
+    if eslabon.universo == 0:
+        st.caption(
+            "Ningún medicamento llega a evaluarse en esta tabla: todos quedaron "
+            "fuera en un eslabón anterior."
+        )
+        return
+
+    _mensaje_breve(
+        f"**{eslabon.universo:,} medicamentos evaluados** en esta tabla.",
+        "Se muestran TODAS las filas evaluadas hasta este eslabón, con una "
+        "columna de estado que dice si cada una sigue pasando -- fíltrala si "
+        "solo quieres ver las que pasan o solo las que no.",
+        tipo="info",
+        etiqueta="Cómo usar esta lista",
+    )
+
+    columnas_mostrar = [
+        c
+        for c in ("CODIGO_INTERNO", "PRODUCTO", *eslabon.columnas_trio)
+        if c in eslabon.df_tabla.columns
+    ]
+    visible = _tabla_filtrable(
+        eslabon.df_tabla,
+        columnas_filtro=[eslabon.columna_estado],
+        key_prefix=f"cadena_calidad_{eslabon.nombre}",
+        columnas_mostrar=columnas_mostrar,
+        columna_categoria=eslabon.columna_estado,
+    )
+    _descarga_diferida(
+        "Preparar esta tabla (.xlsx)",
+        lambda: _exportar_a_bytes(
+            lambda w: visible.to_excel(w, index=False, sheet_name=eslabon.nombre)
+        ),
+        f"cadena_calidad_{eslabon.nombre}.xlsx",
+        f"descarga_cadena_calidad_{eslabon.nombre}",
     )
 
 
@@ -2777,6 +2907,16 @@ def _seccion_resumen_detalle_registro(df_invima: pd.DataFrame) -> None:
         # y confundirlos fue el bug reportado por el usuario (ver
         # _previsualizacion_tabla).
         formato_categoria=lambda v: _ETIQUETA_CLASIFICACION_CREACION.get(str(v), _legible(v)),
+        # Pedido explicito del usuario (2026-08-27): los dos popovers no
+        # aportaban nada util aca. "Filtrar por Resultado de la revision"
+        # SI filtraba, pero confundia (vacio = mostrar todo, no "nada"); las
+        # 4 metricas de arriba ya cumplen ese rol. "Acotar por Campo"
+        # ofrecia columnas identificadoras (EXPEDIENTE, CONSECUTIVO...) que
+        # el universo INVIMA siempre trae pobladas, asi que nunca quitaba
+        # una fila -- ver _filtros_estandar. La busqueda libre y la columna
+        # CLASIFICACION_CREACION (ya en columnas_mostrar) se quedan.
+        mostrar_categoria=False,
+        mostrar_campo=False,
     )
 
 
@@ -4229,6 +4369,9 @@ def main() -> None:
                 return
             if vista_auditoria == "Entender la calidad del catalogo":
                 _panel_entender_auditoria(auditoria)
+                return
+            if vista_auditoria == "Trazabilidad de calidad (H1-H6)":
+                _panel_cadena_calidad(auditoria)
                 return
 
             # Por CLASE de problema, no por campo. Es la vista que contesta
