@@ -1,0 +1,209 @@
+:root {
+  --color-texto: #1f2933;
+  --color-fondo: #ffffff;
+  --color-borde: #d7dce1;
+  --color-acento: #1f6feb;
+  --color-ok: #1a7f37;
+  --color-advertencia: #9a6700;
+  --color-error: #cf222e;
+  --color-fila-alterna: #f6f8fa;
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  color: var(--color-texto);
+  background: var(--color-fondo);
+}
+
+.barra-superior {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1.5rem;
+  border-bottom: 1px solid var(--color-borde);
+}
+
+.barra-superior h1 {
+  font-size: 1.15rem;
+  margin: 0;
+}
+
+.navegacion {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.boton-nav {
+  border: 1px solid var(--color-borde);
+  background: var(--color-fondo);
+  border-radius: 6px;
+  padding: 0.4rem 0.9rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.boton-nav--activo {
+  background: var(--color-acento);
+  color: white;
+  border-color: var(--color-acento);
+}
+
+.banner-salud {
+  padding: 0.6rem 1.5rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.banner-salud--desactualizado {
+  background: #fff8c5;
+  color: var(--color-advertencia);
+}
+
+.banner-salud--error {
+  background: #ffebe9;
+  color: var(--color-error);
+}
+
+.banner-salud--sin_datos {
+  background: #f6f8fa;
+  color: #57606a;
+}
+
+main {
+  padding: 1rem 1.5rem 2rem;
+}
+
+.fila-tarjetas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.tarjeta-metrica {
+  border: 1px solid var(--color-borde);
+  border-radius: 8px;
+  padding: 0.6rem 0.9rem;
+  min-width: 9rem;
+}
+
+.tarjeta-metrica__encabezado {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  color: #57606a;
+}
+
+.tarjeta-metrica__ayuda {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 50%;
+  border: 1px solid var(--color-borde);
+  font-size: 0.7rem;
+  cursor: help;
+}
+
+.tarjeta-metrica__numero {
+  font-size: 1.4rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.tabla-filtrable__busqueda {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.tabla-filtrable__busqueda input[type="search"] {
+  flex: 1;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--color-borde);
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+.selector-estado {
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--color-borde);
+  border-radius: 6px;
+}
+
+.tabla-filtrable__leyenda {
+  font-size: 0.82rem;
+  color: #57606a;
+  margin: 0.25rem 0;
+}
+
+.tabla-filtrable__cargar-todo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  margin-bottom: 0.5rem;
+}
+
+.tabla-filtrable__cargando {
+  color: #57606a;
+}
+
+.tabla-filtrable__vacio {
+  text-align: center;
+  color: #57606a;
+  padding: 1rem;
+}
+
+/* Regla obligatoria: el contenido ancho scrollea en su propio contenedor,
+   nunca la pagina entera. */
+.tabla-filtrable__envoltorio {
+  overflow-x: auto;
+  border: 1px solid var(--color-borde);
+  border-radius: 8px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.85rem;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--color-borde);
+}
+
+th {
+  position: sticky;
+  top: 0;
+  background: var(--color-fondo);
+  z-index: 1;
+}
+
+tbody tr:nth-child(even) {
+  background: var(--color-fila-alterna);
+}
+
+.aviso {
+  padding: 0.6rem 0.9rem;
+  border-radius: 6px;
+}
+
+.aviso--error {
+  background: #ffebe9;
+  color: var(--color-error);
+}

@@ -36,3 +36,8 @@ consultas/verificar_auditoria.sql
 # verdad. Distinto de data/: no son el archivo original de INVIMA/Gemma Net,
 # son el resultado ya procesado que el worker recalcula cada ~50 min.
 data_runtime/
+
+# Frontend (Fase 3): dependencias y build, se regeneran con npm install/
+# npm run build -- no son fuente, no se versionan.
+frontend/node_modules/
+frontend/dist/
