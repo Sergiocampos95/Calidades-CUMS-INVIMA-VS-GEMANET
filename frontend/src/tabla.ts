@@ -65,6 +65,15 @@ export class TablaFiltrable {
   private mostrarTodo = false;
   private cargando = false;
   private raiz: HTMLElement;
+  /** El contenedor de la fila de busqueda se arma UNA vez en el constructor
+   * y nunca se destruye -- bug real reportado por el usuario (2026-08-28):
+   * "voy a escribir algo y no me deja terminar de escribir". Antes
+   * render() reconstruia TODO el HTML de raiz, input de busqueda incluido,
+   * en cada tecla (debounce de por medio) -- el navegador creaba un <input>
+   * nuevo y el que tenia el foco lo perdia. Ahora solo `contenedorDatos`
+   * (leyenda/checkbox/tabla) se reconstruye; la fila de busqueda es
+   * DOM estable, el foco y la posicion del cursor nunca se pierden. */
+  private contenedorDatos: HTMLElement;
   /** Ancho por columna en pixeles, sobrevive a los re-render (busqueda,
    * cargar todo) mientras esta instancia siga viva -- redimensionar una vez
    * no se pierde con cada tecla que se escribe en el buscador. */
@@ -77,6 +86,20 @@ export class TablaFiltrable {
     this.raiz = document.createElement("div");
     this.raiz.className = "tabla-filtrable";
     contenedor.appendChild(this.raiz);
+
+    const filaBusqueda = document.createElement("div");
+    filaBusqueda.className = "tabla-filtrable__busqueda";
+    const input = document.createElement("input");
+    input.type = "search";
+    input.placeholder = "🔎 Buscar (cualquier columna)";
+    input.addEventListener("input", (e) => this.onBuscar((e.target as HTMLInputElement).value));
+    filaBusqueda.appendChild(input);
+    if (this.opciones.controlesExtra) filaBusqueda.appendChild(this.opciones.controlesExtra);
+    this.raiz.appendChild(filaBusqueda);
+
+    this.contenedorDatos = document.createElement("div");
+    this.raiz.appendChild(this.contenedorDatos);
+
     this.opciones.controlesExtra?.addEventListener("cambio-filtro", () => this.recargar());
     this.recargar();
   }
@@ -152,24 +175,13 @@ export class TablaFiltrable {
   }
 
   private render(pagina?: PaginaTabla, error?: string): void {
-    this.raiz.innerHTML = "";
-
-    const filaBusqueda = document.createElement("div");
-    filaBusqueda.className = "tabla-filtrable__busqueda";
-    const input = document.createElement("input");
-    input.type = "search";
-    input.placeholder = "🔎 Buscar (cualquier columna)";
-    input.value = this.busqueda;
-    input.addEventListener("input", (e) => this.onBuscar((e.target as HTMLInputElement).value));
-    filaBusqueda.appendChild(input);
-    if (this.opciones.controlesExtra) filaBusqueda.appendChild(this.opciones.controlesExtra);
-    this.raiz.appendChild(filaBusqueda);
+    this.contenedorDatos.innerHTML = "";
 
     if (error) {
       const aviso = document.createElement("p");
       aviso.className = "aviso aviso--error";
       aviso.textContent = error;
-      this.raiz.appendChild(aviso);
+      this.contenedorDatos.appendChild(aviso);
       return;
     }
 
@@ -177,7 +189,7 @@ export class TablaFiltrable {
       const cargandoEl = document.createElement("p");
       cargandoEl.className = "tabla-filtrable__cargando";
       cargandoEl.textContent = "Cargando…";
-      this.raiz.appendChild(cargandoEl);
+      this.contenedorDatos.appendChild(cargandoEl);
       return;
     }
     if (!pagina) return;
@@ -189,7 +201,7 @@ export class TablaFiltrable {
     } else {
       leyenda.textContent = `Total: ${pagina.total.toLocaleString("es-CO")} · todos caben en esta vista.`;
     }
-    this.raiz.appendChild(leyenda);
+    this.contenedorDatos.appendChild(leyenda);
 
     if (pagina.limite_aplicado || this.mostrarTodo) {
       const etiquetaCheckbox = document.createElement("label");
@@ -202,7 +214,7 @@ export class TablaFiltrable {
       etiquetaCheckbox.appendChild(
         document.createTextNode(` Cargar la tabla completa (${pagina.total.toLocaleString("es-CO")} filas, puede tardar más)`),
       );
-      this.raiz.appendChild(etiquetaCheckbox);
+      this.contenedorDatos.appendChild(etiquetaCheckbox);
     }
 
     const envoltorio = document.createElement("div");
@@ -267,6 +279,6 @@ export class TablaFiltrable {
     }
     tabla.appendChild(cuerpo);
     envoltorio.appendChild(tabla);
-    this.raiz.appendChild(envoltorio);
+    this.contenedorDatos.appendChild(envoltorio);
   }
 }

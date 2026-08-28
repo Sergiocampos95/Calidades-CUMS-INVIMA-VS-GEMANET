@@ -36,9 +36,14 @@ def listar_auditoria(
     todo: bool = False,
     carpeta: Path = Depends(carpeta_snapshots),
 ) -> PaginaTabla:
+    """`estado_coherencia` acepta varios valores separados por coma
+    (ej. "vencido_en_invima,encontrado_en_otro_estado_invima") -- pedido
+    del usuario (2026-08-28): el filtro de un solo estado a la vez no
+    alcanzaba, "mas bien seleccion multiple es lo mejor para el caso"."""
     df = _tabla_auditoria(carpeta)
     if estado_coherencia and "ESTADO_COHERENCIA" in df.columns:
-        df = df[df["ESTADO_COHERENCIA"] == estado_coherencia]
+        valores = [v.strip() for v in estado_coherencia.split(",") if v.strip()]
+        df = df[df["ESTADO_COHERENCIA"].isin(valores)]
     return paginar(df, q=q, limite=limite, offset=offset, todo=todo)
 
 

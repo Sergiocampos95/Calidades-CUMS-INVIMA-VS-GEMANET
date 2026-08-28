@@ -243,6 +243,23 @@ button, select, input { font-family: inherit; }
 .pildora--neutro { background: var(--surface-2); color: var(--text-muted); }
 .pildora--acento { background: var(--accent-soft); color: var(--accent); }
 
+/* ============================= SELECTOR MULTIPLE (selector-multiple.ts) ============================= */
+.selector-multiple { position: relative; }
+.selector-multiple__boton {
+  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  border-radius: var(--radio-pill); padding: 6px 12px; font-size: 0.8rem; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
+}
+.selector-multiple__boton:hover { border-color: var(--accent); }
+.selector-multiple__panel {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: 20; min-width: 240px; max-height: 300px;
+  overflow-y: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radio-md);
+  box-shadow: var(--shadow-md); padding: 6px;
+}
+.selector-multiple__panel.oculto { display: none; }
+.selector-multiple__opcion { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; font-size: 0.8rem; cursor: pointer; }
+.selector-multiple__opcion:hover { background: var(--accent-soft); }
+
 /* ============================= CELDA SQL (auditoria.ts) ============================= */
 /* CONSULTA_VERIFICACION_SQL -- pedido del usuario (2026-08-28): poder
    copiar la consulta para corroborar el dato directo en Gemma Net. */

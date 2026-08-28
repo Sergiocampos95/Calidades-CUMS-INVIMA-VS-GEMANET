@@ -62,6 +62,28 @@ def test_filtro_por_estado_coherencia(tmp_path):
         app.dependency_overrides.clear()
 
 
+def test_filtro_por_multiples_estados_coherencia_separados_por_coma(tmp_path):
+    """Pedido del usuario (2026-08-28): "mas bien seleccion multiple es lo
+    mejor para el caso" -- varios valores separados por coma."""
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        df = pd.DataFrame(
+            {
+                "CODIGO_INTERNO": ["1-1", "2-2", "3-3"],
+                "ESTADO_COHERENCIA": ["correcto", "con_diferencias", "vencido_en_invima"],
+            }
+        )
+        escribir_snapshot({"auditoria": df}, carpeta=carpeta)
+
+        r = cliente.get(
+            "/auditoria", params={"estado_coherencia": "con_diferencias,vencido_en_invima"}
+        )
+        codigos = {f["CODIGO_INTERNO"] for f in r.json()["filas"]}
+        assert codigos == {"2-2", "3-3"}
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_resumen_auditoria_cuenta_por_estado_coherencia(tmp_path):
     cliente, carpeta = _cliente(tmp_path)
     try:

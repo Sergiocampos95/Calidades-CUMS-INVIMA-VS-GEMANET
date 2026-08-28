@@ -17,6 +17,7 @@ import {
   pildoraNovedadVigencia,
   pildoraValidacion,
 } from "../pildoras";
+import { SelectorMultiple } from "../selector-multiple";
 import { renderTarjetas } from "../tarjetas";
 import { TablaFiltrable } from "../tabla";
 import type { CalidadResumen, EslabonResumen } from "../tipos";
@@ -67,15 +68,11 @@ function habilitarCopiarSQL(contenedor: HTMLElement): void {
   });
 }
 
-function selectorEstado(): HTMLSelectElement {
-  const select = document.createElement("select");
-  for (const [valor, etiqueta] of [["", "Todos los estados"], ...ESTADOS_COHERENCIA.map((e) => [e, etiquetaEstadoCoherencia(e)])]) {
-    const opcion = document.createElement("option");
-    opcion.value = valor;
-    opcion.textContent = etiqueta;
-    select.appendChild(opcion);
-  }
-  return select;
+function selectorEstado(): SelectorMultiple {
+  return new SelectorMultiple(
+    ESTADOS_COHERENCIA.map((e) => ({ valor: e, etiqueta: etiquetaEstadoCoherencia(e) })),
+    "Todos los estados",
+  );
 }
 
 export async function montarAuditPriorizar(contenedor: HTMLElement): Promise<void> {
@@ -103,9 +100,9 @@ export async function montarAuditPriorizar(contenedor: HTMLElement): Promise<voi
   contenedor.appendChild(seccionTabla);
   new TablaFiltrable(seccionTabla, {
     columnas: ["CODIGO_INTERNO", "DESCRIPCION", "ESTADO_COHERENCIA"],
-    controlesExtra: select,
+    controlesExtra: select.elemento,
     formatearCelda: FORMATEADOR_ESTADO,
-    cargarPagina: (p) => obtenerAuditoria({ ...p, estado_coherencia: select.value || undefined }),
+    cargarPagina: (p) => obtenerAuditoria({ ...p, estado_coherencia: select.valores().join(",") || undefined }),
   });
 }
 
@@ -246,9 +243,9 @@ export async function montarAuditExplorar(contenedor: HTMLElement): Promise<void
   contenedor.appendChild(seccionTabla);
   new TablaFiltrable(seccionTabla, {
     columnas: ["CODIGO_INTERNO", "DESCRIPCION", "ESTADO_COHERENCIA", "CAMPOS_CON_DIFERENCIA", "PORCENTAJE_CALIDAD"],
-    controlesExtra: select,
+    controlesExtra: select.elemento,
     formatearCelda: FORMATEADOR_ESTADO,
-    cargarPagina: (p) => obtenerAuditoria({ ...p, estado_coherencia: select.value || undefined }),
+    cargarPagina: (p) => obtenerAuditoria({ ...p, estado_coherencia: select.valores().join(",") || undefined }),
   });
 }
 
