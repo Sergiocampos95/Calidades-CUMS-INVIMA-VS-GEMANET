@@ -36,11 +36,11 @@ from gemma_cum_loader.exportacion.cargue import (
 from gemma_cum_loader.exportacion.estructura_cargue import armar_estructura_cargue
 from gemma_cum_loader.ingesta.almacen_local import descubrir_todo
 from gemma_cum_loader.ingesta.gemanet_sql import leer_reporte_gemanet_db
+from gemma_cum_loader.ingesta.invima_con_respaldo import LectorInvimaConRespaldo
 from gemma_cum_loader.ingesta.invima_socrata import (
     DATASET_CUM_OTROS_ESTADOS,
     DATASET_CUM_RENOVACION,
     DATASET_CUM_VENCIDOS,
-    leer_catalogo_invima_api,
 )
 from gemma_cum_loader.pipeline import (
     auditar_coherencia_gemanet,
@@ -144,10 +144,25 @@ def _paso(nombre, funcion, /, *args, ruta_estado=None, **kwargs):
     return resultado
 
 
+def _leer_invima(nombre, lector_invima_api, lector_con_respaldo, *, dataset=None, ruta_estado=None):
+    """`_paso()` para un dataset de INVIMA + nota informativa si
+    `lector_con_respaldo` (LectorInvimaConRespaldo) tuvo que caer al
+    archivo local -- el paso sigue en `hecho` (el dato SI llego, solo con
+    otro origen), no en error."""
+    n_advertencias_antes = len(lector_con_respaldo.advertencias) if lector_con_respaldo is not None else 0
+    kwargs = {} if dataset is None else {"dataset": dataset}
+    resultado = _paso(nombre, lector_invima_api, ruta_estado=ruta_estado, **kwargs)
+    if lector_con_respaldo is not None:
+        nuevas = lector_con_respaldo.advertencias[n_advertencias_antes:]
+        if nuevas:
+            actualizar_paso(nombre, ESTADO_PASO_HECHO, detalle=nuevas[-1], ruta=ruta_estado)
+    return resultado
+
+
 def ejecutar_refresco(
     *,
     lector_gemanet: Callable[[], object] = leer_reporte_gemanet_db,
-    lector_invima_api: Callable[..., pd.DataFrame] = leer_catalogo_invima_api,
+    lector_invima_api: Callable[..., pd.DataFrame] | None = None,
     procesador: Callable[..., pd.DataFrame] = procesar_desde_catalogo_invima,
     auditor: Callable[..., pd.DataFrame] = auditar_coherencia_gemanet,
     clasificador: Callable[[pd.DataFrame], pd.DataFrame] = universo_invima_clasificado,
@@ -167,6 +182,14 @@ def ejecutar_refresco(
     de Gemma Net, con respaldo automatico a CSV si falla) -- la misma
     politica que ya usa la UI cuando el usuario elige "en vivo".
 
+    `lector_invima_api=None` construye `LectorInvimaConRespaldo()`: intenta
+    Socrata y, si falla (`ErrorSocrata`), cae al archivo local mas reciente
+    en `data/` -- caso real 2026-08-28, outage de Socrata en el dataset de
+    Vigentes ('i7cb-raxc' devolviendo 0 filas) tumbaba el refresco completo
+    aunque hubiera un Excel/parquet local perfectamente utilizable. Las
+    pruebas inyectan un callable simple (sin respaldo) para no depender de
+    `data/` real.
+
     `procesador`/`auditor`/`clasificador`/`localizador_malla`/`lector_malla`
     inyectables (ademas de los lectores de fuentes externas): las pruebas de
     ESTE modulo verifican la orquestacion -- orden de llamadas, manejo de
@@ -183,28 +206,40 @@ def ejecutar_refresco(
     fuente = fuente_catalogos if fuente_catalogos is not None else FuenteCatalogosConRespaldo()
     iniciar_progreso(list(NOMBRES_PASOS_REFRESCO), ruta=ruta_estado)
 
+    # Solo si NO fue inyectado: guardamos la referencia para poder leer
+    # `.advertencias` despues de cada llamada y anotar en el paso cuando
+    # cayo al respaldo local -- un callable simple inyectado (pruebas) no
+    # tiene ese atributo, por eso lector_con_respaldo queda None en ese caso.
+    lector_con_respaldo: LectorInvimaConRespaldo | None = None
+    if lector_invima_api is None:
+        lector_con_respaldo = LectorInvimaConRespaldo()
+        lector_invima_api = lector_con_respaldo.leer
+
     try:
         reporte_gemanet = _paso(
             "Leyendo reporte de Gemma Net", lector_gemanet, ruta_estado=ruta_estado
         )
-        df_invima = _paso(
-            "Leyendo INVIMA -- Vigentes", lector_invima_api, ruta_estado=ruta_estado
+        df_invima = _leer_invima(
+            "Leyendo INVIMA -- Vigentes", lector_invima_api, lector_con_respaldo, ruta_estado=ruta_estado
         )
-        df_invima_vencidos = _paso(
+        df_invima_vencidos = _leer_invima(
             "Leyendo INVIMA -- Vencidos",
             lector_invima_api,
+            lector_con_respaldo,
             dataset=DATASET_CUM_VENCIDOS,
             ruta_estado=ruta_estado,
         )
-        df_invima_otros_estados = _paso(
+        df_invima_otros_estados = _leer_invima(
             "Leyendo INVIMA -- Otros Estados",
             lector_invima_api,
+            lector_con_respaldo,
             dataset=DATASET_CUM_OTROS_ESTADOS,
             ruta_estado=ruta_estado,
         )
-        df_invima_renovacion = _paso(
+        df_invima_renovacion = _leer_invima(
             "Leyendo INVIMA -- Renovacion",
             lector_invima_api,
+            lector_con_respaldo,
             dataset=DATASET_CUM_RENOVACION,
             ruta_estado=ruta_estado,
         )

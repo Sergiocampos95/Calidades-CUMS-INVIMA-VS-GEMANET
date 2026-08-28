@@ -221,6 +221,45 @@ def test_refresco_fallido_marca_el_paso_que_reventó_y_no_avanza_los_siguientes(
     assert pasos["Guardando snapshot"] == "pendiente"
 
 
+class _LectorConRespaldoFalso:
+    """Doble de LectorInvimaConRespaldo -- simula caer al respaldo local
+    solo en la llamada de Vigentes (dataset=None), responder normal en las
+    otras 3. `.advertencias` es el mismo atributo que expone el real."""
+
+    def __init__(self):
+        self.advertencias: list[str] = []
+
+    def leer(self, dataset=None):
+        if dataset is None:
+            self.advertencias.append(
+                "Socrata no respondio para invima_vigentes -- se uso el archivo local mas reciente"
+            )
+            return _DF_INVIMA
+        return _DF_VACIO
+
+
+def test_lector_invima_por_defecto_usa_respaldo_y_anota_el_paso_sin_marcarlo_error(tmp_path, monkeypatch):
+    """Sin lector_invima_api inyectado, ejecutar_refresco construye
+    LectorInvimaConRespaldo() -- si esta cae al archivo local, el paso
+    correspondiente queda en HECHO (el dato SI llego, solo con otro origen)
+    con la advertencia como detalle informativo, nunca como error."""
+    import worker.tareas as modulo
+
+    monkeypatch.setattr(modulo, "LectorInvimaConRespaldo", _LectorConRespaldoFalso)
+
+    kwargs = _kwargs_comunes(tmp_path)
+    del kwargs["lector_invima_api"]  # usa el default -> LectorInvimaConRespaldo (parcheado)
+
+    evento = ejecutar_refresco(**kwargs)
+
+    assert evento.estado == ESTADO_OK
+    pasos = {p.nombre: p for p in progreso_actual(kwargs["ruta_estado"])}
+    assert pasos["Leyendo INVIMA -- Vigentes"].estado == ESTADO_PASO_HECHO
+    assert "archivo local" in pasos["Leyendo INVIMA -- Vigentes"].detalle
+    # Los otros 3 datasets no cayeron al respaldo en este doble -- sin nota.
+    assert pasos["Leyendo INVIMA -- Vencidos"].detalle == ""
+
+
 def test_snapshot_anterior_se_conserva_si_el_siguiente_refresco_falla(tmp_path):
     """Si un refresco exitoso ya dejo un snapshot bueno, y el SIGUIENTE
     refresco falla, el snapshot viejo tiene que seguir siendo el vigente --
