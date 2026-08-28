@@ -10,7 +10,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 
 from backend.app.dependencies import carpeta_snapshots
-from backend.app.paginacion import paginar
+from backend.app.paginacion import paginar, valores_distintos
 from backend.app.schemas import LIMITE_PREVISUALIZACION_DEFECTO, PaginaTabla
 from worker.almacen_snapshots import leer_tabla
 
@@ -35,12 +35,31 @@ def listar_universo(
     limite: int = LIMITE_PREVISUALIZACION_DEFECTO,
     offset: int = 0,
     todo: bool = False,
+    ordenar_por: str | None = None,
+    orden_descendente: bool = False,
+    filtros_json: str | None = None,
     carpeta: Path = Depends(carpeta_snapshots),
 ) -> PaginaTabla:
     df = _tabla_universo(carpeta)
     if clasificacion and "CLASIFICACION_CREACION" in df.columns:
         df = df[df["CLASIFICACION_CREACION"] == clasificacion]
-    return paginar(df, q=q, limite=limite, offset=offset, todo=todo)
+    return paginar(
+        df,
+        q=q,
+        limite=limite,
+        offset=offset,
+        todo=todo,
+        ordenar_por=ordenar_por,
+        orden_descendente=orden_descendente,
+        filtros_json=filtros_json,
+    )
+
+
+@router.get("/valores")
+def valores_columna(columna: str, carpeta: Path = Depends(carpeta_snapshots)) -> list[dict[str, object]]:
+    """Los valores distintos de una columna, con conteo -- alimenta el
+    checkbox-list del filtro estilo Excel (pedido del usuario, 2026-08-28)."""
+    return valores_distintos(_tabla_universo(carpeta), columna)
 
 
 @router.get("/resumen")

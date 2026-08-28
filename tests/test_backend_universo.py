@@ -41,6 +41,21 @@ def test_resumen_universo_cuenta_por_clasificacion_y_suma_el_total(tmp_path):
         app.dependency_overrides.clear()
 
 
+def test_valores_de_columna_para_el_filtro_estilo_excel(tmp_path):
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        df = pd.DataFrame({"CLASIFICACION_CREACION": ["candidato", "candidato", "muestra_medica"]})
+        escribir_snapshot({"universo": df}, carpeta=carpeta)
+
+        r = cliente.get("/universo/valores", params={"columna": "CLASIFICACION_CREACION"})
+        assert r.json() == [
+            {"valor": "candidato", "conteo": 2},
+            {"valor": "muestra_medica", "conteo": 1},
+        ]
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_filtro_por_clasificacion(tmp_path):
     cliente, carpeta = _cliente(tmp_path)
     try:

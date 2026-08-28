@@ -1,4 +1,4 @@
-import { obtenerAuditoria, obtenerCandidatos } from "../api";
+import { obtenerAuditoria, obtenerCandidatos, obtenerValoresColumna } from "../api";
 import { TablaFiltrable } from "../tabla";
 
 export function montarPorqueNuevos(contenedor: HTMLElement): void {
@@ -8,6 +8,7 @@ export function montarPorqueNuevos(contenedor: HTMLElement): void {
   new TablaFiltrable(seccionTabla, {
     columnas: ["CODIGO_INTERNO", "DESCRIPCION", "EXPEDIENTE", "CONSECUTIVO", "motivo"],
     cargarPagina: (p) => obtenerCandidatos({ ...p, accion: "candidato" }),
+    obtenerValoresColumna: (columna) => obtenerValoresColumna("/candidatos/valores", columna),
   });
 }
 
@@ -18,6 +19,7 @@ export function montarPorqueDiferencias(contenedor: HTMLElement): void {
   new TablaFiltrable(seccionTabla, {
     columnas: ["CODIGO_INTERNO", "DESCRIPCION", "CAMPOS_CON_DIFERENCIA", "PORCENTAJE_CALIDAD"],
     cargarPagina: (p) => obtenerAuditoria({ ...p, estado_coherencia: "con_diferencias" }),
+    obtenerValoresColumna: (columna) => obtenerValoresColumna("/auditoria/valores", columna),
   });
 }
 
@@ -28,5 +30,6 @@ export function montarPorqueVigencia(contenedor: HTMLElement): void {
   new TablaFiltrable(seccionTabla, {
     columnas: ["CODIGO_INTERNO", "DESCRIPCION", "ESTADO_COHERENCIA", "NOVEDAD_VIGENCIA_INVIMA", "DETALLE_VIGENCIA_INVIMA"],
     cargarPagina: (p) => obtenerAuditoria(p),
+    obtenerValoresColumna: (columna) => obtenerValoresColumna("/auditoria/valores", columna),
   });
 }

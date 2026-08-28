@@ -313,10 +313,19 @@ thead th {
   font-weight: 700; font-size: 0.68rem; letter-spacing: 0.04em; text-transform: uppercase;
   color: var(--text-muted); border-bottom: 1px solid var(--border); z-index: 1;
 }
+/* .th-fila: etiqueta + boton de filtro en una fila flex -- .th-manija
+   sigue siendo hijo directo de <th> (absolute, borde derecho completo),
+   no de .th-fila. */
+.th-fila { display: flex; align-items: center; gap: 2px; padding: 8px 6px 8px 12px; }
 .th-etiqueta {
-  display: block; padding: 8px 14px 8px 12px; overflow: hidden; text-overflow: ellipsis;
-  white-space: nowrap;
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.th-filtro-boton {
+  flex-shrink: 0; border: none; background: transparent; color: var(--text-faint); cursor: pointer;
+  padding: 1px 3px; border-radius: 4px; font-size: 0.6rem; line-height: 1.4;
+}
+.th-filtro-boton:hover { background: var(--accent-soft); color: var(--accent); }
+.th-filtro-boton.activo { color: var(--accent); }
 .th-manija {
   position: absolute; top: 0; right: 0; bottom: 0; width: 8px; cursor: col-resize;
   touch-action: none; transition: background 0.1s ease;
@@ -325,6 +334,38 @@ thead th {
 /* `position: sticky` en thead th ya establece el contenedor de posicion
    para `.th-manija` (absolute) -- un elemento sticky es tan valido como
    "relative" para eso, no hace falta agregar nada mas. */
+
+/* ============================= POPOVER DE FILTRO POR COLUMNA (tabla.ts) ============================= */
+/* Estilo Excel -- pedido del usuario (2026-08-28): "un filtro como los de
+   excel que permite buscar especificamente aprox y ordenar". Se ancla con
+   position:fixed y se agrega a document.body (no como descendiente de la
+   tabla) para escapar del overflow-x:auto del envoltorio -- si viviera
+   adentro, un overflow:auto tambien recorta el eje Y y el popover se veria
+   cortado. */
+.th-popover {
+  position: fixed; z-index: 50; width: 240px; max-height: 360px; display: flex; flex-direction: column;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radio-md);
+  box-shadow: var(--shadow-md); font-size: 0.8rem; text-transform: none; letter-spacing: normal; font-weight: 400;
+  color: var(--text);
+}
+.th-popover__mensaje { padding: 12px; color: var(--text-muted); font-size: 0.78rem; margin: 0; }
+.th-popover__orden { display: flex; flex-direction: column; padding: 6px; border-bottom: 1px solid var(--border); }
+.th-popover__orden button {
+  border: none; background: transparent; text-align: left; padding: 6px 8px; border-radius: 6px;
+  cursor: pointer; font-size: 0.78rem; color: var(--text);
+}
+.th-popover__orden button:hover { background: var(--accent-soft); color: var(--accent); }
+.th-popover__buscar {
+  margin: 6px; width: calc(100% - 12px); background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radio-pill); padding: 6px 12px; font-size: 0.78rem; color: var(--text); outline: none;
+}
+.th-popover__lista { overflow-y: auto; flex: 1; padding: 0 6px; min-height: 40px; }
+.th-popover__opcion { display: flex; align-items: center; gap: 6px; padding: 5px 6px; border-radius: 6px; cursor: pointer; }
+.th-popover__opcion:hover { background: var(--surface-2); }
+.th-popover__valor { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.th-popover__conteo { flex-shrink: 0; font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-faint); }
+.th-popover__botones { display: flex; justify-content: flex-end; gap: 8px; padding: 8px; border-top: 1px solid var(--border); }
+.th-popover__botones .btn { padding: 5px 12px; font-size: 0.76rem; }
 td {
   padding: 8px 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   border-bottom: 1px solid var(--border); color: var(--text); max-width: 0;

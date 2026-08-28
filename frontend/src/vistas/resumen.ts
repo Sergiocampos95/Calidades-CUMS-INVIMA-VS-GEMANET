@@ -1,4 +1,10 @@
-import { obtenerResumenCandidatos, obtenerResumenMetodos, obtenerResumenUniverso, obtenerUniverso } from "../api";
+import {
+  obtenerResumenCandidatos,
+  obtenerResumenMetodos,
+  obtenerResumenUniverso,
+  obtenerUniverso,
+  obtenerValoresColumna,
+} from "../api";
 import { cabeceraConDescarga } from "../descargas";
 import { renderTarjetas } from "../tarjetas";
 import { TablaFiltrable } from "../tabla";
@@ -102,5 +108,6 @@ export async function montarDetalleRegistro(contenedor: HTMLElement): Promise<vo
   new TablaFiltrable(seccionTabla, {
     columnas: ["CODIGO_INTERNO", "PRODUCTO", "EXPEDIENTE", "CONSECUTIVO", "TIPO_ROL", "ESTADO_CUM", "ESTADO_REGISTRO", "CLASIFICACION_CREACION"],
     cargarPagina: (p) => obtenerUniverso(p),
+    obtenerValoresColumna: (columna) => obtenerValoresColumna("/universo/valores", columna),
   });
 }

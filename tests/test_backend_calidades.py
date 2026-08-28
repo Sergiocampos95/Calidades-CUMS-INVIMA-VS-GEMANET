@@ -81,6 +81,20 @@ def test_calidad_desconocida_da_404(tmp_path):
         app.dependency_overrides.clear()
 
 
+def test_valores_de_columna_de_una_calidad_no_choca_con_su_propia_ruta(tmp_path):
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        escribir_snapshot({"auditoria": _auditoria_muestra()}, carpeta=carpeta)
+        r = cliente.get(
+            "/auditoria/calidades/Registro vencido en INVIMA/valores",
+            params={"columna": "CODIGO_INTERNO"},
+        )
+        assert r.status_code == 200
+        assert r.json() == [{"valor": "2-2", "conteo": 1}]
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_dimensiones_calidad(tmp_path):
     cliente, carpeta = _cliente(tmp_path)
     try:

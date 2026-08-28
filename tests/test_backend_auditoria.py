@@ -84,6 +84,21 @@ def test_filtro_por_multiples_estados_coherencia_separados_por_coma(tmp_path):
         app.dependency_overrides.clear()
 
 
+def test_valores_de_columna_para_el_filtro_estilo_excel(tmp_path):
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        df = pd.DataFrame({"ESTADO_COHERENCIA": ["correcto", "correcto", "con_diferencias"]})
+        escribir_snapshot({"auditoria": df}, carpeta=carpeta)
+
+        r = cliente.get("/auditoria/valores", params={"columna": "ESTADO_COHERENCIA"})
+        assert r.json() == [
+            {"valor": "correcto", "conteo": 2},
+            {"valor": "con_diferencias", "conteo": 1},
+        ]
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_resumen_auditoria_cuenta_por_estado_coherencia(tmp_path):
     cliente, carpeta = _cliente(tmp_path)
     try:

@@ -122,6 +122,21 @@ def test_tabla_de_un_eslabon_trae_descripcion_no_producto(tmp_path):
         app.dependency_overrides.clear()
 
 
+def test_valores_de_columna_de_un_eslabon_no_choca_con_la_ruta_de_un_solo_segmento(tmp_path):
+    """/{nombre}/valores tiene que resolverse aparte de /{nombre} -- si la
+    ruta quedara mal registrada, esto devolveria 404 (tratando "valores"
+    como si fuera el nombre de un eslabon) en vez de la lista de valores."""
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        escribir_snapshot({"auditoria": _auditoria_muestra()}, carpeta=carpeta)
+        r = cliente.get("/auditoria/cadena/H1/valores", params={"columna": "ESTADO_COHERENCIA"})
+        assert r.status_code == 200
+        valores = {v["valor"] for v in r.json()}
+        assert valores == {"correcto", "con_diferencias", "sin_correspondencia_invima"}
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_filtro_solo_pasa_en_la_tabla_de_un_eslabon(tmp_path):
     cliente, carpeta = _cliente(tmp_path)
     try:

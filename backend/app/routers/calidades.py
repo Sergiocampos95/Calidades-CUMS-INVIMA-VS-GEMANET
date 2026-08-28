@@ -14,7 +14,7 @@ import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException
 
 from backend.app.dependencies import carpeta_snapshots
-from backend.app.paginacion import paginar
+from backend.app.paginacion import paginar, valores_distintos
 from backend.app.schemas import (
     LIMITE_PREVISUALIZACION_DEFECTO,
     CalidadResumen,
@@ -73,15 +73,7 @@ def listar_calidades(carpeta: Path = Depends(carpeta_snapshots)) -> list[Calidad
     ]
 
 
-@router.get("/calidades/{nombre}", response_model=PaginaTabla)
-def obtener_calidad(
-    nombre: str,
-    q: str | None = None,
-    limite: int = LIMITE_PREVISUALIZACION_DEFECTO,
-    offset: int = 0,
-    todo: bool = False,
-    carpeta: Path = Depends(carpeta_snapshots),
-) -> PaginaTabla:
+def _calidad_o_404(nombre: str, carpeta: Path) -> Calidad:
     calidades = {c.nombre: c for c in _calidades(carpeta)}
     calidad = calidades.get(nombre)
     if calidad is None:
@@ -90,7 +82,39 @@ def obtener_calidad(
             detail=f"'{nombre}' no es una calidad reconocida. Calidades disponibles: "
             f"{', '.join(calidades)}.",
         )
-    return paginar(calidad.df_tabla, q=q, limite=limite, offset=offset, todo=todo)
+    return calidad
+
+
+@router.get("/calidades/{nombre}", response_model=PaginaTabla)
+def obtener_calidad(
+    nombre: str,
+    q: str | None = None,
+    limite: int = LIMITE_PREVISUALIZACION_DEFECTO,
+    offset: int = 0,
+    todo: bool = False,
+    ordenar_por: str | None = None,
+    orden_descendente: bool = False,
+    filtros_json: str | None = None,
+    carpeta: Path = Depends(carpeta_snapshots),
+) -> PaginaTabla:
+    calidad = _calidad_o_404(nombre, carpeta)
+    return paginar(
+        calidad.df_tabla,
+        q=q,
+        limite=limite,
+        offset=offset,
+        todo=todo,
+        ordenar_por=ordenar_por,
+        orden_descendente=orden_descendente,
+        filtros_json=filtros_json,
+    )
+
+
+@router.get("/calidades/{nombre}/valores")
+def valores_columna_calidad(
+    nombre: str, columna: str, carpeta: Path = Depends(carpeta_snapshots)
+) -> list[dict[str, object]]:
+    return valores_distintos(_calidad_o_404(nombre, carpeta).df_tabla, columna)
 
 
 @router.get("/dimensiones", response_model=DimensionesCalidad)

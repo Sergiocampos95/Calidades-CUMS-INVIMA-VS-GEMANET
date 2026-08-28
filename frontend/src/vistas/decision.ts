@@ -1,4 +1,4 @@
-import { obtenerCandidatos, obtenerResumenCandidatos } from "../api";
+import { obtenerCandidatos, obtenerResumenCandidatos, obtenerValoresColumna } from "../api";
 import { TablaFiltrable } from "../tabla";
 
 export async function montarDecision(contenedor: HTMLElement): Promise<void> {
@@ -21,5 +21,6 @@ export async function montarDecision(contenedor: HTMLElement): Promise<void> {
   new TablaFiltrable(seccionTabla, {
     columnas: ["CODIGO_INTERNO", "DESCRIPCION", "EXPEDIENTE", "CONSECUTIVO", "motivo"],
     cargarPagina: (p) => obtenerCandidatos({ ...p, accion: "cuarentena" }),
+    obtenerValoresColumna: (columna) => obtenerValoresColumna("/candidatos/valores", columna),
   });
 }

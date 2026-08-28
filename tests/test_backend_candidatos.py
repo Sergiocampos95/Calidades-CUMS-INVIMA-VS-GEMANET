@@ -102,6 +102,30 @@ def test_filtro_por_accion(tmp_path):
         app.dependency_overrides.clear()
 
 
+def test_valores_de_columna_para_el_filtro_estilo_excel(tmp_path):
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        df = pd.DataFrame({"accion": ["candidato", "candidato", "ya_existe"]})
+        escribir_snapshot({"candidatos": df}, carpeta=carpeta)
+
+        r = cliente.get("/candidatos/valores", params={"columna": "accion"})
+        assert r.json() == [{"valor": "candidato", "conteo": 2}, {"valor": "ya_existe", "conteo": 1}]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_ordenar_por_columna(tmp_path):
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        df = pd.DataFrame({"CODIGO_INTERNO": ["3-3", "1-1", "2-2"]})
+        escribir_snapshot({"candidatos": df}, carpeta=carpeta)
+
+        r = cliente.get("/candidatos", params={"ordenar_por": "CODIGO_INTERNO"})
+        assert [f["CODIGO_INTERNO"] for f in r.json()["filas"]] == ["1-1", "2-2", "3-3"]
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_resumen_metodos_desglosa_unidad_y_marca(tmp_path):
     cliente, carpeta = _cliente(tmp_path)
     try:

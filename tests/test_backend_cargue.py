@@ -80,6 +80,21 @@ def test_cargue_final_puede_venir_vacio_sin_ser_un_error(tmp_path):
         app.dependency_overrides.clear()
 
 
+def test_valores_de_columna_en_estructura_y_final(tmp_path):
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        _snapshot_cargue_muestra(carpeta)
+        r = cliente.get("/cargue/estructura/valores", params={"columna": "ESTADO"})
+        assert r.json() == [
+            {"valor": "Listo para cargue", "conteo": 2},
+            {"valor": "Pendiente de clasificacion manual", "conteo": 1},
+        ]
+        r2 = cliente.get("/cargue/final/valores", params={"columna": "CODIGO_INTERNO"})
+        assert {v["valor"] for v in r2.json()} == {"1-1", "3-3"}
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_resumen_cargue_cuenta_listos_y_pendientes(tmp_path):
     cliente, carpeta = _cliente(tmp_path)
     try:

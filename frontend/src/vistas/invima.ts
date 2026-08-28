@@ -1,4 +1,4 @@
-import { obtenerUniverso } from "../api";
+import { obtenerUniverso, obtenerValoresColumna } from "../api";
 import { TablaFiltrable } from "../tabla";
 
 export function montarConsultarInvima(contenedor: HTMLElement): void {
@@ -8,5 +8,6 @@ export function montarConsultarInvima(contenedor: HTMLElement): void {
   new TablaFiltrable(seccionTabla, {
     columnas: ["CODIGO_INTERNO", "PRODUCTO", "TITULAR", "TIPO_ROL", "ESTADO_CUM", "ESTADO_REGISTRO", "CLASIFICACION_CREACION"],
     cargarPagina: (p) => obtenerUniverso(p),
+    obtenerValoresColumna: (columna) => obtenerValoresColumna("/universo/valores", columna),
   });
 }

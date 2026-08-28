@@ -9,7 +9,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 
 from backend.app.dependencies import carpeta_snapshots
-from backend.app.paginacion import paginar
+from backend.app.paginacion import paginar, valores_distintos
 from backend.app.schemas import LIMITE_PREVISUALIZACION_DEFECTO, PaginaTabla
 from worker.almacen_snapshots import leer_tabla
 
@@ -34,6 +34,9 @@ def listar_auditoria(
     limite: int = LIMITE_PREVISUALIZACION_DEFECTO,
     offset: int = 0,
     todo: bool = False,
+    ordenar_por: str | None = None,
+    orden_descendente: bool = False,
+    filtros_json: str | None = None,
     carpeta: Path = Depends(carpeta_snapshots),
 ) -> PaginaTabla:
     """`estado_coherencia` acepta varios valores separados por coma
@@ -44,7 +47,23 @@ def listar_auditoria(
     if estado_coherencia and "ESTADO_COHERENCIA" in df.columns:
         valores = [v.strip() for v in estado_coherencia.split(",") if v.strip()]
         df = df[df["ESTADO_COHERENCIA"].isin(valores)]
-    return paginar(df, q=q, limite=limite, offset=offset, todo=todo)
+    return paginar(
+        df,
+        q=q,
+        limite=limite,
+        offset=offset,
+        todo=todo,
+        ordenar_por=ordenar_por,
+        orden_descendente=orden_descendente,
+        filtros_json=filtros_json,
+    )
+
+
+@router.get("/valores")
+def valores_columna(columna: str, carpeta: Path = Depends(carpeta_snapshots)) -> list[dict[str, object]]:
+    """Los valores distintos de una columna, con conteo -- alimenta el
+    checkbox-list del filtro estilo Excel (pedido del usuario, 2026-08-28)."""
+    return valores_distintos(_tabla_auditoria(carpeta), columna)
 
 
 @router.get("/resumen")

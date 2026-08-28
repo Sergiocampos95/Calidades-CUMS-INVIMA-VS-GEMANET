@@ -4,6 +4,7 @@ import {
   obtenerCargueFinal,
   obtenerEstructuraCargue,
   obtenerResumenCargue,
+  obtenerValoresColumna,
 } from "../api";
 import { botonDescarga, cabeceraConDescarga } from "../descargas";
 import { renderTarjetas } from "../tarjetas";
@@ -65,6 +66,7 @@ export async function montarCargueEstructura(contenedor: HTMLElement): Promise<v
   new TablaFiltrable(seccionTabla, {
     columnas: ["CODIGO_INTERNO", "DESCRIPCION", "EXPEDIENTE", "ESTADO", "CAMPOS_CON_ERROR", "PORCENTAJE_COMPLETITUD", "COMO_VERIFICAR"],
     cargarPagina: (p) => obtenerEstructuraCargue(p),
+    obtenerValoresColumna: (columna) => obtenerValoresColumna("/cargue/estructura/valores", columna),
   });
 }
 
@@ -96,5 +98,6 @@ export async function montarCargueExcel(contenedor: HTMLElement): Promise<void> 
   new TablaFiltrable(seccionTabla, {
     columnas: ["CODIGO_INTERNO", "DESCRIPCION", "POS", "FORMA_FARMACEUTICA", "CLASIFICADO", "CODIGO_NIVEL_SERVICIO"],
     cargarPagina: (p) => obtenerCargueFinal(p),
+    obtenerValoresColumna: (columna) => obtenerValoresColumna("/cargue/final/valores", columna),
   });
 }

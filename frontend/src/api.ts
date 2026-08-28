@@ -75,7 +75,30 @@ export interface ParametrosTabla {
   limite?: number;
   offset?: number;
   todo?: boolean;
+  /** Filtro estilo Excel (pedido del usuario, 2026-08-28): ordenar por
+   * cualquier columna + filtrar por un subconjunto de sus valores. */
+  ordenar_por?: string;
+  orden_descendente?: boolean;
+  /** JSON de {columna: [valores]} -- varias columnas filtradas a la vez,
+   * igual que se usaria en una tabla real. */
+  filtros_json?: string;
   [clave: string]: string | number | boolean | undefined;
+}
+
+export interface ValorColumna {
+  valor: string;
+  conteo: number;
+}
+
+/** Los valores distintos de una columna (con conteo), para el checkbox-list
+ * del filtro estilo Excel -- `ruta` es la ruta COMPLETA del endpoint
+ * /valores de esa tabla (cada router tiene el suyo: /candidatos/valores,
+ * /auditoria/valores, /auditoria/cadena/{nombre}/valores...). Lista vacia
+ * si el backend decide que la columna tiene demasiados valores distintos
+ * para este filtro (ver LIMITE_VALORES_DISTINTOS en paginacion.py) -- la
+ * busqueda libre de la tabla sigue siendo la herramienta correcta ahi. */
+export function obtenerValoresColumna(ruta: string, columna: string): Promise<ValorColumna[]> {
+  return obtenerJSON<ValorColumna[]>(ruta, { columna });
 }
 
 export interface ParametrosCandidatos extends ParametrosTabla {

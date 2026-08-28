@@ -12,7 +12,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 
 from backend.app.dependencies import carpeta_snapshots
-from backend.app.paginacion import paginar
+from backend.app.paginacion import paginar, valores_distintos
 from backend.app.schemas import LIMITE_PREVISUALIZACION_DEFECTO, PaginaTabla
 from worker.almacen_snapshots import leer_tabla
 
@@ -41,6 +41,9 @@ def listar_estructura(
     limite: int = LIMITE_PREVISUALIZACION_DEFECTO,
     offset: int = 0,
     todo: bool = False,
+    ordenar_por: str | None = None,
+    orden_descendente: bool = False,
+    filtros_json: str | None = None,
     carpeta: Path = Depends(carpeta_snapshots),
 ) -> PaginaTabla:
     """El archivo de auditoria de estructura: TODOS los candidatos (listos y
@@ -49,7 +52,21 @@ def listar_estructura(
     if listo is not None and "ESTADO" in df.columns:
         objetivo = "Listo para cargue" if listo else "Pendiente de clasificacion manual"
         df = df[df["ESTADO"] == objetivo]
-    return paginar(df, q=q, limite=limite, offset=offset, todo=todo)
+    return paginar(
+        df,
+        q=q,
+        limite=limite,
+        offset=offset,
+        todo=todo,
+        ordenar_por=ordenar_por,
+        orden_descendente=orden_descendente,
+        filtros_json=filtros_json,
+    )
+
+
+@router.get("/estructura/valores")
+def valores_columna_estructura(columna: str, carpeta: Path = Depends(carpeta_snapshots)) -> list[dict[str, object]]:
+    return valores_distintos(_tabla_cargue("cargue_estructura", carpeta), columna)
 
 
 @router.get("/final", response_model=PaginaTabla)
@@ -58,13 +75,30 @@ def listar_cargue_final(
     limite: int = LIMITE_PREVISUALIZACION_DEFECTO,
     offset: int = 0,
     todo: bool = False,
+    ordenar_por: str | None = None,
+    orden_descendente: bool = False,
+    filtros_json: str | None = None,
     carpeta: Path = Depends(carpeta_snapshots),
 ) -> PaginaTabla:
     """Solo lo listo para subir -- las 37 columnas exactas del Excel de
     cargue. Puede venir vacio (0 filas): no es un error, significa que
     ningun candidato de esta corrida tiene los 4 campos verificables
     resueltos con certeza todavia."""
-    return paginar(_tabla_cargue("cargue_final", carpeta), q=q, limite=limite, offset=offset, todo=todo)
+    return paginar(
+        _tabla_cargue("cargue_final", carpeta),
+        q=q,
+        limite=limite,
+        offset=offset,
+        todo=todo,
+        ordenar_por=ordenar_por,
+        orden_descendente=orden_descendente,
+        filtros_json=filtros_json,
+    )
+
+
+@router.get("/final/valores")
+def valores_columna_final(columna: str, carpeta: Path = Depends(carpeta_snapshots)) -> list[dict[str, object]]:
+    return valores_distintos(_tabla_cargue("cargue_final", carpeta), columna)
 
 
 @router.get("/resumen")

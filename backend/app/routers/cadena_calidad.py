@@ -13,7 +13,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 
 from backend.app.dependencies import carpeta_snapshots
-from backend.app.paginacion import paginar
+from backend.app.paginacion import paginar, valores_distintos
 from backend.app.schemas import (
     LIMITE_PREVISUALIZACION_DEFECTO,
     EslabonResumen,
@@ -71,16 +71,7 @@ def listar_cadena(carpeta: Path = Depends(carpeta_snapshots)) -> list[EslabonRes
     ]
 
 
-@router.get("/{nombre}", response_model=PaginaTabla)
-def obtener_eslabon(
-    nombre: str,
-    q: str | None = None,
-    solo_pasa: bool | None = None,
-    limite: int = LIMITE_PREVISUALIZACION_DEFECTO,
-    offset: int = 0,
-    todo: bool = False,
-    carpeta: Path = Depends(carpeta_snapshots),
-) -> PaginaTabla:
+def _eslabon_o_404(nombre: str, carpeta: Path) -> EslabonCalidad:
     eslabones = {e.nombre: e for e in _cadena(carpeta)}
     eslabon = eslabones.get(nombre)
     if eslabon is None:
@@ -89,7 +80,40 @@ def obtener_eslabon(
             detail=f"'{nombre}' no es una tabla de la cadena. Tablas disponibles: "
             f"{', '.join(eslabones)}.",
         )
+    return eslabon
+
+
+@router.get("/{nombre}", response_model=PaginaTabla)
+def obtener_eslabon(
+    nombre: str,
+    q: str | None = None,
+    solo_pasa: bool | None = None,
+    limite: int = LIMITE_PREVISUALIZACION_DEFECTO,
+    offset: int = 0,
+    todo: bool = False,
+    ordenar_por: str | None = None,
+    orden_descendente: bool = False,
+    filtros_json: str | None = None,
+    carpeta: Path = Depends(carpeta_snapshots),
+) -> PaginaTabla:
+    eslabon = _eslabon_o_404(nombre, carpeta)
     df = eslabon.df_tabla
     if solo_pasa is not None:
         df = df[df[eslabon.columna_estado] == ("pasa" if solo_pasa else "no_pasa")]
-    return paginar(df, q=q, limite=limite, offset=offset, todo=todo)
+    return paginar(
+        df,
+        q=q,
+        limite=limite,
+        offset=offset,
+        todo=todo,
+        ordenar_por=ordenar_por,
+        orden_descendente=orden_descendente,
+        filtros_json=filtros_json,
+    )
+
+
+@router.get("/{nombre}/valores")
+def valores_columna_eslabon(
+    nombre: str, columna: str, carpeta: Path = Depends(carpeta_snapshots)
+) -> list[dict[str, object]]:
+    return valores_distintos(_eslabon_o_404(nombre, carpeta).df_tabla, columna)

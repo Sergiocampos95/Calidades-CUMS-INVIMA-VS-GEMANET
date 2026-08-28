@@ -7,6 +7,7 @@ import {
   obtenerEslabon,
   obtenerNaturalezaHallazgos,
   obtenerResumenAuditoria,
+  obtenerValoresColumna,
 } from "../api";
 import { cabeceraConDescarga } from "../descargas";
 import {
@@ -103,6 +104,7 @@ export async function montarAuditPriorizar(contenedor: HTMLElement): Promise<voi
     controlesExtra: select.elemento,
     formatearCelda: FORMATEADOR_ESTADO,
     cargarPagina: (p) => obtenerAuditoria({ ...p, estado_coherencia: select.valores().join(",") || undefined }),
+    obtenerValoresColumna: (columna) => obtenerValoresColumna("/auditoria/valores", columna),
   });
 }
 
@@ -172,6 +174,8 @@ export async function montarAuditEntender(contenedor: HTMLElement): Promise<void
       columnas: calidad.columnas,
       formatearCelda: formatearCeldaCalidad,
       cargarPagina: (p) => obtenerCalidad(calidad.nombre, p),
+      obtenerValoresColumna: (columna) =>
+        obtenerValoresColumna(`/auditoria/calidades/${encodeURIComponent(calidad.nombre)}/valores`, columna),
     });
   }
 
@@ -246,6 +250,7 @@ export async function montarAuditExplorar(contenedor: HTMLElement): Promise<void
     controlesExtra: select.elemento,
     formatearCelda: FORMATEADOR_ESTADO,
     cargarPagina: (p) => obtenerAuditoria({ ...p, estado_coherencia: select.valores().join(",") || undefined }),
+    obtenerValoresColumna: (columna) => obtenerValoresColumna("/auditoria/valores", columna),
   });
 }
 
@@ -291,6 +296,8 @@ export async function montarCadenaCalidad(contenedor: HTMLElement): Promise<void
         return null;
       },
       cargarPagina: (p) => obtenerEslabon(eslabon.nombre, p),
+      obtenerValoresColumna: (columna) =>
+        obtenerValoresColumna(`/auditoria/cadena/${encodeURIComponent(eslabon.nombre)}/valores`, columna),
     });
   }
 
