@@ -86,3 +86,74 @@ def test_columna_faltante_no_revienta_y_queda_fuera_de_columnas():
     vencidos = next(c for c in calidades if c.nombre == "Registro vencido en INVIMA")
     assert vencidos.medicamentos == 0
     assert "FECHA_FIN" not in vencidos.columnas
+
+
+def _calidad(auditoria: pd.DataFrame, nombre: str):
+    return next(c for c in calidades_auditoria(auditoria) if c.nombre == nombre)
+
+
+def test_consulta_de_verificacion_sql_apunta_a_la_tabla_y_columnas_reales():
+    """La consulta tiene que poder pegarse tal cual en un cliente SQL contra
+    Gemma Net -- mismas columnas que ya usa ingesta/gemanet_sql.py."""
+    auditoria = pd.DataFrame([_fila("500-1", CODIGO_DUPLICADO_EN_REPORTE=True)])
+    duplicados = _calidad(auditoria, "Código repetido dentro del reporte")
+    consulta = duplicados.df_tabla["CONSULTA_VERIFICACION_SQL"].iloc[0]
+    assert "administrativo.tb_medicamento" in consulta
+    assert "codigo_interno = '500-1'" in consulta
+    assert "descripcion" in consulta
+    assert "concentracion" in consulta
+
+
+def test_consulta_de_verificacion_sql_escapa_comillas_simples():
+    auditoria = pd.DataFrame([_fila("500-1'; DROP TABLE--", CODIGO_DUPLICADO_EN_REPORTE=True)])
+    duplicados = _calidad(auditoria, "Código repetido dentro del reporte")
+    consulta = duplicados.df_tabla["CONSULTA_VERIFICACION_SQL"].iloc[0]
+    assert "500-1''; DROP TABLE--" in consulta
+
+
+def test_consejo_sale_de_naturaleza_hallazgo_y_queda_vacio_sin_hallazgo():
+    auditoria = pd.DataFrame(
+        [
+            _fila(
+                "500-1",
+                CODIGO_DUPLICADO_EN_REPORTE=True,
+                NATURALEZA_HALLAZGO="Vigencia en riesgo",
+            ),
+            _fila(
+                "500-2",
+                CODIGO_DUPLICADO_EN_REPORTE=True,
+                NATURALEZA_HALLAZGO="",  # sin hallazgo -- sin consejo
+            ),
+        ]
+    )
+    duplicados = _calidad(auditoria, "Código repetido dentro del reporte")
+    tabla = duplicados.df_tabla.set_index("CODIGO_INTERNO")
+    assert "Revisar antes de autorizar" in tabla.loc["500-1", "CONSEJO"]
+    assert tabla.loc["500-2", "CONSEJO"] == ""
+
+
+def test_con_diferencias_muestra_el_trio_gemanet_invima_validacion_por_campo():
+    """Pedido explicito del usuario (2026-08-28): CAMPOS_CON_DIFERENCIA dice
+    CUALES campos difieren, pero no que contienen -- esta calidad tiene que
+    traer el valor de Gemma Net, el de INVIMA y el veredicto de cada uno de
+    los 7 campos comparables, no solo el nombre del campo."""
+    auditoria = pd.DataFrame(
+        [
+            _fila(
+                "500-1",
+                CAMPOS_CON_DIFERENCIA="DESCRIPCION",
+                DESCRIPCION_GEMANET="ACETAMINOFEN 500MG",
+                DESCRIPCION_INVIMA="ACETAMINOFEN 500 MG",
+                DESCRIPCION_VALIDACION="difiere",
+            )
+        ]
+    )
+    calidades = calidades_auditoria(auditoria)
+    con_diferencias = next(c for c in calidades if c.nombre == "Con algún campo distinto al de INVIMA")
+    assert "DESCRIPCION_GEMANET" in con_diferencias.columnas
+    assert "DESCRIPCION_INVIMA" in con_diferencias.columnas
+    assert "DESCRIPCION_VALIDACION" in con_diferencias.columnas
+    fila = con_diferencias.df_tabla.iloc[0]
+    assert fila["DESCRIPCION_GEMANET"] == "ACETAMINOFEN 500MG"
+    assert fila["DESCRIPCION_INVIMA"] == "ACETAMINOFEN 500 MG"
+    assert fila["DESCRIPCION_VALIDACION"] == "difiere"

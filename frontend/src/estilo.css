@@ -243,6 +243,18 @@ button, select, input { font-family: inherit; }
 .pildora--neutro { background: var(--surface-2); color: var(--text-muted); }
 .pildora--acento { background: var(--accent-soft); color: var(--accent); }
 
+/* ============================= CELDA SQL (auditoria.ts) ============================= */
+/* CONSULTA_VERIFICACION_SQL -- pedido del usuario (2026-08-28): poder
+   copiar la consulta para corroborar el dato directo en Gemma Net. */
+.celda-sql { display: inline-flex; align-items: center; gap: 6px; }
+.celda-sql code { font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-muted); }
+.btn-copiar-sql {
+  flex-shrink: 0; width: 22px; height: 22px; border-radius: 5px; border: 1px solid var(--border);
+  background: var(--surface-2); cursor: pointer; font-size: 0.7rem; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center; transition: border-color 0.15s ease;
+}
+.btn-copiar-sql:hover { border-color: var(--accent); }
+
 /* ============================= PANEL GENERICO ============================= */
 .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radio-md); box-shadow: var(--shadow-sm); overflow: hidden; margin-bottom: 16px; }
 .panel__cab { padding: 14px 16px 0; }

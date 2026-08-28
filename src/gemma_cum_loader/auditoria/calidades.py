@@ -21,8 +21,82 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-from gemma_cum_loader.auditoria.coherencia_invima import EstadoCoherencia
+from gemma_cum_loader.auditoria.coherencia_invima import (
+    ACCION_POR_NATURALEZA,
+    CAMPOS_COMPARADOS_COHERENCIA,
+    SUFIJO_GEMANET,
+    SUFIJO_INVIMA,
+    SUFIJO_VALIDACION,
+    EstadoCoherencia,
+)
 from gemma_cum_loader.normaliza.codigos import PATRON_CUM
+
+# Las columnas GEMANET/INVIMA/VALIDACION de los 7 campos comparables, en un
+# solo bloque -- pedido explicito del usuario (2026-08-28): "campos con
+# diferencia, dice cuales son los campos pero no lo que contiene... si es
+# la descripcion la que esta mal imprimes la desc de invima la desc de
+# gema y el resultado". CAMPOS_CON_DIFERENCIA ya dice CUALES difieren; esto
+# muestra los tres valores de CADA campo comparable, no solo de los que
+# difieren en esa fila -- asi se ve tambien que el resto SI coincide.
+COLUMNAS_TRIO_CAMPOS_COMPARADOS = tuple(
+    f"{campo}{sufijo}"
+    for campo in CAMPOS_COMPARADOS_COHERENCIA
+    for sufijo in (SUFIJO_GEMANET, SUFIJO_INVIMA, SUFIJO_VALIDACION)
+)
+
+# La tabla y columnas REALES de Gemma Net (ver ingesta/gemanet_sql.py --
+# mismo SELECT que ya usa el reporte, verificado contra la base real). Solo
+# Gemma Net: INVIMA no tiene una base propia que consultar, solo el
+# catalogo ya descargado -- aclarado explicitamente por el usuario.
+_TABLA_VERIFICACION_GEMANET = "administrativo.tb_medicamento"
+_COLUMNAS_VERIFICACION_GEMANET = (
+    "codigo_interno",
+    "descripcion",
+    "concentracion",
+    "principio_activo",
+    "forma_farmaceutica",
+    "codigo_atc",
+    "marca_medicamento",
+    "consecutivo_unidad_medida",
+)
+
+
+def _consultas_verificacion_gemanet(codigos_internos: pd.Series) -> pd.Series:
+    """Una consulta SQL de solo lectura por fila -- para corroborar el dato
+    directo en Gemma Net sin esperar a nadie (pedido del usuario,
+    2026-08-28: "para corroborar un dato... o para extraer el dato
+    minimamente de gemma net ya que invima no se puede"). Vectorizado:
+    string concat sobre toda la columna, no un bucle por fila."""
+    columnas = ", ".join(_COLUMNAS_VERIFICACION_GEMANET)
+    # Comillas simples escapadas (duplicadas) -- el CODIGO_INTERNO nunca
+    # deberia traer una, pero la consulta se pega tal cual en un cliente
+    # SQL ajeno: mejor una consulta siempre valida que una que rompa por un
+    # caracter raro en un dato real.
+    codigos_escapados = codigos_internos.astype(str).str.replace("'", "''", regex=False)
+    return (
+        f"SELECT {columnas} FROM {_TABLA_VERIFICACION_GEMANET} WHERE codigo_interno = '"
+        + codigos_escapados
+        + "';"
+    )
+
+
+def _con_columnas_derivadas(auditoria: pd.DataFrame) -> pd.DataFrame:
+    """Agrega CONSEJO (que hacer, segun NATURALEZA_HALLAZGO -- pedido del
+    usuario: "un consejo... con logica segun su caso", el mismo filtro
+    "Que hacer con cada hallazgo" que ya existia) y
+    CONSULTA_VERIFICACION_SQL. Copia el DataFrame antes de tocarlo: la
+    version que llega aca es la compartida entre requests (ver el cache de
+    `leer_tabla` en almacen_snapshots.py), nunca se muta in place."""
+    auditoria = auditoria.copy()
+    if "CODIGO_INTERNO" in auditoria.columns:
+        auditoria["CONSULTA_VERIFICACION_SQL"] = _consultas_verificacion_gemanet(
+            auditoria["CODIGO_INTERNO"]
+        )
+    if "NATURALEZA_HALLAZGO" in auditoria.columns:
+        auditoria["CONSEJO"] = auditoria["NATURALEZA_HALLAZGO"].map(
+            lambda n: ACCION_POR_NATURALEZA.get(n, "")
+        )
+    return auditoria
 
 
 def _columna_texto(df: pd.DataFrame, nombre: str) -> pd.Series:
@@ -65,7 +139,11 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
     codigo = _columna_texto(auditoria, "CODIGO_INTERNO")
     tiene_formato_invima = codigo.str.match(PATRON_CUM)
 
-    base = ["CODIGO_INTERNO", "DESCRIPCION", "ACTIVO"]
+    # CONSEJO y CONSULTA_VERIFICACION_SQL van en TODAS las calidades: toda
+    # fila tiene CODIGO_INTERNO (con que armar la consulta) y, si tiene
+    # algun hallazgo, una NATURALEZA_HALLAZGO de la que sacar que hacer
+    # (pedido explicito del usuario, 2026-08-28).
+    base = ["CODIGO_INTERNO", "DESCRIPCION", "ACTIVO", "CONSEJO", "CONSULTA_VERIFICACION_SQL"]
     return [
         (
             "Sin código verificable contra INVIMA",
@@ -128,7 +206,7 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
                 "puede ver cuál y qué dice cada lado."
             ),
             _no_vacio(auditoria, "CAMPOS_CON_DIFERENCIA"),
-            [*base, "CAMPOS_CON_DIFERENCIA", "PORCENTAJE_CALIDAD"],
+            [*base, "CAMPOS_CON_DIFERENCIA", "PORCENTAJE_CALIDAD", *COLUMNAS_TRIO_CAMPOS_COMPARADOS],
         ),
         (
             "Fechas que se contradicen",
@@ -171,7 +249,9 @@ def calidades_auditoria(auditoria: pd.DataFrame) -> list[Calidad]:
     """Las 11 calidades que el negocio pide poder revisar, cada una con su
     tabla navegable ya filtrada. No recalcula nada de `auditar_coherencia()`
     -- solo combina mascaras booleanas vectorizadas sobre columnas que esa
-    funcion ya dejo en el DataFrame."""
+    funcion ya dejo en el DataFrame (mas CONSEJO/CONSULTA_VERIFICACION_SQL,
+    derivadas aca mismo -- ver `_con_columnas_derivadas`)."""
+    auditoria = _con_columnas_derivadas(auditoria)
     total = len(auditoria)
     resultado = []
     for nombre, explica, mascara, columnas_deseadas in _definiciones(auditoria):

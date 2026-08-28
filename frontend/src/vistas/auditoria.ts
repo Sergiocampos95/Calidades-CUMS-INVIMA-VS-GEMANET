@@ -28,6 +28,45 @@ function esc(valor: unknown): string {
   return String(valor).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] as string);
 }
 
+// CONSULTA_VERIFICACION_SQL + CONSEJO -- pedido explicito del usuario
+// (2026-08-28): "campos con diferencia... imprimes la desc de invima la
+// desc de gema y el resultado" + "un consejo... con logica segun su caso"
+// + "incluir la consulta sql en un campo para corroborar un dato". El
+// boton de copiar usa un delegado en el contenedor de la tabla (ver
+// montarAuditEntender) porque TablaFiltrable rehace el <tbody> en cada
+// busqueda/pagina -- un listener por celda se perderia.
+function formatearCeldaCalidad(columna: string, valor: unknown): string | null {
+  if (valor === null || valor === undefined || valor === "") return null;
+  if (columna === "ESTADO_COHERENCIA") return pildoraEstadoCoherencia(valor);
+  if (columna === "NOVEDAD_VIGENCIA_INVIMA") return pildoraNovedadVigencia(valor);
+  if (columna.endsWith("_VALIDACION")) return pildoraValidacion(valor);
+  if (columna === "CONSULTA_VERIFICACION_SQL") {
+    const texto = String(valor);
+    return `<span class="celda-sql"><button type="button" class="btn-copiar-sql" data-sql="${encodeURIComponent(texto)}" title="Copiar la consulta">📋</button><code>${esc(texto)}</code></span>`;
+  }
+  return null;
+}
+
+function habilitarCopiarSQL(contenedor: HTMLElement): void {
+  contenedor.addEventListener("click", (evento) => {
+    const boton = (evento.target as HTMLElement).closest<HTMLButtonElement>(".btn-copiar-sql");
+    if (!boton?.dataset.sql) return;
+    const sql = decodeURIComponent(boton.dataset.sql);
+    navigator.clipboard?.writeText(sql).then(
+      () => {
+        const original = boton.textContent;
+        boton.textContent = "✓";
+        setTimeout(() => {
+          boton.textContent = original;
+        }, 1200);
+      },
+      () => {
+        /* portapapeles no disponible (ej. sin HTTPS) -- la consulta sigue visible para copiar a mano */
+      },
+    );
+  });
+}
+
 function selectorEstado(): HTMLSelectElement {
   const select = document.createElement("select");
   for (const [valor, etiqueta] of [["", "Todos los estados"], ...ESTADOS_COHERENCIA.map((e) => [e, etiquetaEstadoCoherencia(e)])]) {
@@ -113,6 +152,7 @@ export async function montarAuditEntender(contenedor: HTMLElement): Promise<void
   const columnaLista = document.createElement("div");
   const columnaTabla = document.createElement("div");
   grid.append(columnaLista, columnaTabla);
+  habilitarCopiarSQL(columnaTabla);
 
   let calidades: CalidadResumen[];
   try {
@@ -133,7 +173,7 @@ export async function montarAuditEntender(contenedor: HTMLElement): Promise<void
     columnaTabla.appendChild(tablaEl);
     new TablaFiltrable(tablaEl, {
       columnas: calidad.columnas,
-      formatearCelda: FORMATEADOR_ESTADO,
+      formatearCelda: formatearCeldaCalidad,
       cargarPagina: (p) => obtenerCalidad(calidad.nombre, p),
     });
   }
