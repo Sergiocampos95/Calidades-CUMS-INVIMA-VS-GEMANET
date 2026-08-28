@@ -47,7 +47,34 @@ from gemma_cum_loader.pipeline import (
     procesar_desde_catalogo_invima,
 )
 from worker.almacen_snapshots import escribir_snapshot
-from worker.estado import ESTADO_ERROR, ESTADO_OK, EstadoRefresco, registrar_refresco
+from worker.estado import (
+    ESTADO_ERROR,
+    ESTADO_OK,
+    ESTADO_PASO_EN_CURSO,
+    ESTADO_PASO_ERROR,
+    ESTADO_PASO_HECHO,
+    EstadoRefresco,
+    actualizar_paso,
+    iniciar_progreso,
+    registrar_refresco,
+)
+
+# Los pasos visibles del refresco -- "una lista mostrando uno a uno los
+# procesos que se van haciendo" (pedido del usuario, 2026-08-27). Nombres
+# de negocio, no de funcion: son los que ve la persona que hizo clic en
+# "Actualizar ahora", no un desarrollador leyendo el codigo.
+NOMBRES_PASOS_REFRESCO = (
+    "Leyendo reporte de Gemma Net",
+    "Leyendo INVIMA -- Vigentes",
+    "Leyendo INVIMA -- Vencidos",
+    "Leyendo INVIMA -- Otros Estados",
+    "Leyendo INVIMA -- Renovacion",
+    "Cruzando candidatos contra Gemma Net",
+    "Auditando coherencia contra INVIMA",
+    "Clasificando universo INVIMA",
+    "Derivando reglas de cargue",
+    "Guardando snapshot",
+)
 
 
 def _localizar_malla_referencia_defecto() -> str | None:
@@ -99,6 +126,24 @@ def _tablas_cargue(
     }
 
 
+def _paso(nombre, funcion, /, *args, ruta_estado=None, **kwargs):
+    """Envuelve un paso del refresco: lo marca en_curso antes de llamarlo,
+    hecho despues, error (con el detalle) si revienta -- y lo vuelve a
+    lanzar, para que el try/except de `ejecutar_refresco` siga registrando
+    el resultado final como ya hacia. Un solo lugar que arma esto para que
+    los 10 pasos no repitan el mismo par de llamadas a `actualizar_paso`."""
+    actualizar_paso(nombre, ESTADO_PASO_EN_CURSO, ruta=ruta_estado)
+    try:
+        resultado = funcion(*args, **kwargs)
+    except Exception as exc:
+        actualizar_paso(
+            nombre, ESTADO_PASO_ERROR, detalle=f"{type(exc).__name__}: {exc}", ruta=ruta_estado
+        )
+        raise
+    actualizar_paso(nombre, ESTADO_PASO_HECHO, ruta=ruta_estado)
+    return resultado
+
+
 def ejecutar_refresco(
     *,
     lector_gemanet: Callable[[], object] = leer_reporte_gemanet_db,
@@ -128,37 +173,84 @@ def ejecutar_refresco(
     errores, que el snapshot se escriba -- no vuelven a probar la logica de
     negocio de `pipeline.py`/`reglas_negocio.py`, que ya tienen su propia
     suite.
+
+    Cada paso se reporta a `worker/estado.py` (`iniciar_progreso`/
+    `actualizar_paso`) para que GET /refrescar/progreso pueda mostrar "una
+    lista uno a uno de los procesos que se van haciendo" (pedido del
+    usuario, 2026-08-27) -- ver NOMBRES_PASOS_REFRESCO arriba.
     """
     inicio = datetime.now(UTC)
     fuente = fuente_catalogos if fuente_catalogos is not None else FuenteCatalogosConRespaldo()
+    iniciar_progreso(list(NOMBRES_PASOS_REFRESCO), ruta=ruta_estado)
 
     try:
-        reporte_gemanet = lector_gemanet()
-        df_invima = lector_invima_api()
-        df_invima_vencidos = lector_invima_api(dataset=DATASET_CUM_VENCIDOS)
-        df_invima_otros_estados = lector_invima_api(dataset=DATASET_CUM_OTROS_ESTADOS)
-        df_invima_renovacion = lector_invima_api(dataset=DATASET_CUM_RENOVACION)
+        reporte_gemanet = _paso(
+            "Leyendo reporte de Gemma Net", lector_gemanet, ruta_estado=ruta_estado
+        )
+        df_invima = _paso(
+            "Leyendo INVIMA -- Vigentes", lector_invima_api, ruta_estado=ruta_estado
+        )
+        df_invima_vencidos = _paso(
+            "Leyendo INVIMA -- Vencidos",
+            lector_invima_api,
+            dataset=DATASET_CUM_VENCIDOS,
+            ruta_estado=ruta_estado,
+        )
+        df_invima_otros_estados = _paso(
+            "Leyendo INVIMA -- Otros Estados",
+            lector_invima_api,
+            dataset=DATASET_CUM_OTROS_ESTADOS,
+            ruta_estado=ruta_estado,
+        )
+        df_invima_renovacion = _paso(
+            "Leyendo INVIMA -- Renovacion",
+            lector_invima_api,
+            dataset=DATASET_CUM_RENOVACION,
+            ruta_estado=ruta_estado,
+        )
 
-        candidatos = procesador(df_invima, reporte_gemanet, fuente_catalogos=fuente)
-        auditoria = auditor(
+        candidatos = _paso(
+            "Cruzando candidatos contra Gemma Net",
+            procesador,
+            df_invima,
+            reporte_gemanet,
+            fuente_catalogos=fuente,
+            ruta_estado=ruta_estado,
+        )
+        auditoria = _paso(
+            "Auditando coherencia contra INVIMA",
+            auditor,
             df_invima,
             reporte_gemanet,
             df_invima_vencidos,
             df_invima_otros_estados=df_invima_otros_estados,
             df_invima_renovacion=df_invima_renovacion,
             fuente_catalogos=fuente,
+            ruta_estado=ruta_estado,
         )
         # Universo COMPLETO de INVIMA clasificado (los 101.183 registros del
         # corte, no solo los "candidato") -- alimenta la sub-vista "Detalle
         # por registro". candidatos_creacion() ya lo calcula internamente
         # pero descarta las filas que no son candidato; se recalcula aca
         # sobre el mismo df_invima ya en memoria, sin releer nada.
-        universo = clasificador(df_invima)
-        tablas_cargue = _tablas_cargue(candidatos, localizador_malla, lector_malla)
+        universo = _paso(
+            "Clasificando universo INVIMA", clasificador, df_invima, ruta_estado=ruta_estado
+        )
+        tablas_cargue = _paso(
+            "Derivando reglas de cargue",
+            _tablas_cargue,
+            candidatos,
+            localizador_malla,
+            lector_malla,
+            ruta_estado=ruta_estado,
+        )
 
-        escribir_snapshot(
+        _paso(
+            "Guardando snapshot",
+            escribir_snapshot,
             {"candidatos": candidatos, "auditoria": auditoria, "universo": universo, **tablas_cargue},
             carpeta=carpeta_snapshots,
+            ruta_estado=ruta_estado,
         )
         fin = datetime.now(UTC)
         evento = EstadoRefresco(

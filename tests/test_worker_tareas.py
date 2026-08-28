@@ -6,8 +6,15 @@ tests/test_pipeline.py)."""
 import pandas as pd
 
 from worker.almacen_snapshots import leer_tabla
-from worker.estado import ESTADO_ERROR, ESTADO_OK, ultimo_refresco
-from worker.tareas import ejecutar_refresco
+from worker.estado import (
+    ESTADO_ERROR,
+    ESTADO_OK,
+    ESTADO_PASO_ERROR,
+    ESTADO_PASO_HECHO,
+    progreso_actual,
+    ultimo_refresco,
+)
+from worker.tareas import NOMBRES_PASOS_REFRESCO, ejecutar_refresco
 
 _DF_INVIMA = pd.DataFrame({"CODIGO_INTERNO": ["1-1"]})
 _DF_VACIO = pd.DataFrame({"CODIGO_INTERNO": []})
@@ -187,6 +194,31 @@ def test_cargue_final_vacio_conserva_el_esquema_correcto_no_el_de_auditoria(tmp_
     assert len(cargue_final) == 0
     assert "ESTADO" not in cargue_final.columns
     assert "DESCRIPCION" in cargue_final.columns
+
+
+def test_refresco_exitoso_deja_todos_los_pasos_en_hecho(tmp_path):
+    kwargs = _kwargs_comunes(tmp_path)
+    ejecutar_refresco(**kwargs)
+    pasos = progreso_actual(kwargs["ruta_estado"])
+    assert [p.nombre for p in pasos] == list(NOMBRES_PASOS_REFRESCO)
+    assert all(p.estado == ESTADO_PASO_HECHO for p in pasos)
+
+
+def test_refresco_fallido_marca_el_paso_que_reventó_y_no_avanza_los_siguientes(tmp_path):
+    """El paso donde fallo queda en error con el detalle -- los que ya
+    habian terminado siguen en hecho, y los que nunca llegaron a correr
+    quedan en pendiente (no se marcan como si hubieran corrido)."""
+    kwargs = _kwargs_comunes(tmp_path)
+    kwargs["auditor"] = lambda *a, **k: (_ for _ in ()).throw(ValueError("dato invalido"))
+
+    ejecutar_refresco(**kwargs)
+
+    pasos = {p.nombre: p.estado for p in progreso_actual(kwargs["ruta_estado"])}
+    # Los 5 pasos de lectura corren antes que "Auditando...".
+    assert pasos["Leyendo reporte de Gemma Net"] == ESTADO_PASO_HECHO
+    assert pasos["Cruzando candidatos contra Gemma Net"] == ESTADO_PASO_HECHO
+    assert pasos["Auditando coherencia contra INVIMA"] == ESTADO_PASO_ERROR
+    assert pasos["Guardando snapshot"] == "pendiente"
 
 
 def test_snapshot_anterior_se_conserva_si_el_siguiente_refresco_falla(tmp_path):

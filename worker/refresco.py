@@ -32,13 +32,25 @@ from __future__ import annotations
 
 import logging
 import sys
+from datetime import datetime
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 
-from worker.estado import ESTADO_ERROR
+from worker.estado import (
+    ESTADO_ERROR,
+    hay_solicitud_pendiente,
+    limpiar_solicitud_pendiente,
+)
 from worker.tareas import ejecutar_refresco
 
 INTERVALO_MINUTOS = 50
+ID_JOB_PRINCIPAL = "refresco_periodico"
+# Cada cuanto se revisa si alguien pidio un refresco manual (POST
+# /refrescar del backend) -- pedido del usuario (2026-08-27): "ya no hace
+# falta un boton... esto si no tendra problema en demora porque ya depende
+# del usuario si quiere hacer la espera". Unos pocos segundos de reaccion
+# son aceptables frente a los ~87s que ya tarda la corrida completa.
+INTERVALO_VIGILANCIA_SEGUNDOS = 5
 
 logging.basicConfig(
     level=logging.INFO,
@@ -59,6 +71,25 @@ def _ciclo() -> None:
         _log.info("Refresco terminado en %.1fs", evento.duracion_segundos)
 
 
+def _vigilar_solicitud_manual(scheduler: BlockingScheduler) -> None:
+    """Corre cada `INTERVALO_VIGILANCIA_SEGUNDOS`: si el backend escribio una
+    solicitud de refresco manual (unica via de comunicacion entre los dos
+    procesos -- un flag en `estado_worker.sqlite3`, mismo patron de
+    archivo/SQLite que ya usa el resto del proyecto, sin agregar un broker
+    ni un segundo servidor HTTP), adelanta la corrida periodica a AHORA en
+    vez de esperar hasta 50 minutos. `max_instances=1` en el job principal
+    sigue protegiendo contra que esto se solape con una corrida ya en
+    curso -- es el MISMO job, apscheduler simplemente no dispara una
+    segunda instancia por encima."""
+    if hay_solicitud_pendiente():
+        limpiar_solicitud_pendiente()
+        _log.info("Solicitud de refresco manual detectada -- adelantando la corrida.")
+        # tz del propio scheduler, no UTC fijo -- next_run_time tiene que
+        # calzar con la zona horaria que ya usa internamente para comparar
+        # contra la proxima corrida programada.
+        scheduler.modify_job(ID_JOB_PRINCIPAL, next_run_time=datetime.now(scheduler.timezone))
+
+
 def main() -> None:
     scheduler = BlockingScheduler()
     # Sin `start_date`: el trigger de intervalo de apscheduler dispara la
@@ -72,8 +103,19 @@ def main() -> None:
         minutes=INTERVALO_MINUTOS,
         max_instances=1,
         coalesce=True,
+        id=ID_JOB_PRINCIPAL,
     )
-    _log.info("Worker arrancado -- refresco cada %s minutos.", INTERVALO_MINUTOS)
+    scheduler.add_job(
+        _vigilar_solicitud_manual,
+        "interval",
+        seconds=INTERVALO_VIGILANCIA_SEGUNDOS,
+        args=[scheduler],
+        max_instances=1,
+    )
+    _log.info(
+        "Worker arrancado -- refresco cada %s minutos (o antes, si se pide manual).",
+        INTERVALO_MINUTOS,
+    )
     scheduler.start()
 
 

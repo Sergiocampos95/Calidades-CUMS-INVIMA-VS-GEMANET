@@ -1,3 +1,4 @@
+import { montarRefrescoManual } from "./refresco-manual";
 import { montarSalud } from "./salud";
 import { montarAuditEntender, montarAuditExplorar, montarAuditPriorizar, montarCadenaCalidad } from "./vistas/auditoria";
 import { montarCargueEstructura, montarCargueExcel } from "./vistas/cargue";
@@ -132,10 +133,20 @@ function inicializarSalud(): void {
   montarSalud({ banner, anillo, textoRefresco, subtextoRefresco, contenedorRefresco });
 }
 
+function inicializarRefrescoManual(): void {
+  const boton = document.getElementById("boton-actualizar-ahora") as HTMLButtonElement | null;
+  const panel = document.getElementById("panel-progreso");
+  if (!boton || !panel) return;
+  montarRefrescoManual(boton, panel, (exito) => {
+    if (exito) render(); // re-pinta la vista actual con los datos ya frescos
+  });
+}
+
 document.getElementById("toggle-tema")?.addEventListener("click", () => {
   const raiz = document.documentElement;
   raiz.setAttribute("data-theme", raiz.getAttribute("data-theme") === "dark" ? "light" : "dark");
 });
 
 inicializarSalud();
+inicializarRefrescoManual();
 render();

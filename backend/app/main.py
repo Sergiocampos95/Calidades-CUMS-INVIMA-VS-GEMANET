@@ -6,7 +6,10 @@ Arranque local:
 
 Solo LEE lo que `worker/` ya calculo (ver `dependencies.py` para la regla
 completa) -- nunca ejecuta el pipeline pesado ni habla con Gemma Net/INVIMA
-dentro de un request.
+dentro de un request. La unica excepcion, acotada y documentada en su
+propio router, es POST /refrescar: escribe una senal para que el WORKER
+adelante su corrida, nunca corre el pipeline aca (ver
+`routers/refrescar.py`).
 """
 
 from __future__ import annotations
@@ -21,6 +24,7 @@ from backend.app.routers import (
     candidatos,
     cargue,
     descargas,
+    refrescar,
     salud,
     universo,
 )
@@ -34,6 +38,8 @@ app = FastAPI(
 # servidor de Vite (puerto 5173 por defecto) y necesita poder llamar a esta
 # API en otro puerto. En produccion esto se acota a la URL real del
 # frontend, nunca se deja "*" -- pendiente cuando exista un dominio real.
+# POST (ademas de GET): solo lo usa /refrescar, para pedir el refresco
+# manual -- ningun otro endpoint de esta API muta nada.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -49,6 +55,7 @@ app.include_router(calidades.router)
 app.include_router(universo.router)
 app.include_router(cargue.router)
 app.include_router(descargas.router)
+app.include_router(refrescar.router)
 
 
 @app.get("/")

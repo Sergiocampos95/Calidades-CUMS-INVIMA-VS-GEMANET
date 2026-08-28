@@ -93,6 +93,28 @@ class HallazgoNaturaleza(BaseModel):
     que_hacer: str
 
 
+class PasoProgresoAPI(BaseModel):
+    """Un paso de la corrida del worker mas reciente (ver
+    `worker/estado.py::PasoProgreso`) -- "una lista mostrando uno a uno los
+    procesos que se van haciendo y su progreso" (pedido del usuario,
+    2026-08-27). `estado` no trae un porcentaje: leer INVIMA/auditar/etc.
+    son llamadas opacas de varios segundos, no hay un "40%" real de esa
+    llamada que reportar sin inventarlo -- el checklist paso a paso es
+    honesto con lo que se puede medir."""
+
+    nombre: str
+    estado: str  # "pendiente" | "en_curso" | "hecho" | "error"
+    detalle: str
+
+
+class ProgresoRefresco(BaseModel):
+    """`en_curso=True` si algun paso esta `en_curso` ahora mismo -- lo usa
+    el cliente para saber cuando dejar de sondear GET /refrescar/progreso."""
+
+    en_curso: bool
+    pasos: list[PasoProgresoAPI]
+
+
 class EstadoSalud(BaseModel):
     """Sostiene la regla de "degradacion explicita, nunca fallo silencioso":
     cualquier cliente (Streamlit hoy, el frontend nuevo despues) puede

@@ -68,3 +68,16 @@ export interface AdvertenciaMalla {
   campo: string;
   advertencia: string;
 }
+
+export type EstadoPaso = "pendiente" | "en_curso" | "hecho" | "error";
+
+export interface PasoProgreso {
+  nombre: string;
+  estado: EstadoPaso;
+  detalle: string;
+}
+
+export interface ProgresoRefresco {
+  en_curso: boolean;
+  pasos: PasoProgreso[];
+}

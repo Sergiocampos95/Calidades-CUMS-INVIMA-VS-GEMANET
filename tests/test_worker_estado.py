@@ -1,8 +1,17 @@
 from worker.estado import (
     ESTADO_ERROR,
     ESTADO_OK,
+    ESTADO_PASO_EN_CURSO,
+    ESTADO_PASO_HECHO,
+    ESTADO_PASO_PENDIENTE,
     EstadoRefresco,
+    actualizar_paso,
+    hay_solicitud_pendiente,
+    iniciar_progreso,
+    limpiar_solicitud_pendiente,
+    progreso_actual,
     registrar_refresco,
+    solicitar_refresco_manual,
     ultimo_refresco,
 )
 
@@ -59,3 +68,62 @@ def test_historial_de_fallos_se_conserva_no_se_sobrescribe(tmp_path):
     finally:
         con.close()
     assert total == 3
+
+
+def test_progreso_vacio_antes_de_la_primera_corrida(tmp_path):
+    ruta = tmp_path / "estado.sqlite3"
+    assert progreso_actual(ruta) == []
+
+
+def test_iniciar_progreso_deja_todos_los_pasos_pendientes(tmp_path):
+    ruta = tmp_path / "estado.sqlite3"
+    iniciar_progreso(["Leer INVIMA", "Auditar", "Guardar"], ruta=ruta)
+    pasos = progreso_actual(ruta)
+    assert [p.nombre for p in pasos] == ["Leer INVIMA", "Auditar", "Guardar"]
+    assert all(p.estado == ESTADO_PASO_PENDIENTE for p in pasos)
+
+
+def test_actualizar_paso_cambia_solo_ese_paso(tmp_path):
+    ruta = tmp_path / "estado.sqlite3"
+    iniciar_progreso(["Leer INVIMA", "Auditar"], ruta=ruta)
+    actualizar_paso("Leer INVIMA", ESTADO_PASO_HECHO, ruta=ruta)
+    actualizar_paso("Auditar", ESTADO_PASO_EN_CURSO, ruta=ruta)
+    pasos = {p.nombre: p.estado for p in progreso_actual(ruta)}
+    assert pasos == {"Leer INVIMA": ESTADO_PASO_HECHO, "Auditar": ESTADO_PASO_EN_CURSO}
+
+
+def test_iniciar_progreso_de_nuevo_reemplaza_la_corrida_anterior():
+    """No se acumulan pasos de corridas viejas -- solo importa la vigente/
+    mas reciente, el historial resumido ya vive en `refrescos`."""
+    import tempfile
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as directorio:
+        ruta = Path(directorio) / "estado.sqlite3"
+        iniciar_progreso(["Paso viejo A", "Paso viejo B"], ruta=ruta)
+        iniciar_progreso(["Paso nuevo"], ruta=ruta)
+        pasos = progreso_actual(ruta)
+        assert [p.nombre for p in pasos] == ["Paso nuevo"]
+
+
+def test_solicitud_de_refresco_manual_se_puede_pedir_ver_y_limpiar(tmp_path):
+    ruta = tmp_path / "estado.sqlite3"
+    assert hay_solicitud_pendiente(ruta) is False
+    solicitar_refresco_manual(ruta)
+    assert hay_solicitud_pendiente(ruta) is True
+    limpiar_solicitud_pendiente(ruta)
+    assert hay_solicitud_pendiente(ruta) is False
+
+
+def test_solicitar_dos_veces_seguidas_no_revienta():
+    """POST /refrescar pudo llegar dos veces (doble clic, reintento de red)
+    -- la segunda solicitud no debe reventar con un error de clave
+    duplicada."""
+    import tempfile
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as directorio:
+        ruta = Path(directorio) / "estado.sqlite3"
+        solicitar_refresco_manual(ruta)
+        solicitar_refresco_manual(ruta)
+        assert hay_solicitud_pendiente(ruta) is True

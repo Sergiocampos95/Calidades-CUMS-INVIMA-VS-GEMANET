@@ -6,6 +6,7 @@ import type {
   EstadoSalud,
   HallazgoNaturaleza,
   PaginaTabla,
+  ProgresoRefresco,
   Resumen,
   ResumenCargue,
   ResumenMetodos,
@@ -50,6 +51,23 @@ async function obtenerJSON<T>(
 
 export function obtenerSalud(): Promise<EstadoSalud> {
   return obtenerJSON<EstadoSalud>("/salud");
+}
+
+/** POST /refrescar -- pide al worker que adelante su corrida periodica en
+ * vez de esperar hasta 50 min. No corre nada pesado en el backend: solo
+ * escribe una senal que el worker revisa cada pocos segundos (ver
+ * backend/app/routers/refrescar.py). Vuelve de inmediato (202); el avance
+ * real se sigue con obtenerProgresoRefresco(). */
+export async function pedirRefresco(): Promise<void> {
+  const respuesta = await fetch(`${BASE_URL}/refrescar`, { method: "POST" });
+  if (!respuesta.ok) {
+    const cuerpo = await respuesta.json().catch(() => null);
+    throw new ErrorAPI(cuerpo?.detail ?? `Error ${respuesta.status} pidiendo el refresco`, respuesta.status);
+  }
+}
+
+export function obtenerProgresoRefresco(): Promise<ProgresoRefresco> {
+  return obtenerJSON<ProgresoRefresco>("/refrescar/progreso");
 }
 
 export interface ParametrosTabla {

@@ -178,6 +178,26 @@ button, select, input { font-family: inherit; }
 .banner-salud--error, .banner.banner--error { background: var(--danger-soft); color: var(--danger); }
 .banner-salud--sin_datos, .banner.banner--sin_datos { background: var(--surface-2); color: var(--text-muted); }
 
+/* ============================= PROGRESO DE REFRESCO MANUAL ============================= */
+/* Mismo lugar/ancho que .banner (franja completa bajo la topbar) -- pedido
+   del usuario (2026-08-27): "una pequeña lista mostrando uno a uno los
+   procesos que se van haciendo y su progreso, un ejemplo como cuando uno
+   descarga varias cosas en Google". */
+.panel-progreso { margin: 14px 28px 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radio-md); box-shadow: var(--shadow-sm); padding: 14px 16px; }
+.panel-progreso.oculto { display: none; }
+.panel-progreso__titulo { font-weight: 700; font-size: 0.85rem; margin-bottom: 10px; }
+.panel-progreso__lista { display: flex; flex-direction: column; gap: 7px; }
+.paso-progreso { display: flex; align-items: flex-start; gap: 10px; font-size: 0.82rem; }
+.paso-progreso__icono { width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.66rem; flex-shrink: 0; margin-top: 1px; }
+.paso-progreso--pendiente .paso-progreso__icono { background: var(--surface-2); color: var(--text-faint); }
+.paso-progreso--en_curso .paso-progreso__icono { background: var(--accent-soft); color: var(--accent); animation: paso-pulso 1.1s ease-in-out infinite; }
+.paso-progreso--hecho .paso-progreso__icono { background: var(--ok-soft); color: var(--ok); }
+.paso-progreso--error .paso-progreso__icono { background: var(--danger-soft); color: var(--danger); }
+.paso-progreso--pendiente .paso-progreso__nombre { color: var(--text-faint); }
+.paso-progreso__detalle { color: var(--danger); font-size: 0.76rem; margin-top: 2px; }
+@media (prefers-reduced-motion: reduce) { .paso-progreso__icono { animation: none; } }
+@keyframes paso-pulso { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
 /* ============================= SUBNAV ============================= */
 .subnav { display: flex; gap: 6px; flex-wrap: wrap; padding: 14px 28px 0; }
 .subnav__pill { border: 1px solid var(--border); background: var(--surface); color: var(--text-muted); padding: 7px 14px; border-radius: var(--radio-pill); font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: all 0.15s ease; }
