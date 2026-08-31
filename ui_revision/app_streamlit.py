@@ -2989,13 +2989,26 @@ def main() -> None:
     _barra_superior()
     _checkpoint("inicio de main()")
 
+    # Paso 10: Carga automática de snapshot más reciente sin necesidad de procesar.
+    # Si no hay datos en sesión, intenta cargar el snapshot más reciente.
+    procesado_ya = st.session_state.get("procesado", False)
+    if not procesado_ya and "auditoria_coherencia" not in st.session_state:
+        try:
+            from worker.almacen_snapshots import leer_tabla
+            auditoria = leer_tabla("auditoria")
+            if auditoria is not None and not auditoria.empty:
+                st.session_state["auditoria_coherencia"] = auditoria
+                st.session_state["procesado"] = True
+                procesado_ya = True
+        except Exception:
+            pass
+
     # Una vez procesado, este bloque completo deja de dibujarse -- ni
     # siquiera como expander colapsado, que seguia ocupando una fila entera.
     # `editando_fuentes` lo reabre sin tocar `procesado`: si se pusiera
     # `procesado=False` para volver a mostrarlo se perderia la auditoria ya
     # calculada (session_state["auditoria_coherencia"], varios minutos sobre
     # ~200.000 filas -- ver el comentario junto a esa clave mas abajo).
-    procesado_ya = st.session_state.get("procesado", False)
     editando_fuentes = st.session_state.get("editando_fuentes", False)
     mostrar_seleccion_fuentes = not procesado_ya or editando_fuentes
 
