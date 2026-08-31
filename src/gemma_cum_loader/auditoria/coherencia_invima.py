@@ -535,6 +535,39 @@ def _detectar_capa_legada_atc(tipo_codigo_interno: pd.Series) -> list[str]:
     ]
 
 
+def _detectar_codigos_huerfanos(
+    estado_coherencia: pd.Series,
+    activo: pd.Series,
+) -> list[str]:
+    """Advertencia AGREGADA para codigos que no aparecen en NINGUNO de los
+    4 datasets de INVIMA (vigentes, vencidos, otros_estados, renovacion) y
+    estan INACTIVOS. Son residuos de migraciones o borrados posteriores,
+    no un hallazgo de cada fila sino un patrón que dice algo del proceso.
+
+    Distinto de "sin_correspondencia_invima" a secas: aqui el filtro es
+    especifico a INACTIVOS, porque activos sin correspondencia pueden ser
+    errores de digitacion o candidatos a creacion. Inactivos sin
+    correspondencia son simplemente "medicamentos que ya no estan en INVIMA
+    y tampoco se usan aca -- no hay accion posible."
+    """
+    es_sin_correspondencia = estado_coherencia == EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value
+    activo_text = activo.fillna("").astype(str).str.strip().str.upper()
+    es_inactivo = activo_text != "SI"
+    n = int((es_sin_correspondencia & es_inactivo).sum())
+    if n == 0:
+        return []
+    total = len(estado_coherencia)
+    porcentaje = (n / total * 100) if total else 0.0
+    return [
+        (
+            f"{n:,} de {total:,} medicamentos ({porcentaje:.1f}%) son codigos huerfanos: no "
+            "aparecen en ninguno de los listados de INVIMA (vigentes, vencidos, otros estados, "
+            "renovacion) y estan INACTIVOS en Gemma Net. Son residuos de migraciones o "
+            "registros ya cerrados en INVIMA -- no requieren accion."
+        )
+    ]
+
+
 def _campos_sistemicamente_no_diligenciados(reporte_gemanet: pd.DataFrame) -> dict[str, float]:
     """Los nombres de esos campos, con su porcentaje de vacio.
 
@@ -1790,7 +1823,7 @@ def auditar_coherencia(
     resultado["ACCION_SUGERIDA"] = naturaleza.map(ACCION_POR_NATURALEZA).fillna("").values
     resultado.attrs["advertencias_calidad"] = _detectar_campos_sistemicamente_no_diligenciados(
         reporte_gemanet
-    ) + _detectar_capa_legada_atc(tipo_codigo_interno)
+    ) + _detectar_capa_legada_atc(tipo_codigo_interno) + _detectar_codigos_huerfanos(estado, activo_gemanet)
     # Mismo par (texto, mascara) que las tarjetas de vigencia ya usan: el
     # texto arriba sigue igual (lo cubren las pruebas existentes), esto es
     # aditivo para que la UI arme una tabla de medicamentos por cada cifra
@@ -1801,4 +1834,8 @@ def auditar_coherencia(
     mascara_capa_legada = tipo_codigo_interno == "atc_expediente_consecutivo"
     if mascara_capa_legada.any():
         resultado.attrs["capa_legada_atc_mascara"] = mascara_capa_legada
+    es_sin_correspondencia = estado == EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value
+    mascara_codigos_huerfanos = es_sin_correspondencia & (activo_gemanet != "SI")
+    if mascara_codigos_huerfanos.any():
+        resultado.attrs["codigos_huerfanos_mascara"] = mascara_codigos_huerfanos
     return resultado

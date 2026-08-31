@@ -1423,3 +1423,58 @@ def test_el_indice_no_contiguo_del_reporte_no_altera_el_estado_de_coherencia():
             resultado_contiguo.loc[codigo, "ESTADO_COHERENCIA"]
             == resultado_filtrado.loc[codigo, "ESTADO_COHERENCIA"]
         ), f"Estado diferente para {codigo}: contiguo={resultado_contiguo.loc[codigo, 'ESTADO_COHERENCIA']}, filtrado={resultado_filtrado.loc[codigo, 'ESTADO_COHERENCIA']}"
+
+
+def test_detecta_codigos_huerfanos_inactivos_sin_correspondencia():
+    """Codigos huerfanos: sin correspondencia en INVIMA, INACTIVOS en Gemma
+    Net. Ej. el medicamento X aparecia en INVIMA pero ya lo cerraron y ademas
+    nunca aparece en vigentes/vencidos/otros_estados/renovacion -- residuo de
+    migracion. Se reporta como una advertencia agregada, no fila por fila."""
+    filas_gemanet = [
+        _fila_gemanet("500-1", ACTIVO="SI"),  # Sin correspondencia pero ACTIVO -- no es huerfano
+        _fila_gemanet("600-2", ACTIVO="NO"),  # Sin correspondencia e INACTIVO -- ES huerfano
+        _fila_gemanet("700-3", ACTIVO="NO"),  # Sin correspondencia e INACTIVO -- ES huerfano
+    ]
+    invima = [_fila_invima("500-1")]  # Solo 500-1 aparece en vigentes
+    resultado = _auditar(filas_gemanet, invima)
+    advertencias = resultado.attrs.get("advertencias_calidad", [])
+    # Debe haber una advertencia mentionando "codigos huerfanos"
+    assert any("huerfanos" in a.lower() for a in advertencias), f"No encontre advertencia de codigos huerfanos en {advertencias}"
+    # La advertencia debe mencionar 2 medicamentos (600-2 y 700-3)
+    assert any("2" in a and "huerfanos" in a.lower() for a in advertencias), f"La advertencia no menciona cantidad 2 en {advertencias}"
+
+
+def test_sin_advertencia_huerfanos_cuando_todos_tienen_correspondencia():
+    """Si todos los medicamentos sin correspondencia estan ACTIVOS, no hay
+    advertencia de huerfanos -- no se cuentan como residuos."""
+    filas_gemanet = [
+        _fila_gemanet("500-1", ACTIVO="SI"),
+        _fila_gemanet("600-2", ACTIVO="SI"),
+    ]
+    invima = [_fila_invima("500-1")]  # 600-2 no aparece pero ESTA ACTIVO
+    resultado = _auditar(filas_gemanet, invima)
+    advertencias = resultado.attrs.get("advertencias_calidad", [])
+    assert not any("huerfanos" in a.lower() for a in advertencias)
+
+
+def test_mascara_codigos_huerfanos_selecciona_exactamente_los_inactivos_sin_correspondencia():
+    """La mascara `codigos_huerfanos_mascara` debe indexar directamente sobre
+    el resultado, sin reindexar (la UI nunca lo hace)."""
+    filas_gemanet = [
+        _fila_gemanet("500-1", ACTIVO="SI"),  # Sin correspondencia pero ACTIVO
+        _fila_gemanet("600-2", ACTIVO="NO"),  # Sin correspondencia e INACTIVO
+        _fila_gemanet("700-3", ACTIVO=""),    # Sin correspondencia, sin ACTIVO
+        _fila_gemanet("800-4", ACTIVO="SI"),  # Con correspondencia
+    ]
+    invima = [_fila_invima("800-4")]
+    resultado = auditar_coherencia(
+        pd.DataFrame(filas_gemanet),
+        pd.DataFrame(invima),
+        _CATALOGO_UNIDAD,
+        _CATALOGO_MARCA,
+    )
+    mascara = resultado.attrs.get("codigos_huerfanos_mascara", pd.Series())
+    if not mascara.empty:
+        # Debe incluir solo 600-2 y 700-3 (sin correspondencia e inactivos/vacios)
+        codigos_huerfanos = resultado[mascara]["CODIGO_INTERNO"].tolist()
+        assert set(codigos_huerfanos) == {"600-2", "700-3"}, f"Esperaba {{600-2, 700-3}}, obtuve {set(codigos_huerfanos)}"
