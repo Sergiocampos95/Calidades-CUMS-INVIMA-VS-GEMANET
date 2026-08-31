@@ -18,8 +18,11 @@ produccion -- ver la nota de la migracion en `.claude/plans`.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import logging
 
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 from gemma_cum_loader.auditoria.coherencia_invima import (
     ACCION_POR_NATURALEZA,
@@ -133,7 +136,10 @@ class Calidad:
 def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, list[str]]]:
     """(nombre, explica, mascara, columnas) -- mismo orden y mismo texto que
     `_calidades()` en Streamlit, para no inventar vocabulario nuevo."""
+    logger.info(f"DEBUG: _definiciones() called with {len(auditoria)} rows")
     estado = auditoria["ESTADO_COHERENCIA"] if "ESTADO_COHERENCIA" in auditoria.columns else pd.Series("", index=auditoria.index)
+    solo_activos = _columna_texto(auditoria, "ACTIVO").str.upper().eq("SI")
+    logger.info(f"DEBUG: solo_activos count = {solo_activos.sum()}")
     # CONSEJO y CONSULTA_VERIFICACION_SQL van en TODAS las calidades: toda
     # fila tiene CODIGO_INTERNO (con que armar la consulta) y, si tiene
     # algun hallazgo, una NATURALEZA_HALLAZGO de la que sacar que hacer
@@ -148,13 +154,13 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
                 "EXPEDIENTE-CONSECUTIVO (código legado de Gemma Net sin expediente INVIMA) "
                 "o si es código que debería encontrarse pero no se localiza."
             ),
-            estado.eq(EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value),
+            estado.eq(EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value) & solo_activos,
             [*base, "TIPO_SIN_CORRESPONDENCIA"],
         ),
         (
             "Registro vencido en INVIMA",
             "INVIMA lo tiene en su listado de vencidos.",
-            estado.eq(EstadoCoherencia.VENCIDO_EN_INVIMA.value),
+            estado.eq(EstadoCoherencia.VENCIDO_EN_INVIMA.value) & solo_activos,
             [*base, "FECHA_FIN", "DETALLE_VIGENCIA_INVIMA"],
         ),
         (
@@ -163,13 +169,13 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
                 "Cancelado, Suspendido, Negado, Desistido, Pérdida de fuerza ejecutoria… El detalle "
                 "dice cuál exactamente."
             ),
-            estado.eq(EstadoCoherencia.ENCONTRADO_EN_OTRO_ESTADO_INVIMA.value),
+            estado.eq(EstadoCoherencia.ENCONTRADO_EN_OTRO_ESTADO_INVIMA.value) & solo_activos,
             [*base, "ESTADO_INVIMA_DETALLE"],
         ),
         (
             "En trámite de renovación",
             "El registro sigue siendo válido mientras INVIMA resuelve. Se espera, no se corrige.",
-            estado.eq(EstadoCoherencia.EN_TRAMITE_RENOVACION_INVIMA.value),
+            estado.eq(EstadoCoherencia.EN_TRAMITE_RENOVACION_INVIMA.value) & solo_activos,
             [*base, "ESTADO_INVIMA_DETALLE"],
         ),
         (
@@ -178,7 +184,7 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
                 "Existe en INVIMA y se pudo comparar campo a campo: alguno no coincide. Abajo se "
                 "puede ver cuál y qué dice cada lado."
             ),
-            _no_vacio(auditoria, "CAMPOS_CON_DIFERENCIA"),
+            _no_vacio(auditoria, "CAMPOS_CON_DIFERENCIA") & solo_activos,
             [*base, "CAMPOS_CON_DIFERENCIA", "PORCENTAJE_CALIDAD", *COLUMNAS_TRIO_CAMPOS_COMPARADOS],
         ),
         (
@@ -187,7 +193,7 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
                 "ACTIVO y las fechas de inicio/fin no cuadran entre sí. No depende de INVIMA: es el "
                 "dato contra sí mismo."
             ),
-            _no_vacio(auditoria, "INCONSISTENCIA_FECHAS_ACTIVO"),
+            _no_vacio(auditoria, "INCONSISTENCIA_FECHAS_ACTIVO") & solo_activos,
             [*base, "FECHA_INICIO", "FECHA_FIN", "INCONSISTENCIA_FECHAS_ACTIVO"],
         ),
     ]
