@@ -134,7 +134,6 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
     """(nombre, explica, mascara, columnas) -- mismo orden y mismo texto que
     `_calidades()` en Streamlit, para no inventar vocabulario nuevo."""
     estado = auditoria["ESTADO_COHERENCIA"] if "ESTADO_COHERENCIA" in auditoria.columns else pd.Series("", index=auditoria.index)
-    activo = _columna_texto(auditoria, "ACTIVO").str.upper().eq("SI")
     # CONSEJO y CONSULTA_VERIFICACION_SQL van en TODAS las calidades: toda
     # fila tiene CODIGO_INTERNO (con que armar la consulta) y, si tiene
     # algun hallazgo, una NATURALEZA_HALLAZGO de la que sacar que hacer
@@ -151,21 +150,6 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
             ),
             estado.eq(EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value),
             [*base, "TIPO_SIN_CORRESPONDENCIA"],
-        ),
-        (
-            "Código repetido dentro del reporte",
-            (
-                "El mismo código aparece más de una vez. Puede ser legítimo: un medicamento "
-                "combinado trae una fila por principio activo. Nunca se fusionan."
-            ),
-            _no_vacio(auditoria, "CODIGO_DUPLICADO_EN_REPORTE"),
-            [*base, "PRINCIPIO_ACTIVO"],
-        ),
-        (
-            "Formato de código inválido",
-            "El código viene vacío o es un error de fórmula heredado de Excel.",
-            _no_vacio(auditoria, "FORMATO_CODIGO_INTERNO_INVALIDO"),
-            [*base, "FORMATO_CODIGO_INTERNO_INVALIDO"],
         ),
         (
             "Registro vencido en INVIMA",
@@ -206,36 +190,11 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
             _no_vacio(auditoria, "INCONSISTENCIA_FECHAS_ACTIVO"),
             [*base, "FECHA_INICIO", "FECHA_FIN", "INCONSISTENCIA_FECHAS_ACTIVO"],
         ),
-        (
-            "Código de marca o unidad inexistente",
-            (
-                "Guarda un código de catálogo que no existe en el catálogo. No es una diferencia con "
-                "INVIMA: es un código huérfano."
-            ),
-            _no_vacio(auditoria, "INTEGRIDAD_REFERENCIAL_CATALOGO"),
-            [*base, "INTEGRIDAD_REFERENCIAL_CATALOGO"],
-        ),
-        (
-            "Activos aquí sin vigencia en INVIMA",
-            (
-                "Los únicos sobre los que se puede actuar hoy: están ACTIVOS en Gemma Net y su "
-                "registro no está vigente en INVIMA, así que se pueden llegar a autorizar. Es la "
-                "cifra que importa para el riesgo, no el total de vencidos."
-            ),
-            activo
-            & estado.isin(
-                [
-                    EstadoCoherencia.VENCIDO_EN_INVIMA.value,
-                    EstadoCoherencia.ENCONTRADO_EN_OTRO_ESTADO_INVIMA.value,
-                ]
-            ),
-            [*base, "ESTADO_INVIMA_DETALLE", "FECHA_FIN"],
-        ),
     ]
 
 
 def calidades_auditoria(auditoria: pd.DataFrame) -> list[Calidad]:
-    """Las 11 calidades que el negocio pide poder revisar, cada una con su
+    """Las 6 calidades que el negocio pide poder revisar, cada una con su
     tabla navegable ya filtrada. No recalcula nada de `auditar_coherencia()`
     -- solo combina mascaras booleanas vectorizadas sobre columnas que esa
     funcion ya dejo en el DataFrame (mas CONSEJO/CONSULTA_VERIFICACION_SQL,
