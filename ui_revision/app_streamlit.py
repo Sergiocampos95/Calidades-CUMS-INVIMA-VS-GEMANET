@@ -1984,6 +1984,18 @@ def _tabla_auditoria_esencial(
 
 def _panel_prioridades_auditoria(auditoria: pd.DataFrame) -> None:
     """Prioriza una accion y lleva directo a los medicamentos que la requieren."""
+    col_filtro, _ = st.columns([1, 3])
+    solo_accionables = col_filtro.checkbox(
+        "Solo medicamentos accionables (activos + pendientes de reactivación)",
+        value=False,
+        key="prioridad_solo_accionables",
+    )
+    if solo_accionables:
+        activo = _columna_texto(auditoria, "ACTIVO").str.upper().eq("SI")
+        novedad_vigencia = auditoria["NOVEDAD_VIGENCIA_INVIMA"] if "NOVEDAD_VIGENCIA_INVIMA" in auditoria.columns else pd.Series("", index=auditoria.index)
+        es_reactivacion = novedad_vigencia == "revisar_reactivacion"
+        auditoria = auditoria[activo | es_reactivacion]
+
     calidades = _calidades(auditoria)
     relevantes = [
         calidad
@@ -2008,6 +2020,7 @@ def _panel_prioridades_auditoria(auditoria: pd.DataFrame) -> None:
         ]
     )
     _mostrar_tabla_estandar(resumen, variante="resumen", key="panel_prioridades_resumen")
+
     opciones = [calidad["nombre"] for calidad in relevantes]
     elegida = st.selectbox("Ver medicamentos de esta prioridad", opciones, key="prioridad_auditoria")
     calidad = next(calidad for calidad in relevantes if calidad["nombre"] == elegida)
