@@ -208,9 +208,9 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
         ),
         (
             "En trámite de renovación",
-            "CUMs ACTIVOS cuya renovación está en trámite en INVIMA. Solo formato EXPEDIENTE-CONSECUTIVO. Se espera, no se corrige.",
-            estado.eq(EstadoCoherencia.EN_TRAMITE_RENOVACION_INVIMA.value) & solo_activos & es_cum,
-            [*base, "ESTADO_INVIMA_DETALLE"],
+            "CUMs cuya renovación está en trámite en INVIMA. Muestra ACTIVO en Gemma Net para saber si se sigue dispensando. Solo formato EXPEDIENTE-CONSECUTIVO. Se espera, no se corrige.",
+            estado.eq(EstadoCoherencia.EN_TRAMITE_RENOVACION_INVIMA.value) & es_cum,
+            [*base, "ACTIVO", "ESTADO_INVIMA_DETALLE"],
         ),
         (
             "Con algún campo distinto al de INVIMA",
