@@ -777,11 +777,16 @@ def _corte_catalogo_invima(invima: pd.DataFrame) -> pd.Timestamp | None:
     registros "vencidos a hoy", **los 73.716** vencian despues del corte --
     es decir, el 100 % de ese hallazgo habria sido una afirmacion sin
     respaldo. Devuelve None si no hay como saberlo, y entonces no se afirma.
+
+    Paso 5 (ciclo 2): filtrar centinelas (2999-12-31) antes de tomar .max(),
+    de lo contrario el corte se dispara al año 2999 y dentro_del_corte se
+    vuelve True para todo. Usa _es_fecha_real() que ya existe y las excluye.
     """
     if "FECHA_ACTIVO" not in invima.columns:
         return None
     fechas = pd.to_datetime(invima["FECHA_ACTIVO"], errors="coerce")
-    return fechas.max() if fechas.notna().any() else None
+    fechas_reales = fechas[_es_fecha_real(fechas)]
+    return fechas_reales.max() if fechas_reales.notna().any() else None
 
 
 def _contrastar_vigencia_invima(
