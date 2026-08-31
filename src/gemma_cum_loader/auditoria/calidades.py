@@ -156,12 +156,12 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
             [*base, "ESTADO_COHERENCIA"],
         ),
         (
-            "No se pudo encontrar en INVIMA",
+            "CUMs que no existen",
             (
-                "El código no aparece en ninguno de los cuatro listados de INVIMA. "
-                "La columna TIPO_SIN_CORRESPONDENCIA indica si el código sigue el formato "
-                "EXPEDIENTE-CONSECUTIVO (código legado de Gemma Net sin expediente INVIMA) "
-                "o si es código que debería encontrarse pero no se localiza."
+                "El código no aparece en NINGUNO de los cuatro listados de INVIMA "
+                "(Vigentes, Vencidos, Otros Estados, Renovación). "
+                "TIPO_SIN_CORRESPONDENCIA distingue si sigue el formato EXPEDIENTE-CONSECUTIVO "
+                "(código legado sin expediente INVIMA) o si debería existir pero no se localiza."
             ),
             estado.eq(EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value) & solo_activos,
             [*base, "TIPO_SIN_CORRESPONDENCIA"],

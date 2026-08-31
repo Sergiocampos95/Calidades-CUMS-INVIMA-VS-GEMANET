@@ -1657,7 +1657,7 @@ def _calidades(auditoria: pd.DataFrame) -> list[dict]:
     base = ["CODIGO_INTERNO", "DESCRIPCION", "ACTIVO"]
     return [
         {
-            "nombre": "No se pudo encontrar en INVIMA",
+            "nombre": "CUMs que no existen",
             "explica": "El código no aparece en ninguno de los cuatro listados de INVIMA. "
             "La columna TIPO_SIN_CORRESPONDENCIA indica si el código sigue el formato "
             "EXPEDIENTE-CONSECUTIVO (código legado de Gemma Net sin expediente INVIMA) "
@@ -1987,7 +1987,7 @@ def _panel_prioridades_auditoria(auditoria: pd.DataFrame) -> None:
         in {
             "Registro vencido en INVIMA",
             "En otro estado en INVIMA",
-            "No se pudo encontrar en INVIMA",
+            "CUMs que no existen",
             "Con algún campo distinto al de INVIMA",
         }
     ]
