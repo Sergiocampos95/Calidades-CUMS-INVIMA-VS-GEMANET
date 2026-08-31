@@ -1637,9 +1637,18 @@ def _calidades(auditoria: pd.DataFrame) -> list[dict]:
     Cada entrada trae la mascara y las columnas que hacen falta para entender
     ESE hallazgo -- no las mismas para todos: quien mira duplicados necesita
     el codigo, quien mira vigencia necesita las fechas.
+
+    Paso 10: omitir medicamentos INACTIVOS de todas las calidades excepto
+    "Activos aquí sin vigencia en INVIMA" (la unica donde importa solo el activo
+    y la vigencia). Medicamentos inactivos no son accionables: sus problemas de
+    codigo repetido o integridad referencial no piden trabajo -- el medicamento
+    esta cerrado localmente.
     """
     estado = auditoria["ESTADO_COHERENCIA"]
     activo = _columna_texto(auditoria, "ACTIVO").str.upper().eq("SI")
+    # Paso 10: omitir medicamentos INACTIVOS de todas las calidades accionables.
+    # Solo ACTIVOS=SI o medicamentos en reactivacion (el ultimo item) son relevantes.
+    solo_activos = activo
 
     base = ["CODIGO_INTERNO", "DESCRIPCION", "ACTIVO"]
     return [
@@ -1649,62 +1658,48 @@ def _calidades(auditoria: pd.DataFrame) -> list[dict]:
             "La columna TIPO_SIN_CORRESPONDENCIA indica si el código sigue el formato "
             "EXPEDIENTE-CONSECUTIVO (código legado de Gemma Net sin expediente INVIMA) "
             "o si es código que debería encontrarse pero no se localiza.",
-            "mascara": estado.eq(EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value),
+            "mascara": estado.eq(EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value) & solo_activos,
             "columnas": [*base, "TIPO_SIN_CORRESPONDENCIA"],
-        },
-        {
-            "nombre": "Código repetido dentro del reporte",
-            "explica": "El mismo código aparece más de una vez. Puede ser legítimo: un "
-            "medicamento combinado trae una fila por principio activo. Nunca se fusionan.",
-            "mascara": _no_vacio(auditoria, "CODIGO_DUPLICADO_EN_REPORTE"),
-            "columnas": [*base, "PRINCIPIO_ACTIVO"],
         },
         {
             "nombre": "Formato de código inválido",
             "explica": "El código viene vacío o es un error de fórmula heredado de Excel.",
-            "mascara": _no_vacio(auditoria, "FORMATO_CODIGO_INTERNO_INVALIDO"),
+            "mascara": _no_vacio(auditoria, "FORMATO_CODIGO_INTERNO_INVALIDO") & solo_activos,
             "columnas": [*base, "FORMATO_CODIGO_INTERNO_INVALIDO"],
         },
         {
             "nombre": "Registro vencido en INVIMA",
             "explica": "INVIMA lo tiene en su listado de vencidos.",
-            "mascara": estado.eq(EstadoCoherencia.VENCIDO_EN_INVIMA.value),
+            "mascara": estado.eq(EstadoCoherencia.VENCIDO_EN_INVIMA.value) & solo_activos,
             "columnas": [*base, "FECHA_FIN", "DETALLE_VIGENCIA_INVIMA"],
         },
         {
             "nombre": "En otro estado en INVIMA",
             "explica": "Cancelado, Suspendido, Negado, Desistido, Pérdida de fuerza ejecutoria… "
             "El detalle dice cuál exactamente.",
-            "mascara": estado.eq(EstadoCoherencia.ENCONTRADO_EN_OTRO_ESTADO_INVIMA.value),
+            "mascara": estado.eq(EstadoCoherencia.ENCONTRADO_EN_OTRO_ESTADO_INVIMA.value) & solo_activos,
             "columnas": [*base, "ESTADO_INVIMA_DETALLE"],
         },
         {
             "nombre": "En trámite de renovación",
             "explica": "El registro sigue siendo válido mientras INVIMA resuelve. Se espera, "
             "no se corrige.",
-            "mascara": estado.eq(EstadoCoherencia.EN_TRAMITE_RENOVACION_INVIMA.value),
+            "mascara": estado.eq(EstadoCoherencia.EN_TRAMITE_RENOVACION_INVIMA.value) & solo_activos,
             "columnas": [*base, "ESTADO_INVIMA_DETALLE"],
         },
         {
             "nombre": "Con algún campo distinto al de INVIMA",
             "explica": "Existe en INVIMA y se pudo comparar campo a campo: alguno no coincide. "
             "Abajo se puede ver cuál y qué dice cada lado.",
-            "mascara": _no_vacio(auditoria, "CAMPOS_CON_DIFERENCIA"),
+            "mascara": _no_vacio(auditoria, "CAMPOS_CON_DIFERENCIA") & solo_activos,
             "columnas": [*base, "CAMPOS_CON_DIFERENCIA", "PORCENTAJE_CALIDAD"],
         },
         {
             "nombre": "Fechas que se contradicen",
             "explica": "ACTIVO y las fechas de inicio/fin no cuadran entre sí. No depende de "
             "INVIMA: es el dato contra sí mismo.",
-            "mascara": _no_vacio(auditoria, "INCONSISTENCIA_FECHAS_ACTIVO"),
+            "mascara": _no_vacio(auditoria, "INCONSISTENCIA_FECHAS_ACTIVO") & solo_activos,
             "columnas": [*base, "FECHA_INICIO", "FECHA_FIN", "INCONSISTENCIA_FECHAS_ACTIVO"],
-        },
-        {
-            "nombre": "Código de marca o unidad inexistente",
-            "explica": "Guarda un código de catálogo que no existe en el catálogo. No es una "
-            "diferencia con INVIMA: es un código huérfano.",
-            "mascara": _no_vacio(auditoria, "INTEGRIDAD_REFERENCIAL_CATALOGO"),
-            "columnas": [*base, "INTEGRIDAD_REFERENCIAL_CATALOGO"],
         },
         {
             "nombre": "⚠ Activos aquí sin vigencia en INVIMA",
