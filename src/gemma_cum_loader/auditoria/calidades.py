@@ -85,10 +85,11 @@ def _consultas_verificacion_gemanet(codigos_internos: pd.Series) -> pd.Series:
 def _con_columnas_derivadas(auditoria: pd.DataFrame) -> pd.DataFrame:
     """Agrega CONSEJO (que hacer, segun NATURALEZA_HALLAZGO -- pedido del
     usuario: "un consejo... con logica segun su caso", el mismo filtro
-    "Que hacer con cada hallazgo" que ya existia) y
-    CONSULTA_VERIFICACION_SQL. Copia el DataFrame antes de tocarlo: la
-    version que llega aca es la compartida entre requests (ver el cache de
-    `leer_tabla` en almacen_snapshots.py), nunca se muta in place."""
+    "Que hacer con cada hallazgo" que ya existia), CONSULTA_VERIFICACION_SQL
+    y DETALLE_DIFERENCIAS (lista de campos con diferencia para drilldown).
+    Copia el DataFrame antes de tocarlo: la version que llega aca es la
+    compartida entre requests (ver el cache de `leer_tabla` en
+    almacen_snapshots.py), nunca se muta in place."""
     auditoria = auditoria.copy()
     if "CODIGO_INTERNO" in auditoria.columns:
         auditoria["CONSULTA_VERIFICACION_SQL"] = _consultas_verificacion_gemanet(
@@ -97,6 +98,11 @@ def _con_columnas_derivadas(auditoria: pd.DataFrame) -> pd.DataFrame:
     if "NATURALEZA_HALLAZGO" in auditoria.columns:
         auditoria["CONSEJO"] = auditoria["NATURALEZA_HALLAZGO"].map(
             lambda n: ACCION_POR_NATURALEZA.get(n, "")
+        )
+    # Columna de drilldown para ver detalle de campos con diferencia
+    if "CAMPOS_CON_DIFERENCIA" in auditoria.columns:
+        auditoria["DETALLE_DIFERENCIAS"] = auditoria["CAMPOS_CON_DIFERENCIA"].apply(
+            lambda campos: f"Ver ({len(str(campos).split(',')) if pd.notna(campos) and campos != '' else 0} campos)"
         )
     return auditoria
 
@@ -190,11 +196,11 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
         (
             "Con algún campo distinto al de INVIMA",
             (
-                "Existe en INVIMA y se pudo comparar campo a campo: alguno no coincide. Abajo se "
-                "puede ver cuál y qué dice cada lado."
+                "Existe en INVIMA y se pudo comparar campo a campo: alguno no coincide. "
+                "Haz clic en 'Ver diferencias' para ver qué campos cambiaron."
             ),
             _no_vacio(auditoria, "CAMPOS_CON_DIFERENCIA") & solo_activos,
-            [*base, "CAMPOS_CON_DIFERENCIA", "PORCENTAJE_CALIDAD", *COLUMNAS_TRIO_CAMPOS_COMPARADOS],
+            [*base, "DETALLE_DIFERENCIAS", "CAMPOS_CON_DIFERENCIA", "PORCENTAJE_CALIDAD", *COLUMNAS_TRIO_CAMPOS_COMPARADOS],
         ),
         (
             "Fechas que se contradicen",
