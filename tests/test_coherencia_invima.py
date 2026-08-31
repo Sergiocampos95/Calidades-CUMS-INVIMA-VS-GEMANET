@@ -1371,3 +1371,55 @@ def test_cum_con_sufijo_atc_vencido_en_invima_se_detecta_via_dataset_de_vencidos
     )
     fila = resultado.loc["00009811-01-0M01AE01"]
     assert fila["ESTADO_COHERENCIA"] == EstadoCoherencia.VENCIDO_EN_INVIMA.value
+
+
+def test_el_indice_no_contiguo_del_reporte_no_altera_el_estado_de_coherencia():
+    """Paso 2 del ciclo 2: normalizar el indice en auditar_coherencia() para
+    evitar desalineaciones silenciosas cuando las busquedas posteriores usan
+    .isin() sobre gemanet["_CLAVE_CRUCE_INVIMA"].
+
+    Ejemplo: reporte con indice [0, 2, 3] se alinea mal contra combinado con
+    RangeIndex [0, 1, 2] del merge. Resultado: medicamento en posicion 2 (indice
+    3) aparecia como "sin_correspondencia" aunque estuviera en Vencidos.
+
+    Este test verifica que el arreglo de reset_index(drop=True) hace que ambos
+    reportes (uno con indice contiguo, otro filtrado con indice no contiguo)
+    produzcan identicos ESTADO_COHERENCIA."""
+
+    # Caso base: 4 medicamentos, con correspondencia distinta
+    gemanet_base = [
+        _fila_gemanet("500-1"),      # indice 0 - vencido
+        _fila_gemanet("600-2"),      # indice 1 - correcto
+        _fila_gemanet("700-3"),      # indice 2 - vencido
+        _fila_gemanet("800-4"),      # indice 3 - sin correspondencia
+    ]
+    invima_base = [_fila_invima("500-1"), _fila_invima("600-2"), _fila_invima("700-3")]
+    vencidos_base = [
+        {"CODIGO_INTERNO": "500-1"},
+        {"CODIGO_INTERNO": "700-3"},
+    ]
+
+    # Auditoria con indice contiguo [0, 1, 2, 3]
+    resultado_contiguo = _auditar(gemanet_base, invima_base, vencidos_filas=vencidos_base)
+
+    # Crear el mismo reporte pero con indice NO contiguo [0, 2, 3]
+    # (simula un filtro que elimino la fila 1)
+    reporte_filtrado = pd.DataFrame(gemanet_base).drop(1)
+    invima = pd.DataFrame(invima_base)
+    vencidos = pd.DataFrame(vencidos_base)
+    resultado_filtrado = auditar_coherencia(
+        reporte_filtrado,
+        invima,
+        _CATALOGO_UNIDAD,
+        _CATALOGO_MARCA,
+        df_invima_vencidos=vencidos,
+    ).set_index("CODIGO_INTERNO")
+
+    # Verificar que los estados de coherencia son identicos para los codigos
+    # que quedan (ignorando el 600-2 que fue eliminado del filtro)
+    codigos_comunes = {"500-1", "700-3", "800-4"}
+    for codigo in codigos_comunes:
+        assert (
+            resultado_contiguo.loc[codigo, "ESTADO_COHERENCIA"]
+            == resultado_filtrado.loc[codigo, "ESTADO_COHERENCIA"]
+        ), f"Estado diferente para {codigo}: contiguo={resultado_contiguo.loc[codigo, 'ESTADO_COHERENCIA']}, filtrado={resultado_filtrado.loc[codigo, 'ESTADO_COHERENCIA']}"

@@ -1380,7 +1380,13 @@ def auditar_coherencia(
     siglas_unidad = siglas_por_codigo(catalogo_unidad)
     siglas_marca = siglas_por_codigo(catalogo_marca)
 
-    gemanet = reporte_gemanet.copy()
+    # Normalizar indice: reporte_gemanet puede tener indice no contiguo
+    # (ej. despues de filtrar filas). Si no normalizamos, las operaciones
+    # de alineacion por indice mas adelante (lineas 1575, 1602-1612) se
+    # desalinean silenciosamente. Ejemplo: reporte con indice [0,2,3] se
+    # alinea mal contra combinado con RangeIndex [0,1,2] del merge
+    # (ver test_el_indice_no_contiguo_del_reporte_no_altera_el_estado).
+    gemanet = reporte_gemanet.reset_index(drop=True).copy()
     gemanet["CODIGO_INTERNO"] = gemanet["CODIGO_INTERNO"].astype(str).str.strip()
     gemanet["_MARCA_TEXTO"] = _columna_o_vacia(gemanet, "MARCA_MEDICAMENTO").map(
         lambda c: sigla_marca.get(_a_entero(c), "")
