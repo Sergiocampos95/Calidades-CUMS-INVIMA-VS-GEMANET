@@ -1478,3 +1478,45 @@ def test_mascara_codigos_huerfanos_selecciona_exactamente_los_inactivos_sin_corr
         # Debe incluir solo 600-2 y 700-3 (sin correspondencia e inactivos/vacios)
         codigos_huerfanos = resultado[mascara]["CODIGO_INTERNO"].tolist()
         assert set(codigos_huerfanos) == {"600-2", "700-3"}, f"Esperaba {{600-2, 700-3}}, obtuve {set(codigos_huerfanos)}"
+
+
+def test_detecta_solape_medicamento_en_vencidos_y_renovacion():
+    """Bug real (Paso 8): un medicamento que aparece en AMBOS datasets de
+    Vencidos y Renovacion/Otros Estados debería reportarse como solape --
+    estado ambiguo en INVIMA que requiere revision manual."""
+    filas_gemanet = [
+        _fila_gemanet("500-1"),
+        _fila_gemanet("600-2"),
+    ]
+    invima = [_fila_invima("500-1")]
+    vencidos = [_fila_invima("600-2")]
+    # 600-2 aparece en AMBOS vencidos y renovacion
+    renovacion = [_fila_invima("600-2", ESTADO_REGISTRO="En Tramite Renovacion")]
+    resultado = _auditar(
+        filas_gemanet, invima,
+        vencidos_filas=vencidos,
+        renovacion_filas=renovacion
+    )
+    advertencias = resultado.attrs.get("advertencias_calidad", [])
+    # Debe reportar el solape
+    assert any("solape" in a.lower() or "ambos" in a.lower() for a in advertencias), \
+        f"No encontre advertencia de solape en {advertencias}"
+
+
+def test_sin_solape_cuando_un_medicamento_esta_en_un_solo_dataset():
+    """Sin solape si los medicamentos estan en datasets distintos pero no
+    en ambos a la vez."""
+    filas_gemanet = [
+        _fila_gemanet("500-1"),
+        _fila_gemanet("600-2"),
+    ]
+    invima = [_fila_invima("500-1")]
+    vencidos = [_fila_invima("600-2")]
+    renovacion = [_fila_invima("700-3")]  # Distinto medicamento
+    resultado = _auditar(
+        filas_gemanet, invima,
+        vencidos_filas=vencidos,
+        renovacion_filas=renovacion
+    )
+    advertencias = resultado.attrs.get("advertencias_calidad", [])
+    assert not any("solape" in a.lower() or "ambos" in a.lower() for a in advertencias)

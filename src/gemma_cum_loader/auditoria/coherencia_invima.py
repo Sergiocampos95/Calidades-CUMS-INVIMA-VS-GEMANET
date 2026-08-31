@@ -568,6 +568,61 @@ def _detectar_codigos_huerfanos(
     ]
 
 
+def _detectar_solape_vencidos_renovacion(
+    gemanet_codigos: pd.Series,
+    df_invima_vencidos: pd.DataFrame | None,
+    df_invima_renovacion: pd.DataFrame | None,
+    df_invima_otros_estados: pd.DataFrame | None,
+) -> list[str]:
+    """Advertencia AGREGADA: medicamentos que aparecen en AMBOS datasets
+    de Vencidos y Renovacion (o sus variantes). Es un hallazgo del proceso
+    de INVIMA: algun medicamento tiene estado ambiguo que le permite estar
+    en dos categorias. Informativo, no indica error en Gemma Net."""
+    # Armar universo de vencidos
+    codigos_vencidos: set = set()
+    if df_invima_vencidos is not None and not df_invima_vencidos.empty:
+        codigos_vencidos = set(
+            df_invima_vencidos["CODIGO_INTERNO"].dropna().astype(str).str.strip()
+        )
+    if len(codigos_vencidos) == 0:
+        return []
+
+    # Armar universo de renovacion (dedicado + el subset de otros_estados)
+    codigos_renovacion: set = set()
+    if df_invima_renovacion is not None and not df_invima_renovacion.empty:
+        codigos_renovacion.update(
+            df_invima_renovacion["CODIGO_INTERNO"].dropna().astype(str).str.strip()
+        )
+    if df_invima_otros_estados is not None and not df_invima_otros_estados.empty and "ESTADO_REGISTRO" in df_invima_otros_estados.columns:
+        es_renovacion = (
+            df_invima_otros_estados["ESTADO_REGISTRO"]
+            .astype(str)
+            .map(normalizar)
+            .str.contains(_FRAGMENTO_RENOVACION_EN_OTROS_ESTADOS, na=False)
+        )
+        codigos_renovacion.update(
+            df_invima_otros_estados[es_renovacion]["CODIGO_INTERNO"].dropna().astype(str).str.strip()
+        )
+    if len(codigos_renovacion) == 0:
+        return []
+
+    solape = codigos_vencidos & codigos_renovacion
+    n = len(solape)
+    if n == 0:
+        return []
+
+    total = len(gemanet_codigos)
+    porcentaje = (n / total * 100) if total else 0.0
+    return [
+        (
+            f"{n:,} de {total:,} medicamentos ({porcentaje:.1f}%) aparecen en AMBOS listados "
+            "de INVIMA: Vencidos Y Tramite de Renovacion/Otros Estados. Son registros con estado "
+            "ambiguo en INVIMA -- revisar manualmente cual es el estado real (¿en renovacion con "
+            "vencimiento intermedio?, ¿transicion entre catalogos?). No es un error de Gemma Net."
+        )
+    ]
+
+
 def _campos_sistemicamente_no_diligenciados(reporte_gemanet: pd.DataFrame) -> dict[str, float]:
     """Los nombres de esos campos, con su porcentaje de vacio.
 
@@ -1823,7 +1878,9 @@ def auditar_coherencia(
     resultado["ACCION_SUGERIDA"] = naturaleza.map(ACCION_POR_NATURALEZA).fillna("").values
     resultado.attrs["advertencias_calidad"] = _detectar_campos_sistemicamente_no_diligenciados(
         reporte_gemanet
-    ) + _detectar_capa_legada_atc(tipo_codigo_interno) + _detectar_codigos_huerfanos(estado, activo_gemanet)
+    ) + _detectar_capa_legada_atc(tipo_codigo_interno) + _detectar_codigos_huerfanos(estado, activo_gemanet) + _detectar_solape_vencidos_renovacion(
+        gemanet["_CLAVE_CRUCE_INVIMA"], df_invima_vencidos, df_invima_renovacion, df_invima_otros_estados
+    )
     # Mismo par (texto, mascara) que las tarjetas de vigencia ya usan: el
     # texto arriba sigue igual (lo cubren las pruebas existentes), esto es
     # aditivo para que la UI arme una tabla de medicamentos por cada cifra
