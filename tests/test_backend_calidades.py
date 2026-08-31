@@ -45,16 +45,17 @@ def test_sin_snapshot_responde_503_en_las_3_rutas(tmp_path):
         app.dependency_overrides.clear()
 
 
-def test_listar_calidades_devuelve_11_con_conteos_correctos(tmp_path):
+def test_listar_calidades_devuelve_10_con_conteos_correctos(tmp_path):
     cliente, carpeta = _cliente(tmp_path)
     try:
         escribir_snapshot({"auditoria": _auditoria_muestra()}, carpeta=carpeta)
         r = cliente.get("/auditoria/calidades")
         assert r.status_code == 200
         calidades = {c["nombre"]: c for c in r.json()}
-        assert len(calidades) == 11
-        # CODIGO-LEGADO no sigue el formato EXPEDIENTE-CONSECUTIVO.
-        assert calidades["Sin código verificable contra INVIMA"]["medicamentos"] == 1
+        assert len(calidades) == 10
+        # CODIGO-LEGADO no sigue el formato EXPEDIENTE-CONSECUTIVO, y 500-1 no
+        # se encontró en INVIMA — ambos caen en "No se pudo encontrar en INVIMA".
+        assert calidades["No se pudo encontrar en INVIMA"]["medicamentos"] == 1
         assert calidades["Registro vencido en INVIMA"]["medicamentos"] == 1
     finally:
         app.dependency_overrides.clear()

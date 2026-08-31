@@ -20,20 +20,27 @@ def _fila(codigo_interno, **overrides):
     return base
 
 
-def test_devuelve_las_11_calidades_en_orden():
+def test_devuelve_las_10_calidades_en_orden():
     auditoria = pd.DataFrame([_fila("500-1")])
     calidades = calidades_auditoria(auditoria)
-    assert len(calidades) == 11
-    assert calidades[0].nombre == "Sin código verificable contra INVIMA"
+    assert len(calidades) == 10
+    assert calidades[0].nombre == "No se pudo encontrar en INVIMA"
     assert calidades[-1].nombre == "Activos aquí sin vigencia en INVIMA"
 
 
-def test_codigo_sin_formato_invima_cae_en_la_primera_calidad():
-    auditoria = pd.DataFrame([_fila("CODIGO-LEGADO-XYZ"), _fila("500-1")])
+def test_codigo_legado_cae_en_no_se_pudo_encontrar():
+    """Códigos legados (no EXPEDIENTE-CONSECUTIVO) caen en la calidad
+    'No se pudo encontrar en INVIMA' junto con códigos con formato correcto
+    pero también no encontrados. Se distinguen por TIPO_SIN_CORRESPONDENCIA."""
+    auditoria = pd.DataFrame([
+        _fila("CODIGO-LEGADO-XYZ", ESTADO_COHERENCIA=EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value),
+        _fila("500-1")
+    ])
     calidades = calidades_auditoria(auditoria)
-    sin_formato = calidades[0]
-    assert sin_formato.medicamentos == 1
-    assert sin_formato.df_tabla["CODIGO_INTERNO"].tolist() == ["CODIGO-LEGADO-XYZ"]
+    no_encontrados = calidades[0]
+    assert no_encontrados.nombre == "No se pudo encontrar en INVIMA"
+    assert no_encontrados.medicamentos == 1
+    assert no_encontrados.df_tabla["CODIGO_INTERNO"].tolist() == ["CODIGO-LEGADO-XYZ"]
 
 
 def test_codigo_duplicado_se_detecta():

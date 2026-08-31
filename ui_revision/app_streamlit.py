@@ -68,7 +68,6 @@ from gemma_cum_loader.auditoria.coherencia_invima import (
     _corte_catalogo_invima,
 )
 from gemma_cum_loader.ingesta.almacen_local import CARPETA_DATOS, descubrir_todo, guardar_subida
-from gemma_cum_loader.normaliza.codigos import PATRON_CUM
 from gemma_cum_loader.ingesta.gemanet_sql import leer_reporte_gemanet_db
 from gemma_cum_loader.ingesta.invima_reader import (
     leer_catalogo_invima,
@@ -1641,25 +1640,16 @@ def _calidades(auditoria: pd.DataFrame) -> list[dict]:
     """
     estado = auditoria["ESTADO_COHERENCIA"]
     activo = _columna_texto(auditoria, "ACTIVO").str.upper().eq("SI")
-    codigo = _columna_texto(auditoria, "CODIGO_INTERNO")
-    tiene_formato_invima = codigo.str.match(PATRON_CUM)
 
     base = ["CODIGO_INTERNO", "DESCRIPCION", "ACTIVO"]
     return [
         {
-            "nombre": "Sin código verificable contra INVIMA",
-            "explica": "Su código no sigue el formato EXPEDIENTE-CONSECUTIVO, así que no hay "
-            "con qué buscarlo en INVIMA. No están mal cargados: no se pueden verificar "
-            "por este camino.",
-            "mascara": ~tiene_formato_invima,
-            "columnas": [*base, "TIPO_SIN_CORRESPONDENCIA"],
-        },
-        {
-            "nombre": "Con formato INVIMA pero no encontrados",
-            "explica": "Sí tienen forma de código INVIMA y aun así no aparecen en ninguno de "
-            "los cuatro listados. Son los que vale la pena revisar uno por uno.",
-            "mascara": tiene_formato_invima
-            & estado.eq(EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value),
+            "nombre": "No se pudo encontrar en INVIMA",
+            "explica": "El código no aparece en ninguno de los cuatro listados de INVIMA. "
+            "La columna TIPO_SIN_CORRESPONDENCIA indica si el código sigue el formato "
+            "EXPEDIENTE-CONSECUTIVO (código legado de Gemma Net sin expediente INVIMA) "
+            "o si es código que debería encontrarse pero no se localiza.",
+            "mascara": estado.eq(EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value),
             "columnas": [*base, "TIPO_SIN_CORRESPONDENCIA"],
         },
         {
@@ -2003,7 +1993,7 @@ def _panel_prioridades_auditoria(auditoria: pd.DataFrame) -> None:
             "⚠ Activos aquí sin vigencia en INVIMA",
             "Registro vencido en INVIMA",
             "En otro estado en INVIMA",
-            "Con formato INVIMA pero no encontrados",
+            "No se pudo encontrar en INVIMA",
             "Con algún campo distinto al de INVIMA",
         }
     ]

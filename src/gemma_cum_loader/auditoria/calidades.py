@@ -29,7 +29,6 @@ from gemma_cum_loader.auditoria.coherencia_invima import (
     SUFIJO_VALIDACION,
     EstadoCoherencia,
 )
-from gemma_cum_loader.normaliza.codigos import PATRON_CUM
 
 # Las columnas GEMANET/INVIMA/VALIDACION de los 7 campos comparables, en un
 # solo bloque -- pedido explicito del usuario (2026-08-28): "campos con
@@ -136,9 +135,6 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
     `_calidades()` en Streamlit, para no inventar vocabulario nuevo."""
     estado = auditoria["ESTADO_COHERENCIA"] if "ESTADO_COHERENCIA" in auditoria.columns else pd.Series("", index=auditoria.index)
     activo = _columna_texto(auditoria, "ACTIVO").str.upper().eq("SI")
-    codigo = _columna_texto(auditoria, "CODIGO_INTERNO")
-    tiene_formato_invima = codigo.str.match(PATRON_CUM)
-
     # CONSEJO y CONSULTA_VERIFICACION_SQL van en TODAS las calidades: toda
     # fila tiene CODIGO_INTERNO (con que armar la consulta) y, si tiene
     # algun hallazgo, una NATURALEZA_HALLAZGO de la que sacar que hacer
@@ -146,21 +142,14 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
     base = ["CODIGO_INTERNO", "DESCRIPCION", "ACTIVO", "CONSEJO", "CONSULTA_VERIFICACION_SQL"]
     return [
         (
-            "Sin código verificable contra INVIMA",
+            "No se pudo encontrar en INVIMA",
             (
-                "Su código no sigue el formato EXPEDIENTE-CONSECUTIVO, así que no hay con qué "
-                "buscarlo en INVIMA. No están mal cargados: no se pueden verificar por este camino."
+                "El código no aparece en ninguno de los cuatro listados de INVIMA. "
+                "La columna TIPO_SIN_CORRESPONDENCIA indica si el código sigue el formato "
+                "EXPEDIENTE-CONSECUTIVO (código legado de Gemma Net sin expediente INVIMA) "
+                "o si es código que debería encontrarse pero no se localiza."
             ),
-            ~tiene_formato_invima,
-            [*base, "TIPO_SIN_CORRESPONDENCIA"],
-        ),
-        (
-            "Con formato INVIMA pero no encontrados",
-            (
-                "Sí tienen forma de código INVIMA y aun así no aparecen en ninguno de los cuatro "
-                "listados. Son los que vale la pena revisar uno por uno."
-            ),
-            tiene_formato_invima & estado.eq(EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value),
+            estado.eq(EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value),
             [*base, "TIPO_SIN_CORRESPONDENCIA"],
         ),
         (
