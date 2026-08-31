@@ -186,11 +186,9 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
                 "de INVIMA. Incluye: CUMs válidos, medicamentos ancestrales, plantas medicinales, "
                 "suplementos, insumos y otros medicamentos que no son CUMs estándar."
             ),
-            estado.eq(EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value) & solo_activos |
-            (estado.isin([
-                EstadoCoherencia.VIGENTE_NO_COMERCIALIZADO_INVIMA.value,
-                EstadoCoherencia.NO_VALIDA_CONTRA_INVIMA.value,
-            ]) & solo_activos),
+            (estado.eq(EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value) |
+             estado.eq(EstadoCoherencia.VIGENTE_NO_COMERCIALIZADO_INVIMA.value) |
+             estado.eq(EstadoCoherencia.NO_VALIDA_CONTRA_INVIMA.value)) & solo_activos,
             [*base, "CLASIFICADO", "TIPO_SIN_CORRESPONDENCIA"],
         ),
         (
