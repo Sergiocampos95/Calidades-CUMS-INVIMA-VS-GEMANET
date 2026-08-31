@@ -1176,6 +1176,10 @@ def _filtros_estandar(
 
     def _calcular_filtrado() -> pd.DataFrame:
         resultado = _buscar_texto_libre(df, busqueda, columnas_busqueda)
+        # Filtro automático: solo medicamentos activos
+        if "ACTIVO" in resultado.columns:
+            solo_activos = _columna_texto(resultado, "ACTIVO").str.upper().eq("SI")
+            resultado = resultado[solo_activos]
         if columna_categoria is not None:
             resultado = _filtrar_por_valores(resultado, columna_categoria, categorias_elegidas)
         if columna_campo is not None:
