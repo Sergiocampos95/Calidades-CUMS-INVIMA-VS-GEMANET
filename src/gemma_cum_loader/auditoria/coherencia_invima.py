@@ -70,6 +70,7 @@ from rapidfuzz import fuzz, process
 from gemma_cum_loader.armado.reglas_negocio import (
     CLASIFICADO_VALORES_VALIDOS,
     NIVELES_SERVICIO_VALIDOS,
+    SW_RESOLUCION_A_CLASIFICADO,
 )
 from gemma_cum_loader.catalogos.resolver import (
     FALLBACK_CODIGO,
@@ -94,6 +95,10 @@ class EstadoCoherencia(Enum):
     # _FRAGMENTO_VIGENTE_EN_OTROS_ESTADOS.
     VIGENTE_NO_COMERCIALIZADO_INVIMA = "vigente_no_comercializado_invima"
     SIN_CORRESPONDENCIA_INVIMA = "sin_correspondencia_invima"
+    # Medicamentos ancestrales y plantas medicinales: creacion propia de la entidad,
+    # regulados débilmente o no regulados, no se validan contra INVIMA. No es un
+    # error que no tengan correspondencia: es que INVIMA no aplica (paso 4, ciclo 2).
+    NO_VALIDA_CONTRA_INVIMA = "no_valida_contra_invima"
 
 
 # 9 dimensiones de calidad de dato, pedido explicito del usuario ("Carlos me
@@ -1617,6 +1622,17 @@ def auditar_coherencia(
         df_renovacion_combinado, EstadoCoherencia.EN_TRAMITE_RENOVACION_INVIMA.value,
     )
 
+    # Medicamentos ancestrales y plantas medicinales: creacion propia de la entidad,
+    # no se validan contra INVIMA. Esta aplicacion va AQUI, al final, despues de
+    # toda la cascada: una vez que sabemos que es ancestral/planta, GANA sobre
+    # cualquier otro estado (incluso "sin_correspondencia"). No es un error que no
+    # aparezca en INVIMA -- es que INVIMA no aplica (paso 4, ciclo 2).
+    # CLASIFICADO puede no existir en algunos DataFrames de prueba: verificar primero.
+    if "CLASIFICADO" in gemanet.columns:
+        valores_creacion_propia = set(SW_RESOLUCION_A_CLASIFICADO.values())
+        es_creacion_propia = gemanet["CLASIFICADO"].isin(valores_creacion_propia)
+        estado = estado.where(~es_creacion_propia, EstadoCoherencia.NO_VALIDA_CONTRA_INVIMA.value)
+
     # "sin_correspondencia_invima" a secas no distingue dos poblaciones muy
     # distintas -- ver docstring del modulo y el hallazgo real de fase 6
     # (armado/cruce_gemanet.py: 33.2% de los codigos de Gemma Net son
@@ -1637,6 +1653,10 @@ def auditar_coherencia(
         "Codigo legado (no sigue el formato EXPEDIENTE-CONSECUTIVO) -- no se puede "
         "verificar contra INVIMA por este medio",
     )
+    # Ancestrales/plantas no tienen tipo_sin_correspondencia: no es "sin correspondencia"
+    # porque INVIMA no aplica, es un estado completamente distinto.
+    if "CLASIFICADO" in gemanet.columns:
+        tipo_sin_correspondencia = tipo_sin_correspondencia.where(~es_creacion_propia, "")
 
     # Coherencia interna de fechas/vigencia (no depende de INVIMA, ver
     # _validar_fechas_activo) + la combinacion mas urgente posible: un

@@ -101,8 +101,14 @@ def _tiene_correspondencia(auditoria: pd.DataFrame) -> pd.Series:
     trio {CAMPO}_GEMANET/_INVIMA/_VALIDACION -- CODIGO_INTERNO es la llave
     del cruce, no un campo comparable (ver CAMPOS_COMPARADOS_COHERENCIA en
     coherencia_invima.py). Se deriva de ESTADO_COHERENCIA, que ya distingue
-    sin_correspondencia_invima de cualquier otro estado."""
-    return auditoria["ESTADO_COHERENCIA"] != EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value
+    sin_correspondencia_invima de cualquier otro estado. Excluye tambien
+    no_valida_contra_invima (ancestrales/plantas): no tienen correspondencia
+    porque INVIMA no aplica, es un estado distinto (paso 4, ciclo 2)."""
+    estados_sin_correspondencia = {
+        EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value,
+        EstadoCoherencia.NO_VALIDA_CONTRA_INVIMA.value,
+    }
+    return ~auditoria["ESTADO_COHERENCIA"].isin(estados_sin_correspondencia)
 
 
 def _pasa_campo(auditoria: pd.DataFrame, campo: str) -> pd.Series:

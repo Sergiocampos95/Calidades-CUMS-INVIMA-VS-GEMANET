@@ -700,6 +700,7 @@ _ETIQUETA_ESTADO_COHERENCIA_TABLA = {
     EstadoCoherencia.EN_TRAMITE_RENOVACION_INVIMA.value: "En trámite de renovación",
     EstadoCoherencia.VIGENTE_NO_COMERCIALIZADO_INVIMA.value: "Vigente, sin comercialización temporal",
     EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value: "Sin correspondencia en INVIMA",
+    EstadoCoherencia.NO_VALIDA_CONTRA_INVIMA.value: "Medicamento ancestral/artesanal (no validado contra INVIMA)",
 }
 
 _COLUMNAS_TEXTO_AMPLIO = {
