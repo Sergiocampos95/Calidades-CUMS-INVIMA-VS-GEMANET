@@ -24,12 +24,6 @@ from backend.app.schemas import (
     PaginaTabla,
 )
 
-# Force fresh import to avoid cached bytecode
-if 'gemma_cum_loader.auditoria.calidades' in sys.modules:
-    del sys.modules['gemma_cum_loader.auditoria.calidades']
-if 'gemma_cum_loader.auditoria.coherencia_invima' in sys.modules:
-    del sys.modules['gemma_cum_loader.auditoria.coherencia_invima']
-
 from gemma_cum_loader.auditoria.calidades import Calidad, calidades_auditoria
 from gemma_cum_loader.auditoria.coherencia_invima import ACCION_POR_NATURALEZA
 from worker.almacen_snapshots import leer_tabla
@@ -69,7 +63,6 @@ def test_calc(carpeta: Path = Depends(carpeta_snapshots)) -> dict:
         return {"error": "No auditoria"}
 
     # Call calidades_auditoria directly
-    import sys
     # Force fresh import
     if 'gemma_cum_loader.auditoria.calidades' in sys.modules:
         del sys.modules['gemma_cum_loader.auditoria.calidades']
@@ -129,6 +122,9 @@ def obtener_calidad(
     carpeta: Path = Depends(carpeta_snapshots),
 ) -> PaginaTabla:
     calidad = _calidad_o_404(nombre, carpeta)
+    activos = (calidad.df_tabla["ACTIVO"].fillna("").astype(str).str.upper() == "SI").sum() if "ACTIVO" in calidad.df_tabla.columns else 0
+    total = len(calidad.df_tabla)
+    print(f"DEBUG obtener_calidad: {nombre} -> {activos}/{total} activos")
     return paginar(
         calidad.df_tabla,
         q=q,
