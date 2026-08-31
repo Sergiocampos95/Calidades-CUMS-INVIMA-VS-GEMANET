@@ -114,16 +114,18 @@ def _columna_texto(df: pd.DataFrame, nombre: str) -> pd.Series:
 
 
 def _es_expediente_consecutivo(codigo_interno: pd.Series) -> pd.Series:
-    """Valida si el codigo tiene formato EXPEDIENTE-CONSECUTIVO (NN-NNNNNNNN-NN).
-    Ejemplo valido: 00027649-01-0H02AA02
-    Ejemplo invalido: 1 (medicamento ancestral), 19547-4 (sin formato correcto)."""
+    """Valida si el codigo tiene formato EXPEDIENTE-CONSECUTIVO autentico de INVIMA.
+    Formato correcto: EXPEDIENTE-CONSECUTIVO = NN-N (2 partes, ambas numericas)
+    Ejemplo valido: 224715-1, 42938-5
+    Ejemplo invalido: 00226567-03-0D01AA01 (tiene 3 partes y letras = NO es CUM)
+                      1 (medicamento ancestral)."""
     def validar(codigo):
         if not codigo or codigo == "":
             return False
         parts = str(codigo).split("-")
-        # EXPEDIENTE-CONSECUTIVO debe tener exactamente 3 partes
-        # y la mayoría deben ser numéricas (algunos tienen letras en tercera parte)
-        return len(parts) == 3 and parts[0].isdigit() and parts[1].isdigit()
+        # EXPEDIENTE-CONSECUTIVO INVIMA: exactamente 2 partes, AMBAS numericas
+        # Si tiene 3 partes o letras = es un codigo interno de Gemma, no un CUM
+        return len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit()
 
     return codigo_interno.apply(validar)
 
