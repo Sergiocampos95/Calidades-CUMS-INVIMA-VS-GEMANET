@@ -61,14 +61,25 @@ def _calidades(carpeta: Path) -> list[Calidad]:
     return calidades
 
 
-@router.get("/calidades-debug")
-def debug_calidades(carpeta: Path = Depends(carpeta_snapshots)) -> dict:
-    """Endpoint de debug - devuelve exactamente lo que calcula _calidades()"""
-    cals = _calidades(carpeta)
+@router.get("/test-backend-calc")
+def test_calc(carpeta: Path = Depends(carpeta_snapshots)) -> dict:
+    """Debug: Return raw calculation without any response_model"""
+    auditoria = leer_tabla("auditoria", carpeta)
+    if auditoria is None:
+        return {"error": "No auditoria"}
+
+    # Call calidades_auditoria directly
+    import sys
+    # Force fresh import
+    if 'gemma_cum_loader.auditoria.calidades' in sys.modules:
+        del sys.modules['gemma_cum_loader.auditoria.calidades']
+    from gemma_cum_loader.auditoria.calidades import calidades_auditoria
+
+    cals = calidades_auditoria(auditoria)
     return {
         "count": len(cals),
-        "total_medicamentos": sum(c.medicamentos for c in cals),
-        "calidades": [{"nombre": c.nombre, "medicamentos": c.medicamentos} for c in cals]
+        "total": sum(c.medicamentos for c in cals),
+        "detalles": [{"nombre": c.nombre, "meds": c.medicamentos} for c in cals]
     }
 
 @router.get("/calidades", response_model=list[CalidadResumen])

@@ -147,6 +147,15 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
     base = ["CODIGO_INTERNO", "DESCRIPCION", "ACTIVO", "CONSEJO", "CONSULTA_VERIFICACION_SQL"]
     return [
         (
+            "Vigentes y correctos",
+            (
+                "Medicamentos activos sin diferencias registradas - están correctos "
+                "en Gemma Net y vigentes en INVIMA."
+            ),
+            estado.eq(EstadoCoherencia.CORRECTO.value) & solo_activos & _columna_texto(auditoria, "INCONSISTENCIA_FECHAS_ACTIVO").eq(""),
+            [*base, "ESTADO_COHERENCIA"],
+        ),
+        (
             "No se pudo encontrar en INVIMA",
             (
                 "El código no aparece en ninguno de los cuatro listados de INVIMA. "
@@ -195,6 +204,18 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
             ),
             _no_vacio(auditoria, "INCONSISTENCIA_FECHAS_ACTIVO") & solo_activos,
             [*base, "FECHA_INICIO", "FECHA_FIN", "INCONSISTENCIA_FECHAS_ACTIVO"],
+        ),
+        (
+            "Otros estados activos",
+            (
+                "Medicamentos activos en estados especiales: vigentes no comercializados "
+                "en INVIMA o medicamentos ancestrales."
+            ),
+            estado.isin([
+                EstadoCoherencia.VIGENTE_NO_COMERCIALIZADO_INVIMA.value,
+                EstadoCoherencia.NO_VALIDA_CONTRA_INVIMA.value,
+            ]) & solo_activos,
+            [*base, "ESTADO_COHERENCIA"],
         ),
     ]
 
