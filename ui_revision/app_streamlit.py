@@ -1627,27 +1627,27 @@ def _no_vacio(df: pd.DataFrame, columna: str) -> pd.Series:
 
 
 def _calidades(auditoria: pd.DataFrame) -> list[dict]:
-    """Las calidades que el negocio pide poder revisar, cada una con su lista.
+    """5 calidades accionables basadas en vigencia INVIMA.
 
-    Pedido explicito (2026-08-21): "una tabla de calidades [...] si ya me dices
-    que hay diferencias pero yo quiero saber que medicamentos, que diferencias
-    en cada campo". Todas estas cifras YA se calculaban; lo que faltaba era
-    poder abrirlas hasta los medicamentos que las componen.
+    Pedido explicito del negocio: solo calidades que representan una ACCION,
+    no hallazgos secundarios. Los medicamentos inactivos no requieren trabajo.
 
-    Cada entrada trae la mascara y las columnas que hacen falta para entender
-    ESE hallazgo -- no las mismas para todos: quien mira duplicados necesita
-    el codigo, quien mira vigencia necesita las fechas.
+    Campos eliminados como calidades (disponibles como filtros en UI):
+    - Código repetido (hallazgo secundario, no accionable)
+    - Código de marca/unidad inexistente (hallazgo secundario)
+    - Formato de código inválido (hallazgo secundario, visible en filtros)
+    - Activos sin vigencia en INVIMA (redundante con Vencido en INVIMA)
 
-    Paso 10: omitir medicamentos INACTIVOS de todas las calidades excepto
-    "Activos aquí sin vigencia en INVIMA" (la unica donde importa solo el activo
-    y la vigencia). Medicamentos inactivos no son accionables: sus problemas de
-    codigo repetido o integridad referencial no piden trabajo -- el medicamento
-    esta cerrado localmente.
+    Las 5 calidades finales son ortogonales y enfocadas en VIGENCIA:
+    1. Sin correspondencia (no existe en ningún dataset INVIMA)
+    2. Vencido en INVIMA
+    3. En otro estado en INVIMA
+    4. En trámite de renovación
+    5. Con diferencias en campos respecto a INVIMA
+    6. Fechas internas incoherentes (no depende de INVIMA)
     """
     estado = auditoria["ESTADO_COHERENCIA"]
     activo = _columna_texto(auditoria, "ACTIVO").str.upper().eq("SI")
-    # Paso 10: omitir medicamentos INACTIVOS de todas las calidades accionables.
-    # Solo ACTIVOS=SI o medicamentos en reactivacion (el ultimo item) son relevantes.
     solo_activos = activo
 
     base = ["CODIGO_INTERNO", "DESCRIPCION", "ACTIVO"]
@@ -1662,14 +1662,10 @@ def _calidades(auditoria: pd.DataFrame) -> list[dict]:
             "columnas": [*base, "TIPO_SIN_CORRESPONDENCIA"],
         },
         {
-            "nombre": "Formato de código inválido",
-            "explica": "El código viene vacío o es un error de fórmula heredado de Excel.",
-            "mascara": _no_vacio(auditoria, "FORMATO_CODIGO_INTERNO_INVALIDO") & solo_activos,
-            "columnas": [*base, "FORMATO_CODIGO_INTERNO_INVALIDO"],
-        },
-        {
             "nombre": "Registro vencido en INVIMA",
-            "explica": "INVIMA lo tiene en su listado de vencidos.",
+            "explica": "INVIMA lo tiene en su listado de vencidos. Son medicamentos que ya no "
+            "pueden formularse sin previa renovación de registro — si están activos aquí, "
+            "requieren gestión inmediata.",
             "mascara": estado.eq(EstadoCoherencia.VENCIDO_EN_INVIMA.value) & solo_activos,
             "columnas": [*base, "FECHA_FIN", "DETALLE_VIGENCIA_INVIMA"],
         },
@@ -1700,20 +1696,6 @@ def _calidades(auditoria: pd.DataFrame) -> list[dict]:
             "INVIMA: es el dato contra sí mismo.",
             "mascara": _no_vacio(auditoria, "INCONSISTENCIA_FECHAS_ACTIVO") & solo_activos,
             "columnas": [*base, "FECHA_INICIO", "FECHA_FIN", "INCONSISTENCIA_FECHAS_ACTIVO"],
-        },
-        {
-            "nombre": "⚠ Activos aquí sin vigencia en INVIMA",
-            "explica": "Los únicos sobre los que se puede actuar hoy: están ACTIVOS en Gemma "
-            "Net y su registro no está vigente en INVIMA, así que se pueden llegar a "
-            "autorizar. Es la cifra que importa para el riesgo, no el total de vencidos.",
-            "mascara": activo
-            & estado.isin(
-                [
-                    EstadoCoherencia.VENCIDO_EN_INVIMA.value,
-                    EstadoCoherencia.ENCONTRADO_EN_OTRO_ESTADO_INVIMA.value,
-                ]
-            ),
-            "columnas": [*base, "ESTADO_INVIMA_DETALLE", "FECHA_FIN"],
         },
     ]
 
@@ -1997,7 +1979,6 @@ def _panel_prioridades_auditoria(auditoria: pd.DataFrame) -> None:
         for calidad in calidades
         if calidad["nombre"]
         in {
-            "⚠ Activos aquí sin vigencia en INVIMA",
             "Registro vencido en INVIMA",
             "En otro estado en INVIMA",
             "No se pudo encontrar en INVIMA",
