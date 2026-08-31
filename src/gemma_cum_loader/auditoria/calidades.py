@@ -113,6 +113,21 @@ def _columna_texto(df: pd.DataFrame, nombre: str) -> pd.Series:
     return df[nombre].fillna("").astype(str).str.strip()
 
 
+def _es_expediente_consecutivo(codigo_interno: pd.Series) -> pd.Series:
+    """Valida si el codigo tiene formato EXPEDIENTE-CONSECUTIVO (NN-NNNNNNNN-NN).
+    Ejemplo valido: 00027649-01-0H02AA02
+    Ejemplo invalido: 1 (medicamento ancestral), 19547-4 (sin formato correcto)."""
+    def validar(codigo):
+        if not codigo or codigo == "":
+            return False
+        parts = str(codigo).split("-")
+        # EXPEDIENTE-CONSECUTIVO debe tener exactamente 3 partes
+        # y la mayoría deben ser numéricas (algunos tienen letras en tercera parte)
+        return len(parts) == 3 and parts[0].isdigit() and parts[1].isdigit()
+
+    return codigo_interno.apply(validar)
+
+
 def _no_vacio(df: pd.DataFrame, columna: str) -> pd.Series:
     """Filas donde esa columna trae algo. Vacio (nunca True) si la columna
     no existe -- degradacion explicita: sin la columna, no hay hallazgo que
@@ -145,6 +160,7 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
     logger.info(f"DEBUG: _definiciones() called with {len(auditoria)} rows")
     estado = auditoria["ESTADO_COHERENCIA"] if "ESTADO_COHERENCIA" in auditoria.columns else pd.Series("", index=auditoria.index)
     solo_activos = _columna_texto(auditoria, "ACTIVO").str.upper().eq("SI")
+    es_cum = _es_expediente_consecutivo(auditoria["CODIGO_INTERNO"]) if "CODIGO_INTERNO" in auditoria.columns else pd.Series(False, index=auditoria.index)
     logger.info(f"DEBUG: solo_activos count = {solo_activos.sum()}")
     # CONSEJO y CONSULTA_VERIFICACION_SQL van en TODAS las calidades: toda
     # fila tiene CODIGO_INTERNO (con que armar la consulta) y, si tiene
@@ -164,12 +180,11 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
         (
             "CUMs que no existen",
             (
-                "El código no aparece en NINGUNO de los cuatro listados de INVIMA "
-                "(Vigentes, Vencidos, Otros Estados, Renovación). "
-                "TIPO_SIN_CORRESPONDENCIA distingue si sigue el formato EXPEDIENTE-CONSECUTIVO "
-                "(código legado sin expediente INVIMA) o si debería existir pero no se localiza."
+                "CUMs ACTIVOS en Gemma Net que no aparecen en NINGUNO de los cuatro listados "
+                "de INVIMA (Vigentes, Vencidos, Otros Estados, Renovación). "
+                "Solo se muestran códigos con formato EXPEDIENTE-CONSECUTIVO válido."
             ),
-            estado.eq(EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value) & solo_activos,
+            estado.eq(EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value) & solo_activos & es_cum,
             [*base, "TIPO_SIN_CORRESPONDENCIA"],
         ),
         (
