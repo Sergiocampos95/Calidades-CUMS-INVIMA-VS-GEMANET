@@ -54,12 +54,15 @@ SELECT
     m.grupo_medicamento                                 AS "GRUPO_MEDICAMENTO",
     m.concentracion                                     AS "CONCENTRACION",
     CASE WHEN m.sw_pos = 1 THEN 'Si' ELSE 'No' END      AS "POS",
-    -- MAPEO INCOMPLETO, a proposito y documentado: el export trae ademas
-    -- "Medicamento Ancestral" (12 filas) y "Si" (7), y `sw_resolucion` da
-    -- "No" en las 199.608. Esas 19 filas salen de otra parte que aun no
-    -- identificamos. Se deja el mapeo parcial en vez de adivinar la columna:
-    -- 19 filas mal clasificadas serian un hallazgo falso, no un dato.
-    CASE WHEN m.sw_resolucion = 1 THEN 'Si' ELSE 'No' END AS "CLASIFICADO",
+    -- Mapeo de sw_resolucion a CLASIFICADO (paso 1, 2026-08-31):
+    -- sw_resolucion = 2 (12 filas) -> "Medicamento Ancestral" (medicamentos artesanales de Pijao)
+    -- sw_resolucion = 0 (199.599 filas) -> "No" (medicamentos normales)
+    -- Plantas medicinales (sw_resolucion = 3) aun no existen en la base, se agregan cuando Fernando las cargue.
+    -- Ver armado/reglas_negocio.py::SW_RESOLUCION_A_CLASIFICADO para la constante que documenta este mapeo.
+    CASE
+        WHEN m.sw_resolucion = 2 THEN 'Medicamento Ancestral'
+        ELSE 'No'
+    END AS "CLASIFICADO",
     m.marca_medicamento                                 AS "MARCA_MEDICAMENTO",
     m.expediente                                        AS "EXPEDIENTE",
     m.consecutivo                                       AS "CONSECUTIVO",

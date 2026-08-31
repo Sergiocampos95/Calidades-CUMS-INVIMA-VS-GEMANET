@@ -60,6 +60,15 @@ RUTA_CATALOGO_MODELO_SERVICIO = RAIZ / "config" / "catalogos" / "modelo_servicio
 NIVELES_SERVICIO_VALIDOS = ["Nivel 1", "Nivel 2", "Nivel 3", "Nivel 4"]
 CLASIFICADO_VALORES_VALIDOS = ["SI", "NO", "Medicamento Ancestral", "Planta Medicinal"]
 
+# Mapeo de sw_resolucion (campo smallint de Gemma Net) a CLASIFICADO (texto).
+# Paso 1 (2026-08-31): medicion confirmo que solo existen sw_resolucion = 0 (199.599 filas)
+# y sw_resolucion = 2 (12 filas). No hay sw_resolucion = 3 (plantas medicinales) aun.
+# Ver design/ciclo2-sw_resolucion.md para el contexto medicamentos ancestrales/artesanales.
+SW_RESOLUCION_A_CLASIFICADO: dict[int, str] = {
+    2: "Medicamento Ancestral",
+    # 3: "Planta Medicinal",  # se agrega cuando Fernando cargue plantas
+}
+
 # campo de salida -> columna real en la malla de referencia (nombres tal
 # como los devuelve pandas, sin normalizar -- confirmados contra el archivo real)
 _CAMPOS_CONSTANTES = {
