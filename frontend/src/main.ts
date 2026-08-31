@@ -4,7 +4,6 @@ import { montarAuditEntender, montarAuditExplorar, montarAuditPriorizar, montarC
 import { montarCargueEstructura, montarCargueExcel } from "./vistas/cargue";
 import { montarDecision } from "./vistas/decision";
 import { montarConsultarInvima } from "./vistas/invima";
-import { montarPorqueDiferencias, montarPorqueNuevos, montarPorqueVigencia } from "./vistas/porque";
 import { montarComoSeResolvio, montarDetalleRegistro, montarResumenPrincipal } from "./vistas/resumen";
 
 interface SubVista {
@@ -39,14 +38,6 @@ const SECCIONES: Seccion[] = [
     sub: [
       { id: "estructura", etiqueta: "Auditoría de estructura", montar: montarCargueEstructura },
       { id: "excel", etiqueta: "Excel de cargue final", montar: montarCargueExcel },
-    ],
-  },
-  {
-    id: "porque", etiqueta: "Por qué no se cargó", icono: "?", grupo: "Candidatos para cargue",
-    sub: [
-      { id: "nuevos", etiqueta: "Candidatos nuevos que no se cargaron", montar: montarPorqueNuevos },
-      { id: "diferencias", etiqueta: "Ya cargados con diferencias frente a INVIMA", montar: montarPorqueDiferencias },
-      { id: "vigencia", etiqueta: "Novedades de vigencia contra INVIMA", montar: montarPorqueVigencia },
     ],
   },
   {
