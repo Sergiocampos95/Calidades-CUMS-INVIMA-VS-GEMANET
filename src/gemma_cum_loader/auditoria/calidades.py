@@ -180,14 +180,18 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
             [*base, "ESTADO_COHERENCIA"],
         ),
         (
-            "CUMs que no existen",
+            "CUMs, IUMs, medicinas ancestrales etc que no existen en INVIMA",
             (
-                "CUMs ACTIVOS en Gemma Net que no aparecen en NINGUNO de los cuatro listados "
-                "de INVIMA (Vigentes, Vencidos, Otros Estados, Renovación). "
-                "Solo se muestran códigos con formato EXPEDIENTE-CONSECUTIVO válido."
+                "Medicamentos ACTIVOS en Gemma Net que no aparecen en NINGUNO de los cuatro listados "
+                "de INVIMA. Incluye: CUMs válidos, medicamentos ancestrales, plantas medicinales, "
+                "suplementos, insumos y otros medicamentos que no son CUMs estándar."
             ),
-            estado.eq(EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value) & solo_activos & es_cum,
-            [*base, "TIPO_SIN_CORRESPONDENCIA"],
+            estado.eq(EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value) & solo_activos |
+            (estado.isin([
+                EstadoCoherencia.VIGENTE_NO_COMERCIALIZADO_INVIMA.value,
+                EstadoCoherencia.NO_VALIDA_CONTRA_INVIMA.value,
+            ]) & solo_activos),
+            [*base, "CLASIFICADO", "TIPO_SIN_CORRESPONDENCIA"],
         ),
         (
             "Registro vencido en INVIMA",
@@ -228,18 +232,6 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
             ),
             _no_vacio(auditoria, "INCONSISTENCIA_FECHAS_ACTIVO") & solo_activos & es_cum,
             [*base, "FECHA_INICIO", "FECHA_FIN", "INCONSISTENCIA_FECHAS_ACTIVO"],
-        ),
-        (
-            "Otros estados activos",
-            (
-                "Medicamentos activos en estados especiales: vigentes no comercializados "
-                "en INVIMA o medicamentos ancestrales."
-            ),
-            estado.isin([
-                EstadoCoherencia.VIGENTE_NO_COMERCIALIZADO_INVIMA.value,
-                EstadoCoherencia.NO_VALIDA_CONTRA_INVIMA.value,
-            ]) & solo_activos,
-            [*base, "ESTADO_COHERENCIA"],
         ),
     ]
 
