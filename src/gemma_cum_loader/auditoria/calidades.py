@@ -173,10 +173,10 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
         (
             "Vigentes y correctos",
             (
-                "Medicamentos activos sin diferencias registradas - están correctos "
-                "en Gemma Net y vigentes en INVIMA."
+                "CUMs ACTIVOS sin diferencias registradas - están correctos "
+                "en Gemma Net y vigentes en INVIMA. Solo formato EXPEDIENTE-CONSECUTIVO."
             ),
-            estado.eq(EstadoCoherencia.CORRECTO.value) & solo_activos & _columna_texto(auditoria, "INCONSISTENCIA_FECHAS_ACTIVO").eq(""),
+            estado.eq(EstadoCoherencia.CORRECTO.value) & solo_activos & _columna_texto(auditoria, "INCONSISTENCIA_FECHAS_ACTIVO").eq("") & es_cum,
             [*base, "ESTADO_COHERENCIA"],
         ),
         (
@@ -191,23 +191,23 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
         ),
         (
             "Registro vencido en INVIMA",
-            "INVIMA lo tiene en su listado de vencidos.",
-            estado.eq(EstadoCoherencia.VENCIDO_EN_INVIMA.value) & solo_activos,
+            "CUMs ACTIVOS que INVIMA tiene en su listado de vencidos. Solo formato EXPEDIENTE-CONSECUTIVO.",
+            estado.eq(EstadoCoherencia.VENCIDO_EN_INVIMA.value) & solo_activos & es_cum,
             [*base, "FECHA_FIN", "DETALLE_VIGENCIA_INVIMA"],
         ),
         (
             "En otro estado en INVIMA",
             (
-                "Cancelado, Suspendido, Negado, Desistido, Pérdida de fuerza ejecutoria… El detalle "
-                "dice cuál exactamente."
+                "CUMs ACTIVOS en estados especiales (Cancelado, Suspendido, etc.). "
+                "Solo formato EXPEDIENTE-CONSECUTIVO. El detalle dice cuál exactamente."
             ),
-            estado.eq(EstadoCoherencia.ENCONTRADO_EN_OTRO_ESTADO_INVIMA.value) & solo_activos,
+            estado.eq(EstadoCoherencia.ENCONTRADO_EN_OTRO_ESTADO_INVIMA.value) & solo_activos & es_cum,
             [*base, "ESTADO_INVIMA_DETALLE"],
         ),
         (
             "En trámite de renovación",
-            "El registro sigue siendo válido mientras INVIMA resuelve. Se espera, no se corrige.",
-            estado.eq(EstadoCoherencia.EN_TRAMITE_RENOVACION_INVIMA.value) & solo_activos,
+            "CUMs ACTIVOS cuya renovación está en trámite en INVIMA. Solo formato EXPEDIENTE-CONSECUTIVO. Se espera, no se corrige.",
+            estado.eq(EstadoCoherencia.EN_TRAMITE_RENOVACION_INVIMA.value) & solo_activos & es_cum,
             [*base, "ESTADO_INVIMA_DETALLE"],
         ),
         (
@@ -223,10 +223,10 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
         (
             "Fechas que se contradicen",
             (
-                "ACTIVO y las fechas de inicio/fin no cuadran entre sí. No depende de INVIMA: es el "
-                "dato contra sí mismo."
+                "CUMs ACTIVOS donde ACTIVO y las fechas de inicio/fin no cuadran entre sí. "
+                "No depende de INVIMA: es el dato contra sí mismo. Solo formato EXPEDIENTE-CONSECUTIVO."
             ),
-            _no_vacio(auditoria, "INCONSISTENCIA_FECHAS_ACTIVO") & solo_activos,
+            _no_vacio(auditoria, "INCONSISTENCIA_FECHAS_ACTIVO") & solo_activos & es_cum,
             [*base, "FECHA_INICIO", "FECHA_FIN", "INCONSISTENCIA_FECHAS_ACTIVO"],
         ),
         (
