@@ -213,10 +213,11 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
         (
             "Con algún campo distinto al de INVIMA",
             (
-                "Existe en INVIMA y se pudo comparar campo a campo: alguno no coincide. "
+                "CUMs ACTIVOS que existen en INVIMA pero tienen campos con valores distintos. "
+                "Solo se incluyen códigos con formato EXPEDIENTE-CONSECUTIVO válido. "
                 "Haz clic en 'Ver diferencias' para ver qué campos cambiaron."
             ),
-            _no_vacio(auditoria, "CAMPOS_CON_DIFERENCIA") & solo_activos,
+            _no_vacio(auditoria, "CAMPOS_CON_DIFERENCIA") & solo_activos & es_cum,
             [*base, "DETALLE_DIFERENCIAS", "CAMPOS_CON_DIFERENCIA", "PORCENTAJE_CALIDAD", *COLUMNAS_TRIO_CAMPOS_COMPARADOS],
         ),
         (
