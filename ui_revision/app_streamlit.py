@@ -1778,7 +1778,9 @@ def _mostrar_tabla_de_calidades(auditoria: pd.DataFrame) -> None:
             "CAMPOS_CON_DIFERENCIA" if "CAMPOS_CON_DIFERENCIA" in subconjunto.columns else None
         ),
         columna_tipo=(
-            "TIPO_CODIGO_INTERNO" if "TIPO_CODIGO_INTERNO" in subconjunto.columns else None
+            "CLASIFICADO" if "CLASIFICADO" in subconjunto.columns
+            else "TIPO_CODIGO_INTERNO" if "TIPO_CODIGO_INTERNO" in subconjunto.columns
+            else None
         ),
         opciones_campo=(
             CAMPOS_COMPARADOS_COHERENCIA
