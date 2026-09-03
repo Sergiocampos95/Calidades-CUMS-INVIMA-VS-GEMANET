@@ -1,4 +1,5 @@
 import pandas as pd
+import pytest
 
 from gemma_cum_loader.auditoria.coherencia_invima import (
     _CAMPOS_COMPLETITUD_REPORTE,
@@ -8,7 +9,9 @@ from gemma_cum_loader.auditoria.coherencia_invima import (
     NATURALEZA_DESACTUALIZADO,
     NATURALEZA_RESIDUAL_MIGRACION,
     EstadoCoherencia,
+    _estado_listado_invima,
     auditar_coherencia,
+    filtrar_universo_auditable,
 )
 from gemma_cum_loader.catalogos.resolver import cargar_catalogo
 from gemma_cum_loader.normaliza.texto import normalizar_entidad
@@ -1520,3 +1523,316 @@ def test_sin_solape_cuando_un_medicamento_esta_en_un_solo_dataset():
     )
     advertencias = resultado.attrs.get("advertencias_calidad", [])
     assert not any("solape" in a.lower() or "ambos" in a.lower() for a in advertencias)
+
+
+# --- Regresion: propagacion de fechas desde Vencidos (bug real 20102710-2, 2026-09-01) ---
+
+
+def test_vencido_en_invima_via_vencidos_propaga_las_3_fechas_de_invima():
+    """Antes del fix, `_aplicar_dataset_auxiliar` nunca se llamaba para el
+    bloque de Vencidos (asignacion manual de `estado`) y las 3 columnas de
+    fecha de INVIMA quedaban NaT para el 100% de los codigos
+    "vencido_en_invima" -- aunque Vencidos trae las mismas 29 columnas que
+    Vigentes, incluidas fechaactivo/fechainactivo/fechavencimiento. Caso real
+    diagnosticado: 20102710-2."""
+    resultado = _auditar(
+        [_fila_gemanet("20102710-2")],
+        [_fila_invima("500-1")],  # el codigo NO esta en Vigentes
+        vencidos_filas=[
+            _fila_invima(
+                "20102710-2",
+                FECHA_ACTIVO="2010-05-12",
+                FECHA_INACTIVO="2020-01-30",
+                FECHA_VENCIMIENTO="2019-12-31",
+            )
+        ],
+    )
+    fila = resultado.loc["20102710-2"]
+    assert fila["ESTADO_COHERENCIA"] == EstadoCoherencia.VENCIDO_EN_INVIMA.value
+    assert pd.notna(fila["FECHA_ACTIVO_INVIMA"])
+    assert pd.notna(fila["FECHA_INACTIVO_INVIMA"])
+    assert pd.notna(fila["FECHA_VENCIMIENTO_INVIMA"])
+    assert fila["FECHA_ACTIVO_INVIMA"] == pd.Timestamp("2010-05-12")
+    assert fila["FECHA_INACTIVO_INVIMA"] == pd.Timestamp("2020-01-30")
+    assert fila["FECHA_VENCIMIENTO_INVIMA"] == pd.Timestamp("2019-12-31")
+
+
+# --- ESTADO_LISTADO_INVIMA: agrupa los 8 valores de EstadoCoherencia ---
+
+
+@pytest.mark.parametrize("estado_coherencia", list(EstadoCoherencia))
+def test_estado_listado_invima_cubre_los_8_valores_del_enum_sin_dejar_ninguno_sin_mapear(
+    estado_coherencia,
+):
+    resultado = _estado_listado_invima(pd.Series([estado_coherencia.value]))
+    valor = resultado.iloc[0]
+    assert valor in {"vigente", "vencido", "renovacion", "otros_estados", "ninguno"}
+    assert pd.notna(valor)
+
+
+def test_estado_listado_invima_no_deja_ningun_valor_sin_mapear_para_toda_la_serie():
+    """Los 8 valores a la vez, en una sola serie: ningun NaN cuela por el map."""
+    serie = pd.Series([estado.value for estado in EstadoCoherencia])
+    resultado = _estado_listado_invima(serie)
+    assert not resultado.isna().any()
+    assert len(resultado) == 8
+
+
+# --- filtrar_universo_auditable(): los 3 casos limite documentados en su docstring ---
+
+
+def _fila_universo(codigo_interno, **overrides):
+    base = {
+        "CODIGO_INTERNO": codigo_interno,
+        "TIPO_CODIGO_INTERNO": "cum",
+        "ESTADO_COHERENCIA": EstadoCoherencia.CORRECTO.value,
+        "ESTADO_LISTADO_INVIMA": "vigente",
+        "ACTIVO": "SI",
+    }
+    base.update(overrides)
+    return base
+
+
+def test_filtro_excluye_tipo_codigo_interno_fuera_del_universo_auditable_aunque_este_activo_y_correcto():
+    df = pd.DataFrame([
+        _fila_universo("500-1"),  # cum -- se conserva
+        _fila_universo("600-2", TIPO_CODIGO_INTERNO="ium"),  # excluido: tipo no auditable
+    ])
+    resultado = filtrar_universo_auditable(df)
+    assert set(resultado["CODIGO_INTERNO"]) == {"500-1"}
+
+
+def test_filtro_excluye_no_valida_contra_invima_aunque_este_activo():
+    df = pd.DataFrame([
+        _fila_universo("500-1"),
+        _fila_universo(
+            "600-2",
+            ESTADO_COHERENCIA=EstadoCoherencia.NO_VALIDA_CONTRA_INVIMA.value,
+            ESTADO_LISTADO_INVIMA="ninguno",
+        ),  # ancestral/planta: excluido aunque ACTIVO == 'SI'
+    ])
+    resultado = filtrar_universo_auditable(df)
+    assert set(resultado["CODIGO_INTERNO"]) == {"500-1"}
+
+
+def test_filtro_excluye_inactivo_sin_la_excepcion_de_vigente_en_invima():
+    df = pd.DataFrame([
+        _fila_universo("500-1"),
+        _fila_universo(
+            "600-2",
+            ACTIVO="NO",
+            ESTADO_COHERENCIA=EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value,
+            ESTADO_LISTADO_INVIMA="ninguno",
+        ),  # inactivo y no vigente en INVIMA: excluido
+    ])
+    resultado = filtrar_universo_auditable(df)
+    assert set(resultado["CODIGO_INTERNO"]) == {"500-1"}
+
+
+def test_filtro_conserva_inactivo_cuando_invima_si_lo_declara_vigente():
+    """La unica excepcion: ACTIVO != 'SI' pero ESTADO_LISTADO_INVIMA == 'vigente'."""
+    df = pd.DataFrame([
+        _fila_universo(
+            "700-3",
+            ACTIVO="NO",
+            ESTADO_COHERENCIA=EstadoCoherencia.CON_DIFERENCIAS.value,
+            ESTADO_LISTADO_INVIMA="vigente",
+        ),
+    ])
+    resultado = filtrar_universo_auditable(df)
+    assert set(resultado["CODIGO_INTERNO"]) == {"700-3"}
+
+
+def test_filtro_conserva_activo_sin_importar_el_estado_listado_invima():
+    df = pd.DataFrame([
+        _fila_universo("500-1", ESTADO_LISTADO_INVIMA="vigente"),
+        _fila_universo(
+            "600-2",
+            ESTADO_COHERENCIA=EstadoCoherencia.VENCIDO_EN_INVIMA.value,
+            ESTADO_LISTADO_INVIMA="vencido",
+        ),
+        _fila_universo(
+            "700-3",
+            ESTADO_COHERENCIA=EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value,
+            ESTADO_LISTADO_INVIMA="ninguno",
+        ),
+    ])
+    resultado = filtrar_universo_auditable(df)
+    assert set(resultado["CODIGO_INTERNO"]) == {"500-1", "600-2", "700-3"}
+
+
+# --- INCONSISTENCIA_FECHAS_ACTIVO: el aviso de vencido-y-activo no se repite ---
+
+
+def test_activo_y_vencido_en_invima_no_repite_el_aviso():
+    """Bug real (2026-09-01), visible en produccion para 20102710-2:
+    `INCONSISTENCIA_FECHAS_ACTIVO` traia el mismo texto dos veces separado
+    por "; ". Dos `.mask()` encadenados donde el segundo evaluaba la Serie
+    YA modificada por el primero: la fila que acababa de recibir el aviso
+    volvia a cumplir la condicion "no esta vacia" y se lo anexaba otra vez."""
+    resultado = _auditar(
+        # FECHA_FIN comodin (2999-12-31) para que _validar_fechas_activo no
+        # aporte ningun hallazgo propio: el unico texto posible es el aviso
+        # de vencido-y-activo, asi que si aparece dos veces es este bug.
+        [_fila_gemanet("55-1", ACTIVO="Si", FECHA_INICIO="2016-07-23", FECHA_FIN="2999-12-31")],
+        [_fila_invima("99-9")],
+        vencidos_filas=[_fila_invima("55-1")],
+    )
+    aviso = resultado.loc["55-1", "INCONSISTENCIA_FECHAS_ACTIVO"]
+    assert aviso == "ACTIVO=SI pero el registro sanitario esta VENCIDO en INVIMA"
+    assert aviso.count("VENCIDO en INVIMA") == 1
+
+
+def test_activo_y_vencido_en_invima_se_suma_a_un_hallazgo_previo_una_sola_vez():
+    """El caso hermano: cuando `_validar_fechas_activo` SI aporto un
+    hallazgo propio, el aviso se anexa -- pero una sola vez, y sin perder
+    el hallazgo original."""
+    resultado = _auditar(
+        # FECHA_FIN real y anterior a FECHA_INICIO: hallazgo propio de
+        # _validar_fechas_activo, independiente de INVIMA.
+        [_fila_gemanet("55-1", ACTIVO="Si", FECHA_INICIO="2020-01-01", FECHA_FIN="2019-01-01")],
+        [_fila_invima("99-9")],
+        vencidos_filas=[_fila_invima("55-1")],
+    )
+    aviso = resultado.loc["55-1", "INCONSISTENCIA_FECHAS_ACTIVO"]
+    assert aviso.count("VENCIDO en INVIMA") == 1
+    assert "FECHA_FIN anterior a FECHA_INICIO" in aviso
+
+
+# --- COHERENCIA_FECHAS_INVIMA: FECHA_INICIO vs FECHA ACTIVO, FECHA_FIN vs FECHA INACTIVO ---
+
+
+def test_fecha_fin_que_no_cuadra_con_fecha_vencimiento_de_invima_se_reporta():
+    """El caso real 20102710-2: FECHA_INICIO SI coincide con FECHA ACTIVO de
+    INVIMA, pero FECHA_FIN (2999-12-31) no dice nada y INVIMA registra que el
+    CUM se inactivo el 2021-10-01. Aca se usa una FECHA_FIN real y distinta
+    para probar la comparacion misma."""
+    resultado = _auditar(
+        [_fila_gemanet("55-1", FECHA_INICIO="2016-07-23", FECHA_FIN="2022-01-01")],
+        [_fila_invima("55-1", FECHA_ACTIVO="2016-07-23", FECHA_VENCIMIENTO="2021-10-01")],
+    )
+    coherencia = resultado.loc["55-1", "COHERENCIA_FECHAS_INVIMA"]
+    assert "FECHA_FIN" in coherencia
+    assert "2021-10-01" in coherencia
+    # FECHA_INICIO si coincide: no debe aparecer en el mensaje.
+    assert "FECHA_INICIO" not in coherencia
+
+
+def test_fechas_que_coinciden_no_reportan_nada():
+    resultado = _auditar(
+        [_fila_gemanet("55-1", FECHA_INICIO="2016-07-23", FECHA_FIN="2021-10-01")],
+        [_fila_invima("55-1", FECHA_ACTIVO="2016-07-23", FECHA_VENCIMIENTO="2021-10-01")],
+    )
+    assert resultado.loc["55-1", "COHERENCIA_FECHAS_INVIMA"] == ""
+
+
+def test_fecha_comodin_con_fecha_real_en_invima_pide_actualizar_no_marca_diferencia():
+    """`2999-12-31` es el centinela de "sin dato". Si INVIMA SI tiene la fecha,
+    no es que el dato este equivocado: es que FALTA y hay que copiarlo --
+    pedido del usuario (2026-09-02): "requiere que digamos que hace falta
+    actualizar la fecha porque el invima si tiene una fecha vencimiento
+    diligenciada"."""
+    resultado = _auditar(
+        [_fila_gemanet("55-1", FECHA_INICIO="2016-07-23", FECHA_FIN="2999-12-31")],
+        [_fila_invima("55-1", FECHA_ACTIVO="2016-07-23", FECHA_VENCIMIENTO="2027-09-30")],
+    )
+    aviso = resultado.loc["55-1", "COHERENCIA_FECHAS_INVIMA"]
+    assert "Falta actualizar FECHA_FIN" in aviso
+    assert "2027-09-30" in aviso
+
+
+def test_sin_correspondencia_en_invima_la_coherencia_de_fechas_queda_vacia():
+    """Vacio, no "coincide": no hay con que comparar -- mismo criterio que
+    PORCENTAJE_CALIDAD (regla de diseno #6)."""
+    resultado = _auditar(
+        [_fila_gemanet("55-1", FECHA_INICIO="2016-07-23", FECHA_FIN="2022-01-01")],
+        [_fila_invima("99-9")],
+    )
+    assert resultado.loc["55-1", "COHERENCIA_FECHAS_INVIMA"] == ""
+
+
+def test_las_fechas_de_un_cum_que_solo_esta_en_vencidos_si_se_contrastan():
+    """El hueco que motivo la tarea: un CUM que no esta en Vigentes pero si en
+    Vencidos llegaba SIN ninguna fecha de INVIMA, asi que su coherencia de
+    fechas nunca se podia evaluar (caso real 20102710-2)."""
+    resultado = _auditar(
+        [_fila_gemanet("55-1", ACTIVO="Si", FECHA_INICIO="2016-07-23", FECHA_FIN="2022-01-01")],
+        [_fila_invima("99-9")],
+        vencidos_filas=[_fila_invima("55-1", FECHA_ACTIVO="2016-07-23", FECHA_VENCIMIENTO="2021-10-01")],
+    )
+    assert resultado.loc["55-1", "ESTADO_COHERENCIA"] == EstadoCoherencia.VENCIDO_EN_INVIMA.value
+    coherencia = resultado.loc["55-1", "COHERENCIA_FECHAS_INVIMA"]
+    assert "FECHA_FIN" in coherencia
+    assert "2021-10-01" in coherencia
+
+
+# --- VIGENCIA_NO_CONFIRMABLE: estar en "Vigentes" no significa vigente HOY ---
+
+
+def test_vencimiento_ya_pasado_se_reporta_como_vencido():
+    """Bug real reportado por el usuario (2026-09-02, caso 19931314-1): el CUM
+    aparecia como "Vigentes y correctos" y al revisar INVIMA a mano ya no
+    estaba en el listado de vigentes. Aparecer en el dataset "Vigentes" solo
+    dice que estaba vigente AL CORTE del catalogo -- si su propia
+    FECHA_VENCIMIENTO ya paso, no hay como afirmar que siga vigente."""
+    resultado = _auditar(
+        [_fila_gemanet("55-1", ACTIVO="Si")],
+        [_fila_invima("55-1", FECHA_ACTIVO="2006-11-10", FECHA_VENCIMIENTO="2023-04-03")],
+    )
+    aviso = resultado.loc["55-1", "VIGENCIA_NO_CONFIRMABLE"]
+    assert "2023-04-03" in aviso
+    assert "vencido" in aviso.lower()
+
+
+def test_vencimiento_futuro_si_queda_como_vigencia_confirmable():
+    resultado = _auditar(
+        [_fila_gemanet("55-1", ACTIVO="Si")],
+        [_fila_invima("55-1", FECHA_ACTIVO="2006-11-10", FECHA_VENCIMIENTO="2099-01-01")],
+    )
+    assert resultado.loc["55-1", "VIGENCIA_NO_CONFIRMABLE"] == ""
+
+
+def test_el_aviso_de_vencido_recuerda_verificar_la_renovacion():
+    """El hecho se afirma sin rodeos -- la FECHA_VENCIMIENTO es de INVIMA y
+    compararla con hoy es aritmetica, no una suposicion. Lo que si se anota es
+    que una renovacion posterior al corte del catalogo no aparece en esta
+    copia, para que nadie desactive sin verificar."""
+    resultado = _auditar(
+        [_fila_gemanet("55-1", ACTIVO="Si")],
+        [_fila_invima("55-1", FECHA_ACTIVO="2006-11-10", FECHA_VENCIMIENTO="2023-04-03")],
+    )
+    aviso = resultado.loc["55-1", "VIGENCIA_NO_CONFIRMABLE"].lower()
+    assert "confirmarla en invima" in aviso
+    # El ESTADO_COHERENCIA sigue siendo "correcto": los CAMPOS si coinciden.
+    # Lo que cambia es que ya no cuenta como "vigente y correcto".
+    assert resultado.loc["55-1", "ESTADO_COHERENCIA"] == EstadoCoherencia.CORRECTO.value
+
+
+def test_estado_cum_invima_se_propaga_desde_los_datasets_auxiliares():
+    """ESTADO_CUM_INVIMA es el veredicto de vigencia real y tiene que llegar
+    tambien para los CUM que solo existen en Vencidos / Otros Estados /
+    Renovacion. Bug medido contra el snapshot real (2026-09-02): la columna
+    quedaba poblada al 100 % en 'vigente' y al 0 % en los otros tres listados
+    porque el criterio de "aun vacio" era `.isna()` sobre una serie que nace
+    con cadena vacia, no con NaN."""
+    resultado = _auditar(
+        [_fila_gemanet("500-1"), _fila_gemanet("600-2"), _fila_gemanet("700-3")],
+        [_fila_invima("900-9", ESTADO_CUM="Activo")],
+        vencidos_filas=[_fila_invima("500-1", ESTADO_CUM="Activo", ESTADO_REGISTRO="Vencido")],
+        otros_estados_filas=[_fila_invima("600-2", ESTADO_CUM="Inactivo", ESTADO_REGISTRO="Cancelado")],
+        renovacion_filas=[_fila_invima("700-3", ESTADO_CUM="Activo", ESTADO_REGISTRO="En tramite")],
+    )
+    assert resultado.loc["500-1", "ESTADO_CUM_INVIMA"] == "Activo"
+    assert resultado.loc["600-2", "ESTADO_CUM_INVIMA"] == "Inactivo"
+    assert resultado.loc["700-3", "ESTADO_CUM_INVIMA"] == "Activo"
+
+
+def test_estado_cum_invima_de_vigentes_no_lo_pisa_un_dataset_auxiliar():
+    """Prioridad: si Vigentes ya resolvio el ESTADO_CUM, aparecer ademas en un
+    listado auxiliar no puede sobreescribirlo ("completa vacios, nunca pisa")."""
+    resultado = _auditar(
+        [_fila_gemanet("500-1")],
+        [_fila_invima("500-1", ESTADO_CUM="Activo")],
+        vencidos_filas=[_fila_invima("500-1", ESTADO_CUM="Inactivo")],
+    )
+    assert resultado.loc["500-1", "ESTADO_CUM_INVIMA"] == "Activo"

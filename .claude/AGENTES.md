@@ -13,9 +13,13 @@ uno arranca en frio y solo sabe lo que dice su definicion, lo que dice
 | `implementador` | Sonnet | `src/` | Escribir el codigo del paquete |
 | `pruebas` | Sonnet | `tests/` | Escribir y arreglar la suite de pytest |
 | `revisor` | Opus | — (solo lee) | Cazar bugs y violaciones de reglas |
-| `ui-streamlit` | Sonnet | `ui_revision/`, `design/` | La interfaz del equipo de negocio |
+| `ui-vite` | Sonnet | `frontend/src/`, `backend/app/` | La app real: Vite + FastAPI |
 | `dominio-invima` | Sonnet | `config/catalogos/` | Datos, INVIMA, Socrata, catalogos |
 | `rastreador` | Haiku | — (solo lee) | Busquedas e inventarios baratos |
+
+`ui_revision/app_streamlit.py` (Streamlit) esta **descartado** -- ningun
+agente lo edita ni lo ejecuta. La app real es Vite (`frontend/`, puerto 5173)
+sobre la API de `backend/`. Ver la regla dura en `ui-vite.md`.
 
 **Opus para juzgar, Sonnet para producir, Haiku para localizar.** Los dos
 agentes de criterio (`arquitecto`, `revisor`) no pueden editar a proposito: eso
@@ -43,10 +47,10 @@ rastreador       ->  pruebas            ->  implementador  ->  revisor
 Escribir primero el test que reproduce el bug es lo que evita el arreglo que
 "funciona" sin demostrar nada.
 
-**Cambio de interfaz**
+**Cambio de interfaz (frontend/backend)**
 
 ```
-ui-streamlit  ->  revisor
+ui-vite  ->  revisor
 ```
 
 **Pregunta sobre los datos**
@@ -59,7 +63,7 @@ dominio-invima   (solo; responde con evidencia, no implementa)
 
 Se pueden lanzar a la vez cuando no comparten archivos. Ejemplos utiles:
 
-- `implementador` (src/) + `ui-streamlit` (ui_revision/) sobre la misma feature.
+- `implementador` (src/) + `ui-vite` (frontend/backend) sobre la misma feature.
 - `dominio-invima` investigando un dataset mientras `arquitecto` disena.
 - Varios `revisor` sobre modulos distintos.
 

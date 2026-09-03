@@ -18,7 +18,7 @@ No implementes nada en este turno. Solo el plan.
 3. Crea `.ai/planes/<slug>.md` desde la plantilla, `<slug>` en kebab-case.
 4. Reparte cada paso segun la tabla de `.ai/planes/README.md`:
    - `claude/arquitecto`, `claude/implementador`, `claude/pruebas`,
-     `claude/revisor`, `claude/dominio-invima`, `claude/ui-streamlit`
+     `claude/revisor`, `claude/dominio-invima`, `claude/ui-vite`
    - `copilot` para lo que gana estando en el editor con el usuario: iterar la
      UI con la app corriendo, docstrings, boilerplate, un caso mas en una
      parametrizacion existente, explicaciones.

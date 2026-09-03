@@ -74,3 +74,42 @@ def test_poda_conserva_solo_los_ultimos_n_snapshots(tmp_path, monkeypatch):
     # y el que queda vigente es el ULTIMO escrito, no uno viejo podado
     releida = leer_tabla("auditoria", tmp_path)
     assert releida["a"].tolist() == [3]
+
+
+# --- Colisiones con versiones pasadas (regla del usuario, 2026-09-02) ---
+
+
+def test_snapshot_de_version_anterior_se_reporta_como_desfase(tmp_path):
+    """El problema real, repetido: se agrega una columna a la auditoria pero
+    el snapshot en disco lo escribio la version ANTERIOR. Los consumidores
+    degradan a 0 en silencio y eso se lee como "no hay hallazgos" cuando en
+    realidad es "este snapshot es viejo". Un dato ausente no es un cero."""
+    import pandas as pd
+
+    from worker.almacen_snapshots import desfases_de_esquema, escribir_snapshot
+
+    carpeta = tmp_path / "snapshots"
+    escribir_snapshot(
+        {"auditoria": pd.DataFrame({"CODIGO_INTERNO": ["1-1"], "ESTADO_COHERENCIA": ["correcto"]})},
+        carpeta=carpeta,
+    )
+    desfases = desfases_de_esquema(carpeta)
+    assert "auditoria" in desfases
+    assert "VIGENCIA_NO_CONFIRMABLE" in desfases["auditoria"]
+
+
+def test_snapshot_al_dia_no_reporta_desfase(tmp_path):
+    import pandas as pd
+
+    from worker.almacen_snapshots import (
+        COLUMNAS_ESPERADAS,
+        desfases_de_esquema,
+        escribir_snapshot,
+    )
+
+    carpeta = tmp_path / "snapshots"
+    escribir_snapshot(
+        {tabla: pd.DataFrame({c: [""] for c in columnas}) for tabla, columnas in COLUMNAS_ESPERADAS.items()},
+        carpeta=carpeta,
+    )
+    assert desfases_de_esquema(carpeta) == {}

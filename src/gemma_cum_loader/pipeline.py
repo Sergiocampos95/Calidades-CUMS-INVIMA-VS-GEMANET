@@ -17,7 +17,10 @@ from typing import Any
 
 import pandas as pd
 
-from gemma_cum_loader.armado.cruce_gemanet import leer_codigos_gemanet, leer_reporte_gemanet
+from gemma_cum_loader.armado.cruce_gemanet import (
+    leer_codigos_gemanet,
+    leer_reporte_gemanet,
+)
 from gemma_cum_loader.armado.malla import candidatos_creacion
 from gemma_cum_loader.auditoria.coherencia_invima import auditar_coherencia
 from gemma_cum_loader.catalogos.fuentes import FuenteCatalogos, FuenteCatalogosCSV
@@ -412,6 +415,23 @@ def auditar_coherencia_gemanet(
     resultado.attrs["advertencias"] = list(reporte.advertencias) + resultado.attrs.get(
         "advertencias_calidad", []
     )
+    # NO se aplica `filtrar_universo_auditable` aca -- corregido (2026-09-01).
+    # Este snapshot completo alimenta DOS tipos de medida muy distintos:
+    # (1) las 9 dimensiones de calidad de coherencia_invima.py y las
+    # calidades de calidades.py, que comparan contra INVIMA y SI quieren
+    # solo el universo auditable (cum/cum_con_sufijo_atc, sin ancestrales,
+    # activo salvo la excepcion vigente-en-INVIMA) -- pero esas ya arman su
+    # propia mascara (`es_cum` + `solo_activos`, ver calidades.py), no
+    # necesitan que el snapshot llegue pre-recortado; y (2) las dimensiones
+    # de AUTO-consistencia del reporte contra si mismo (cadena_calidad.py,
+    # formato de codigo invalido, codigo duplicado, etc.) que por diseno
+    # deben poder ver basura en CUALQUIER fila -- si el filtro corre antes,
+    # la fila con el problema ya no existe para contarla y la deteccion
+    # queda ciega. Medido en produccion: filtrar aca de mas dejaba
+    # 67.524 filas donde deberian ser 199.611, y formato_invalido pasaba de
+    # 1 a 0 -- no porque se arreglo el dato, sino porque la fila con el
+    # problema ya no estaba. `filtrar_universo_auditable` sigue existiendo
+    # para quien SI necesite ese recorte explicito (ver su propio docstring).
     return resultado
 
 

@@ -37,6 +37,52 @@ NOMBRE_PUNTERO = "actual.json"
 SNAPSHOTS_A_CONSERVAR = 3
 
 
+# Contrato de esquema: columnas que el codigo ACTUAL da por sentadas en cada
+# tabla logica. Es la regla que pidio el usuario (2026-09-02): "verificar que
+# no hayan colisiones con versiones pasadas".
+#
+# El problema real, repetido varias veces: se agrega una columna a
+# `auditar_coherencia`, pero el snapshot en disco lo escribio la version
+# ANTERIOR, asi que la columna no existe. Los consumidores que degradan bien
+# devuelven 0 en silencio (una calidad vacia, una tarjeta en blanco) y eso se
+# lee como "no hay hallazgos" cuando en realidad es "este snapshot es viejo".
+# Un dato ausente y un dato en cero no son lo mismo -- regla de diseno #2.
+#
+# Solo se listan las columnas cuya AUSENCIA cambia una cifra de negocio; no es
+# el esquema completo, que crece y cambia todo el tiempo.
+COLUMNAS_ESPERADAS: dict[str, tuple[str, ...]] = {
+    "auditoria": (
+        "ESTADO_COHERENCIA",
+        "ESTADO_LISTADO_INVIMA",
+        "ESTADO_CUM_INVIMA",
+        "TIPO_CODIGO_INTERNO",
+        "FECHA_ACTIVO_INVIMA",
+        "FECHA_VENCIMIENTO_INVIMA",
+        "COHERENCIA_FECHAS_INVIMA",
+        "VIGENCIA_NO_CONFIRMABLE",
+    ),
+    "invima_listados": ("CODIGO_INTERNO", "LISTADO"),
+}
+
+
+def desfases_de_esquema(carpeta: Path | None = None) -> dict[str, list[str]]:
+    """Que columnas espera el codigo de hoy y NO trae el snapshot vigente.
+
+    Vacio = el snapshot esta al dia. Con contenido = lo genero una version
+    anterior y hay cifras que van a salir mal (en cero, no vacias). La cura es
+    correr un refresco; esto solo sirve para no confundir "viejo" con "limpio".
+    """
+    desfases: dict[str, list[str]] = {}
+    for tabla, columnas in COLUMNAS_ESPERADAS.items():
+        df = leer_tabla(tabla, carpeta)
+        if df is None:
+            continue
+        faltantes = [c for c in columnas if c not in df.columns]
+        if faltantes:
+            desfases[tabla] = faltantes
+    return desfases
+
+
 @dataclass(frozen=True)
 class Snapshot:
     """Metadata del snapshot vigente: cuando se genero y que archivo

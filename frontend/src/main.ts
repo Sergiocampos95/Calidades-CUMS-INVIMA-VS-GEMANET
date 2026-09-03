@@ -3,7 +3,7 @@ import { montarSalud } from "./salud";
 import { montarAuditEntender, montarAuditExplorar, montarAuditPriorizar, montarCadenaCalidad } from "./vistas/auditoria";
 import { montarCargueEstructura, montarCargueExcel } from "./vistas/cargue";
 import { montarDecision } from "./vistas/decision";
-import { montarConsultarInvima } from "./vistas/invima";
+import { montarConsultarInvima } from "./vistas/consulta_detalle";
 import { montarComoSeResolvio, montarDetalleRegistro, montarResumenPrincipal } from "./vistas/resumen";
 
 interface SubVista {
@@ -57,6 +57,28 @@ const SECCIONES: Seccion[] = [
 
 let seccionActual = SECCIONES[0];
 let subActual = seccionActual.sub[0];
+
+/** Navegacion programatica -- para que una vista (ej. "Ver diferencias" en
+ * la calidad de auditoria) pueda llevar al usuario a otra seccion sin pasar
+ * por el clic del rail. `subId` opcional cae a la primera sub-vista. */
+function navegarA(seccionId: string, subId?: string): void {
+  const seccion = SECCIONES.find((s) => s.id === seccionId);
+  if (!seccion) return;
+  seccionActual = seccion;
+  subActual = (subId && seccion.sub.find((s) => s.id === subId)) || seccion.sub[0];
+  render();
+}
+
+// Evento global en vez de que las vistas importen navegarA de main.ts
+// directamente -- main.ts ya importa las vistas (montarAudit*, etc.), asi
+// que un import en sentido contrario cierra un ciclo entre el modulo de
+// entrada y un modulo hoja. Un CustomEvent en window desacopla las dos
+// puntas por completo: cualquier vista puede pedir navegar sin conocer a
+// main.ts, y main.ts no necesita exportar nada para que lo usen.
+window.addEventListener("gemma:navegar", (evento) => {
+  const detalle = (evento as CustomEvent<{ seccion: string; sub?: string }>).detail;
+  if (detalle?.seccion) navegarA(detalle.seccion, detalle.sub);
+});
 
 function pintarRail(): void {
   const nav = document.getElementById("rail-nav");

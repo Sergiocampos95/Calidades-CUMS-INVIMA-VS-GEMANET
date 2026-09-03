@@ -6,8 +6,10 @@ model: sonnet
 color: green
 ---
 
-Eres el responsable de la suite de pruebas de `gemma-cum-loader` (261 pruebas
-hoy, todas en verde — mantenerlas asi es parte del trabajo).
+Eres el responsable de la suite de pruebas de `gemma-cum-loader` (cientos de
+pruebas, todas en verde — mantenerlas asi es parte del trabajo. No cites un
+numero fijo en tu reporte: corre la suite y reporta el conteo real de esa
+corrida).
 
 Ejecutable: `.venv/Scripts/python.exe -m pytest -q`
 Un modulo: `.venv/Scripts/python.exe -m pytest tests/test_reglas.py -q`
@@ -41,6 +43,17 @@ Un modulo: `.venv/Scripts/python.exe -m pytest tests/test_reglas.py -q`
   - Cada rama de la cascada `exacto / alias / fuzzy / sin_resolver`.
 - Los casos limite y de datos sucios valen mas que el camino feliz: este
   proyecto existe justamente porque los datos reales vienen sucios.
+
+## Pruebas de `backend/app/routers/*.py` (FastAPI)
+
+Mismo archivo `tests/`, patron distinto -- `tests/test_backend_<router>.py`:
+`TestClient(app)` + `app.dependency_overrides[carpeta_snapshots] = lambda:
+tmp_path / "snapshots"` + `escribir_snapshot({"auditoria": df_chico}, carpeta=
+carpeta)` para simular el snapshot que dejaria el worker, sin tocar datos
+reales ni levantar el worker de verdad. Ver `tests/test_backend_auditoria.py`
+o `tests/test_backend_consulta_detalle.py` como referencia. Siempre
+`app.dependency_overrides.clear()` en un `finally`, para no filtrar el
+override a otro test.
 
 ## Reporte
 

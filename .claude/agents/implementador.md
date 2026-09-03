@@ -1,6 +1,6 @@
 ---
 name: implementador
-description: Escribe y modifica el codigo Python de src/gemma_cum_loader/. Usalo para implementar una funcionalidad o corregir un bug dentro del paquete (ingesta, armado, catalogos, validacion, auditoria, exportacion, normaliza, pipeline, cli). Ideal cuando ya existe un plan del agente arquitecto. No toca la UI de Streamlit ni escribe la suite de pruebas.
+description: Escribe y modifica el codigo Python de src/gemma_cum_loader/. Usalo para implementar una funcionalidad o corregir un bug dentro del paquete (ingesta, armado, catalogos, validacion, auditoria, exportacion, normaliza, pipeline, cli). Ideal cuando ya existe un plan del agente arquitecto. No toca frontend/backend (ese es ui-vite) ni escribe la suite de pruebas.
 tools: Read, Edit, Write, Grep, Glob, Bash
 model: sonnet
 color: blue

@@ -43,6 +43,31 @@ invima.gov.co, que lee `ingesta/invima_reader.py`.
 - Los campos de reglas de negocio propias de Pijao Salud (edades, copagos, cuota
   moderadora, modelo y nivel de servicio) **no existen en INVIMA**: salen de
   `Estructura Cargue Medicamentos ultimo mixto.xlsx`.
+- **`ESTADO_REGISTRO`** (tabla `universo`, del lado INVIMA) **solo toma el
+  valor "Vigente"** -- medido: 101.183/101.183 filas. `universo` se arma
+  nada mas con el dataset Vigentes; Vencidos/Otros Estados/Renovacion solo
+  entran en el cruce de `auditoria` (via `ESTADO_COHERENCIA`), nunca en
+  `universo`. Buscar "vencido"/"cancelado" en `ESTADO_REGISTRO` es una rama
+  muerta -- bug real corregido 2026-09-01 en el diagnostico de "Consultar
+  INVIMA". El campo que SI distingue sub-estados de un CUM puntual dentro
+  de un registro vigente es **`ESTADO_CUM`** (Activo/Inactivo, un eje
+  distinto de ESTADO_REGISTRO).
+- Un codigo "CUM con sufijo ATC" (`EXPEDIENTE(8)-CONSECUTIVO(2)-0ATC(7)`,
+  ej. `00040284-02-0N03AG01`) trae el EXPEDIENTE-CONSECUTIVO real EMBEBIDO
+  en el codigo, **distinto** del que usa INVIMA como llave ("40284-2").
+  `coherencia_invima.py` lo reconstruye en la columna `CUM_RECONSTRUIDO`
+  para poder cruzar -- cualquier busqueda nueva contra `universo` por
+  `CODIGO_INTERNO` exacto tiene que probar TAMBIEN `CUM_RECONSTRUIDO`, o
+  falla en silencio para esta familia completa de codigos.
+- Hay una via alterna a los datasets Socrata/Excel para leer el reporte de
+  Gemma Net: `ingesta/gemanet_sql.py` consulta la base Postgres de
+  produccion directo (`integraciones/gemanet_db.py`, solo lectura). MARCA_
+  MEDICAMENTO y UNIDAD_MEDIDA ahi **deben quedar como codigo crudo**, no
+  resueltos a texto en el SQL -- `coherencia_invima.py` hace su propia
+  resolucion via catalogo/alias para poder comparar contra INVIMA; resolver
+  el texto en el SQL de origen duplica esa resolucion con una fuente
+  distinta y rompe la comparacion (bug real 2026-08-31/09-01: "correcto"
+  cayo de 31.108 a 0 medicamentos).
 
 ## Catalogos internos — los podes editar
 

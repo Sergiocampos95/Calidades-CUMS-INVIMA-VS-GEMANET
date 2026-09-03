@@ -22,8 +22,11 @@ respondes rapido, en formato compacto, y **no analizas ni recomiendas**.
 
 ## Contexto minimo
 
-Codigo en `src/gemma_cum_loader/`, pruebas en `tests/`, interfaz en
-`ui_revision/app_streamlit.py`, catalogos CSV en `config/catalogos/`.
+Codigo en `src/gemma_cum_loader/`, pruebas en `tests/`, catalogos CSV en
+`config/catalogos/`. La app real es Vite + FastAPI: frontend en
+`frontend/src/` (vistas en `frontend/src/vistas/*.ts`), API de solo lectura
+en `backend/app/routers/*.py`. `ui_revision/app_streamlit.py` esta
+descartado -- no lo busques como si fuera la interfaz vigente.
 
 Ignora siempre `__pycache__/`, `.venv/`, `.pytest_cache/`, `.ruff_cache/` y
 `data/`. Nunca leas archivos de `data/`: son de produccion y pesan decenas de MB.

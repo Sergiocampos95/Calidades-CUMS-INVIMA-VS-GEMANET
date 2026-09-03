@@ -126,6 +126,93 @@ def _tablas_cargue(
     }
 
 
+# Rotulo de negocio de cada dataset de INVIMA -- el MISMO vocabulario cerrado
+# que usa ESTADO_LISTADO_INVIMA en auditoria/coherencia_invima.py
+# (_MAPA_ESTADO_LISTADO_INVIMA), para que la consulta puntual y la auditoria
+# no digan el estado de dos formas distintas.
+LISTADO_VIGENTE = "vigente"
+LISTADO_VENCIDO = "vencido"
+LISTADO_RENOVACION = "renovacion"
+LISTADO_OTROS_ESTADOS = "otros_estados"
+
+
+def _listados_invima_unificados(
+    df_invima: pd.DataFrame,
+    df_invima_vencidos: pd.DataFrame | None,
+    df_invima_otros_estados: pd.DataFrame | None,
+    df_invima_renovacion: pd.DataFrame | None,
+) -> pd.DataFrame:
+    """Los 4 datasets de INVIMA en una sola tabla, con una columna `LISTADO`
+    que dice de cual salio cada fila.
+
+    Por que existe: hasta ahora el snapshot solo persistia `universo`, que es
+    `universo_invima_clasificado(df_invima)` -- **solo Vigentes**. Los otros
+    tres se leian, se usaban para marcar ESTADO_COHERENCIA y se descartaban.
+    Consecuencia real (caso 20102710-2, un CUM que vive solo en Vencidos): la
+    consulta puntual mostraba la tabla de Gemma Net y NINGUNA fila de INVIMA,
+    aunque el diagnostico de arriba dijera "Vencido y activo" -- la aplicacion
+    sabia la respuesta y no podia mostrar la evidencia.
+
+    No lee nada nuevo: los 4 DataFrames ya estan en memoria en
+    `ejecutar_refresco`. Los 4 comparten las mismas 29 columnas (todos pasan
+    por `leer_catalogo_invima_api`, solo cambia el `dataset` -- verificado
+    contra los respaldos reales), asi que el concat no desalinea nada; un
+    dataset ausente (los 3 auxiliares son opcionales e independientes)
+    simplemente no aporta filas, en vez de romper el refresco completo.
+
+    Comparten los NOMBRES de columna, pero no siempre el TIPO: Socrata
+    entrega el mismo campo unas veces entrecomillado y otras no, asi que
+    `EXPEDIENTE` llega como texto en unos datasets y como entero en otros
+    (medido 2026-09-03: 311.159 str contra 112.969 int en la misma columna).
+    El concat los deja convivir en una columna `object` y `to_parquet`
+    revienta al inferir el esquema ("Expected bytes, got a 'int' object" /
+    "Could not convert '19916871' with type str"). Reventaba en el ULTIMO
+    paso del refresco, tirando los 3 minutos de trabajo previos, y de forma
+    intermitente: dependia de que a esa corrida le tocara la mezcla, asi que
+    la corrida siguiente parecia sana y el defecto quedaba latente.
+    Por eso se normalizan a texto antes de escribir -- ver `_a_texto_estable`.
+    """
+    partes = []
+    for etiqueta, df in (
+        (LISTADO_VIGENTE, df_invima),
+        (LISTADO_VENCIDO, df_invima_vencidos),
+        (LISTADO_OTROS_ESTADOS, df_invima_otros_estados),
+        (LISTADO_RENOVACION, df_invima_renovacion),
+    ):
+        if df is None or df.empty:
+            continue
+        parte = df.copy()
+        parte["LISTADO"] = etiqueta
+        partes.append(parte)
+    if not partes:
+        # Degradacion explicita: sin ningun listado no se inventa una tabla
+        # vacia con columnas adivinadas -- se devuelve vacia y quien la lea
+        # vera que no hay nada, no un esquema falso.
+        return pd.DataFrame()
+    return _a_texto_estable(pd.concat(partes, ignore_index=True))
+
+
+def _a_texto_estable(df: pd.DataFrame) -> pd.DataFrame:
+    """Pasa a texto las columnas que quedaron con tipos de Python MEZCLADOS
+    (int y str a la vez), que es lo que hace fallar a `to_parquet`.
+
+    Solo toca esas: una columna homogenea -- aunque sea `object` con puros
+    str -- se deja igual, porque convertir de mas cambiaria el tipo de datos
+    que hoy se guardan bien y no hay razon para tocarlos.
+
+    `infer_dtype` responde "mixed" / "mixed-integer" sin recorrer el
+    DataFrame en Python (va en C), que importa con 424.128 filas por 29
+    columnas. El valor se normaliza con `str`, no con `astype(str)`, para no
+    convertir los nulos en la cadena "nan"."""
+    for columna in df.columns:
+        if df[columna].dtype != object:
+            continue
+        if not pd.api.types.infer_dtype(df[columna], skipna=True).startswith("mixed"):
+            continue
+        df[columna] = df[columna].map(lambda v: v if pd.isna(v) else str(v))
+    return df
+
+
 def _paso(nombre, funcion, /, *args, ruta_estado=None, **kwargs):
     """Envuelve un paso del refresco: lo marca en_curso antes de llamarlo,
     hecho despues, error (con el detalle) si revienta -- y lo vuelve a
@@ -280,10 +367,23 @@ def ejecutar_refresco(
             ruta_estado=ruta_estado,
         )
 
+        # Los 4 listados de INVIMA tal cual, para que la consulta puntual
+        # pueda encontrar un CUM en cualquiera de ellos y no solo en Vigentes
+        # (ver _listados_invima_unificados). `universo` se conserva aparte:
+        # es Vigentes YA CLASIFICADO, que es otra cosa y alimenta otra vista.
+        invima_listados = _listados_invima_unificados(
+            df_invima, df_invima_vencidos, df_invima_otros_estados, df_invima_renovacion
+        )
         _paso(
             "Guardando snapshot",
             escribir_snapshot,
-            {"candidatos": candidatos, "auditoria": auditoria, "universo": universo, **tablas_cargue},
+            {
+                "candidatos": candidatos,
+                "auditoria": auditoria,
+                "universo": universo,
+                "invima_listados": invima_listados,
+                **tablas_cargue,
+            },
             carpeta=carpeta_snapshots,
             ruta_estado=ruta_estado,
         )

@@ -14,7 +14,11 @@ from worker.estado import (
     progreso_actual,
     ultimo_refresco,
 )
-from worker.tareas import NOMBRES_PASOS_REFRESCO, ejecutar_refresco
+from worker.tareas import (
+    NOMBRES_PASOS_REFRESCO,
+    _listados_invima_unificados,
+    ejecutar_refresco,
+)
 
 _DF_INVIMA = pd.DataFrame({"CODIGO_INTERNO": ["1-1"]})
 _DF_VACIO = pd.DataFrame({"CODIGO_INTERNO": []})
@@ -275,3 +279,89 @@ def test_snapshot_anterior_se_conserva_si_el_siguiente_refresco_falla(tmp_path):
     auditoria = leer_tabla("auditoria", tmp_path / "snapshots")
     assert auditoria is not None
     assert auditoria["PORCENTAJE_CALIDAD"].tolist() == [100.0]
+
+
+def test_el_snapshot_incluye_los_4_listados_de_invima_con_su_rotulo(tmp_path):
+    """Hasta ahora el snapshot solo guardaba "universo" = Vigentes ya
+    clasificado; los otros 3 datasets se leian, se usaban para marcar estado y
+    se descartaban. Consecuencia real (caso 20102710-2): la consulta puntual
+    no tenia ninguna fila de INVIMA que mostrar para un CUM vencido. Ahora se
+    persisten los 4 con una columna LISTADO que dice de cual salio cada uno."""
+
+    def _lector_por_dataset(dataset=None):
+        # Un codigo distinto por listado, para poder distinguirlos en el
+        # resultado; `dataset=None` es Vigentes (ver ejecutar_refresco).
+        codigos = {
+            None: "1-1",
+            "vwwf-4ftk": "2-2",       # Vencidos
+            "spzp-dfuc": "3-3",       # Otros Estados
+            "vgr4-gemg": "4-4",       # Renovacion
+        }
+        return pd.DataFrame({"CODIGO_INTERNO": [codigos[dataset]]})
+
+    kwargs = _kwargs_comunes(tmp_path)
+    kwargs["lector_invima_api"] = _lector_por_dataset
+    ejecutar_refresco(**kwargs)
+
+    listados = leer_tabla("invima_listados", tmp_path / "snapshots")
+    assert dict(zip(listados["CODIGO_INTERNO"], listados["LISTADO"])) == {
+        "1-1": "vigente",
+        "2-2": "vencido",
+        "3-3": "otros_estados",
+        "4-4": "renovacion",
+    }
+
+
+def test_un_listado_auxiliar_vacio_no_rompe_el_refresco(tmp_path):
+    """Los 3 auxiliares son opcionales e independientes: si uno viene vacio
+    simplemente no aporta filas, no tumba el refresco completo."""
+    evento = ejecutar_refresco(**_kwargs_comunes(tmp_path))
+
+    assert evento.estado == ESTADO_OK
+    listados = leer_tabla("invima_listados", tmp_path / "snapshots")
+    # `_lector_invima_api_fake` devuelve filas solo para Vigentes.
+    assert listados["LISTADO"].tolist() == ["vigente"]
+
+
+def test_expediente_con_tipos_mezclados_no_tumba_la_escritura_del_snapshot():
+    """Socrata entrega el mismo campo unas veces entrecomillado y otras no,
+    asi que EXPEDIENTE llega como texto en un dataset y como entero en otro.
+    Antes el concat los dejaba convivir en una columna `object` y
+    `to_parquet` reventaba en el ULTIMO paso del refresco -- de forma
+    intermitente, segun le tocara la mezcla a esa corrida."""
+    unificado = _listados_invima_unificados(
+        pd.DataFrame({"EXPEDIENTE": ["20048021"], "CODIGO_INTERNO": ["1-1"]}),
+        pd.DataFrame({"EXPEDIENTE": [10858], "CODIGO_INTERNO": ["2-1"]}),
+        None,
+        None,
+    )
+
+    assert unificado["EXPEDIENTE"].tolist() == ["20048021", "10858"]
+    assert pd.api.types.infer_dtype(unificado["EXPEDIENTE"], skipna=True) == "string"
+
+
+def test_una_columna_de_un_solo_tipo_se_deja_intacta():
+    """Solo se normaliza lo que esta MEZCLADO: convertir de mas cambiaria el
+    tipo de columnas que hoy se guardan bien."""
+    unificado = _listados_invima_unificados(
+        pd.DataFrame({"CONSECUTIVO": [1], "CODIGO_INTERNO": ["1-1"]}),
+        pd.DataFrame({"CONSECUTIVO": [2], "CODIGO_INTERNO": ["2-1"]}),
+        None,
+        None,
+    )
+
+    assert unificado["CONSECUTIVO"].tolist() == [1, 2]
+
+
+def test_los_nulos_no_se_vuelven_la_cadena_nan_al_normalizar():
+    """`astype(str)` convertiria un vacio en el texto "nan", que despues se
+    leeria como un dato. Se preserva el nulo."""
+    unificado = _listados_invima_unificados(
+        pd.DataFrame({"EXPEDIENTE": ["20048021"], "CODIGO_INTERNO": ["1-1"]}),
+        pd.DataFrame({"EXPEDIENTE": [10858], "CODIGO_INTERNO": ["2-1"]}),
+        pd.DataFrame({"EXPEDIENTE": [None], "CODIGO_INTERNO": ["3-1"]}),
+        None,
+    )
+
+    assert unificado["EXPEDIENTE"].isna().sum() == 1
+    assert "nan" not in unificado["EXPEDIENTE"].dropna().tolist()

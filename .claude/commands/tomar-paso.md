@@ -15,9 +15,9 @@ Ejecuta el siguiente paso que me corresponde en el plan compartido. Plan: $ARGUM
 3. Marca el paso `[~]` en el plan y **guarda antes de empezar**. Ese es el
    candado.
 4. Delega en el agente que nombre el paso (`implementador`, `pruebas`,
-   `ui-streamlit`, `dominio-invima`, `revisor`). Si hay varios pasos mios
+   `ui-vite`, `dominio-invima`, `revisor`). Si hay varios pasos mios
    seguidos sin archivos compartidos, lanzalos en paralelo.
-5. Verifica: `pytest` y `ruff check src/ tests/ ui_revision/`.
+5. Verifica: `pytest` y `ruff check src/ tests/ backend/`.
 6. Marca `[x]`, anota en `## Decisiones` lo que el siguiente necesite saber, y
    en `## Abierto` lo que quedo pendiente.
 7. Si te bloqueas, deja el paso en `[~]` con la razon en `## Abierto`. Nunca

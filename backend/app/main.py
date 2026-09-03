@@ -23,6 +23,7 @@ from backend.app.routers import (
     calidades,
     candidatos,
     cargue,
+    consulta_detalle,
     descargas,
     refrescar,
     salud,
@@ -53,6 +54,7 @@ app.include_router(auditoria.router)
 app.include_router(cadena_calidad.router)
 app.include_router(calidades.router)
 app.include_router(universo.router)
+app.include_router(consulta_detalle.router)
 app.include_router(cargue.router)
 app.include_router(descargas.router)
 app.include_router(refrescar.router)

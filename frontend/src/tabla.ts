@@ -66,10 +66,35 @@ export interface OpcionesTablaFiltrable {
    * distintos de esa columna. Sin esto, la tabla se ve igual que antes
    * (solo busqueda libre + orden ninguno). */
   obtenerValoresColumna?: (columna: string) => Promise<ValorColumnaTabla[]>;
+  /** Nombre de columna crudo (ej. ESTADO_LISTADO_INVIMA) -> etiqueta en
+   * lenguaje de negocio para el encabezado (ej. "Estado INVIMA"). Sin esto
+   * (o sin entrada para una columna puntual) se muestra el nombre crudo,
+   * igual que antes -- retrocompatible con las vistas que no lo pasan. El
+   * nombre real de columna se conserva en el `title` del encabezado para
+   * depurar. */
+  etiquetasColumna?: Record<string, string>;
 }
 
 function esc(valor: unknown): string {
   return String(valor).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] as string);
+}
+
+// Boton compacto junto a CODIGO_INTERNO que lleva directo a "Consultar
+// INVIMA" con ese codigo ya cargado -- pedido explicito del usuario
+// (2026-09-01): "añadela en todas las filas en las que pueda tener un
+// efecto positivo". Vive ACA, no en cada vista: TablaFiltrable es el UNICO
+// componente de tabla de la app (regla del proyecto), asi que cualquier
+// tabla que muestre CODIGO_INTERNO lo gana gratis, sin que cada una de las
+// 9 vistas que la usan tenga que acordarse de conectarlo por separado. El
+// click se captura una vez por instancia (delegado en `this.raiz`, ver
+// constructor); quien procesa el codigo y navega es
+// vistas/consulta_detalle.ts, escuchando el evento "gemma:consultar-invima"
+// -- este modulo no importa esa vista para no crear una dependencia de un
+// componente generico hacia una pantalla especifica.
+function botonConsultarInvima(codigo: unknown): string {
+  const cod = String(codigo ?? "").trim();
+  if (!cod) return "";
+  return `<button type="button" class="btn-consultar-invima" data-codigo="${esc(cod)}" title="Consultar este código en INVIMA">🔍</button>`;
 }
 
 function formatearCeldaDefecto(columna: string, valor: unknown): string {
@@ -80,7 +105,13 @@ function formatearCeldaDefecto(columna: string, valor: unknown): string {
   if (typeof valor === "number" && (columna.startsWith("PORCENTAJE") || columna.startsWith("SIMILITUD_"))) {
     return `<span class="celda-mono">${valor.toFixed(1)}%</span>`;
   }
-  if (columna === "CODIGO_INTERNO" || columna.endsWith("_INTERNO")) {
+  // Solo CODIGO_INTERNO exacto gana el boton -- columnas como
+  // CODIGO_INTERNO_MODELO_SERVICIO tambien terminan en "_INTERNO" pero no
+  // son un codigo de medicamento consultable en INVIMA.
+  if (columna === "CODIGO_INTERNO") {
+    return `<span class="celda-codigo"><span class="celda-mono">${esc(valor)}</span>${botonConsultarInvima(valor)}</span>`;
+  }
+  if (columna.endsWith("_INTERNO")) {
     return `<span class="celda-mono">${esc(valor)}</span>`;
   }
   return esc(valor);
@@ -101,10 +132,25 @@ if (typeof document !== "undefined") {
   });
 }
 
+/** Columnas que la auditoria calcula para PODER verificar un hallazgo a mano,
+ * no para leerlas de corrido. Ocupan un ancho enorme (una consulta SQL entera)
+ * y empujan a la derecha justo las columnas de estado que el usuario si mira
+ * -- pedido explicito del usuario (2026-09-02): "el campo que facilita la
+ * consulta de verificacion puede permanecer oculto hasta que se requiera".
+ * Se ocultan de la VISTA, nunca del dato: siguen viajando en la respuesta y en
+ * las descargas, y la casilla de abajo las revela cuando hacen falta -- mismo
+ * criterio que "Cargar la tabla completa" (nunca se asume en silencio que al
+ * usuario no le hacen falta). */
+const COLUMNAS_TECNICAS = new Set(["CONSULTA_VERIFICACION_SQL"]);
+
 export class TablaFiltrable {
   private busqueda = "";
   private mostrarTodo = false;
+  private mostrarTecnicas = false;
   private cargando = false;
+  /** La ultima pagina servida, para poder repintar sin volver a pedirla
+   * cuando lo unico que cambia es que columnas se muestran. */
+  private ultimaPagina?: PaginaTabla;
   private raiz: HTMLElement;
   /** El contenedor de la fila de busqueda se arma UNA vez en el constructor
    * y nunca se destruye -- bug real reportado por el usuario (2026-08-28):
@@ -134,6 +180,20 @@ export class TablaFiltrable {
     this.raiz = document.createElement("div");
     this.raiz.className = "tabla-filtrable";
     contenedor.appendChild(this.raiz);
+
+    // Delegado UNA vez por instancia (this.raiz nunca se destruye, igual
+    // que el resto de listeners de esta clase) -- atrapa tanto el boton de
+    // CODIGO_INTERNO (formatearCeldaDefecto, arriba) como cualquier boton
+    // "Ver diferencias"/similar que una vista arme con la misma clase (ver
+    // auditoria.ts -- un solo mecanismo para "andá a consultar este codigo
+    // en INVIMA", sin importar de que columna salio el clic).
+    this.raiz.addEventListener("click", (evento) => {
+      const boton = (evento.target as HTMLElement).closest<HTMLElement>(
+        ".btn-consultar-invima, .btn-ver-diferencias",
+      );
+      if (!boton?.dataset.codigo) return;
+      window.dispatchEvent(new CustomEvent("gemma:consultar-invima", { detail: { codigo: boton.dataset.codigo } }));
+    });
 
     const filaBusqueda = document.createElement("div");
     filaBusqueda.className = "tabla-filtrable__busqueda";
@@ -168,6 +228,7 @@ export class TablaFiltrable {
           : undefined,
       });
       this.cargando = false;
+      this.ultimaPagina = pagina;
       this.render(pagina);
     } catch (error) {
       this.cargando = false;
@@ -186,6 +247,22 @@ export class TablaFiltrable {
   private onCargarTodo(marcado: boolean): void {
     this.mostrarTodo = marcado;
     this.recargar();
+  }
+
+  /** Las columnas que se DIBUJAN. Unico lugar que decide eso: el resto del
+   * render itera esto y nunca `opciones.columnas` directo, para que encabezado,
+   * colgroup y celdas no se puedan desalinear entre si. */
+  private get columnasVisibles(): string[] {
+    if (this.mostrarTecnicas) return this.opciones.columnas;
+    return this.opciones.columnas.filter((c) => !COLUMNAS_TECNICAS.has(c));
+  }
+
+  private onMostrarTecnicas(marcado: boolean): void {
+    this.mostrarTecnicas = marcado;
+    // Solo cambia QUE se pinta: la pagina ya esta en memoria, no se vuelve a
+    // pedir al backend (a diferencia de buscar/filtrar/cargar-todo, que si
+    // cambian el conjunto de filas).
+    this.render(this.ultimaPagina);
   }
 
   private anchoColumna(columna: string): number {
@@ -415,6 +492,25 @@ export class TablaFiltrable {
       this.contenedorDatos.appendChild(etiquetaCheckbox);
     }
 
+    // Solo se ofrece si ESTA tabla trae alguna columna tecnica: una casilla
+    // que no revela nada seria ruido en las tablas que no las tienen.
+    const tecnicasEnTabla = this.opciones.columnas.filter((c) => COLUMNAS_TECNICAS.has(c));
+    if (tecnicasEnTabla.length > 0) {
+      const etiquetaTecnicas = document.createElement("label");
+      etiquetaTecnicas.className = "tabla-filtrable__cargar-todo";
+      const casilla = document.createElement("input");
+      casilla.type = "checkbox";
+      casilla.checked = this.mostrarTecnicas;
+      casilla.addEventListener("change", (e) =>
+        this.onMostrarTecnicas((e.target as HTMLInputElement).checked),
+      );
+      etiquetaTecnicas.appendChild(casilla);
+      etiquetaTecnicas.appendChild(
+        document.createTextNode(" Mostrar la consulta SQL de verificación"),
+      );
+      this.contenedorDatos.appendChild(etiquetaTecnicas);
+    }
+
     const envoltorio = document.createElement("div");
     envoltorio.className = "tabla-filtrable__envoltorio"; // overflow-x: auto -- nunca scroll horizontal de toda la pagina
     const tabla = document.createElement("table");
@@ -422,7 +518,7 @@ export class TablaFiltrable {
 
     const colgroup = document.createElement("colgroup");
     const columnasEl: HTMLTableColElement[] = [];
-    for (const columna of this.opciones.columnas) {
+    for (const columna of this.columnasVisibles) {
       const col = document.createElement("col");
       col.style.width = `${this.anchoColumna(columna)}px`;
       colgroup.appendChild(col);
@@ -432,13 +528,13 @@ export class TablaFiltrable {
 
     const encabezado = document.createElement("thead");
     const filaEncabezado = document.createElement("tr");
-    this.opciones.columnas.forEach((columna, i) => {
+    this.columnasVisibles.forEach((columna, i) => {
       const th = document.createElement("th");
       const filaTh = document.createElement("div");
       filaTh.className = "th-fila";
       const etiqueta = document.createElement("span");
       etiqueta.className = "th-etiqueta";
-      etiqueta.textContent = columna;
+      etiqueta.textContent = this.opciones.etiquetasColumna?.[columna] ?? columna;
       etiqueta.title = columna;
       filaTh.appendChild(etiqueta);
 
@@ -473,7 +569,7 @@ export class TablaFiltrable {
     if (pagina.filas.length === 0) {
       const fila = document.createElement("tr");
       const celda = document.createElement("td");
-      celda.colSpan = this.opciones.columnas.length;
+      celda.colSpan = this.columnasVisibles.length;
       celda.className = "tabla-filtrable__vacio";
       celda.textContent = "No hay medicamentos con esos criterios.";
       fila.appendChild(celda);
@@ -482,7 +578,7 @@ export class TablaFiltrable {
       const fragmento = document.createDocumentFragment();
       for (const fila of pagina.filas) {
         const tr = document.createElement("tr");
-        for (const columna of this.opciones.columnas) {
+        for (const columna of this.columnasVisibles) {
           const td = document.createElement("td");
           const valor = fila[columna];
           const html = this.opciones.formatearCelda?.(columna, valor, fila);

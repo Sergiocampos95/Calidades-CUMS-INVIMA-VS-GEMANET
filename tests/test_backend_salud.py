@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from backend.app.dependencies import carpeta_snapshots, ruta_estado
 from backend.app.main import app
-from worker.almacen_snapshots import escribir_snapshot
+from worker.almacen_snapshots import COLUMNAS_ESPERADAS, escribir_snapshot
 from worker.estado import ESTADO_ERROR, ESTADO_OK, EstadoRefresco, registrar_refresco
 
 
@@ -29,10 +29,50 @@ def test_sin_ningun_refresco_todavia_da_sin_datos(tmp_path):
         app.dependency_overrides.clear()
 
 
-def test_refresco_reciente_y_exitoso_da_ok(tmp_path):
+def _snapshot_al_dia() -> dict:
+    """Un snapshot con el esquema que espera el codigo actual."""
+    return {
+        tabla: pd.DataFrame({c: [""] for c in columnas})
+        for tabla, columnas in COLUMNAS_ESPERADAS.items()
+    }
+
+
+def test_snapshot_de_version_anterior_se_reporta_desactualizado(tmp_path):
+    """Regla del usuario (2026-09-02): una colision con una version pasada no
+    puede pasar desapercibida si ademas el snapshot es antiguo (>50 min). Un
+    snapshot al que le faltan columnas produce cifras en cero que se leen como
+    "no hay hallazgos", pero si es muy reciente se le da margen al worker para
+    que lo refresque en el proximo ciclo."""
+    import json
+
     cliente, carpeta, sqlite = _cliente(tmp_path)
     try:
         escribir_snapshot({"auditoria": pd.DataFrame({"a": [1]})}, carpeta=carpeta)
+        # Hacer el snapshot antiguo (>50 min) para que se marque desactualizado
+        puntero = carpeta / "actual.json"
+        datos = json.loads(puntero.read_text(encoding="utf-8"))
+        datos["generado_utc"] = "20200101T000000000000Z"  # hace anos, claramente viejo
+        puntero.write_text(json.dumps(datos), encoding="utf-8")
+        # Registrar refresco viejo tambien
+        registrar_refresco(
+            EstadoRefresco("2020-01-01T00:00:00+00:00", "2020-01-01T00:01:00+00:00", 60.0, ESTADO_OK),
+            sqlite,
+        )
+        cuerpo = cliente.get("/salud").json()
+        assert cuerpo["estado"] == "desactualizado"
+        assert "version anterior" in cuerpo["detalle_error"]
+        assert "Corre un refresco" in cuerpo["detalle_error"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_refresco_reciente_y_exitoso_da_ok(tmp_path):
+    cliente, carpeta, sqlite = _cliente(tmp_path)
+    try:
+        # El snapshot tiene que traer las columnas que el codigo de HOY
+        # espera; si no, /salud lo reporta como desactualizado por colision de
+        # versiones (ver COLUMNAS_ESPERADAS en worker/almacen_snapshots.py).
+        escribir_snapshot(_snapshot_al_dia(), carpeta=carpeta)
         registrar_refresco(
             EstadoRefresco("2026-01-01T00:00:00+00:00", "2026-01-01T00:01:00+00:00", 60.0, ESTADO_OK),
             sqlite,

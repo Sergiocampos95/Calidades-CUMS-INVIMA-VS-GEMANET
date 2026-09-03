@@ -70,7 +70,6 @@ from rapidfuzz import fuzz, process
 from gemma_cum_loader.armado.reglas_negocio import (
     CLASIFICADO_VALORES_VALIDOS,
     NIVELES_SERVICIO_VALIDOS,
-    SW_RESOLUCION_A_CLASIFICADO,
 )
 from gemma_cum_loader.catalogos.resolver import (
     FALLBACK_CODIGO,
@@ -99,6 +98,22 @@ class EstadoCoherencia(Enum):
     # regulados débilmente o no regulados, no se validan contra INVIMA. No es un
     # error que no tengan correspondencia: es que INVIMA no aplica (paso 4, ciclo 2).
     NO_VALIDA_CONTRA_INVIMA = "no_valida_contra_invima"
+
+
+# Subconjunto de CLASIFICADO_VALORES_VALIDOS (armado/reglas_negocio.py) que
+# marca creacion propia de la entidad, no un registro sanitario de INVIMA --
+# "SI"/"NO" SI son medicamentos regulares y quedan fuera de este conjunto.
+#
+# Bug corregido (2026-09-01): antes se comparaba contra
+# `set(SW_RESOLUCION_A_CLASIFICADO.values())`, que solo mapea sw_resolucion=2
+# ("Medicamento Ancestral") porque a esa fecha no existia sw_resolucion=3 en
+# produccion (ver design/ciclo2-sw_resolucion.md) -- "Planta Medicinal" nunca
+# se excluia de la auditoria aunque decision de negocio dice que debe quedar
+# igual de excluida. Se compara aca contra el valor de NEGOCIO directamente
+# (CLASIFICADO ya es texto en el reporte de Gemma Net), no contra el mapeo de
+# sw_resolucion -- ese mapeo es para construir CLASIFICADO desde otra fuente,
+# no para decidir que excluir de esta auditoria.
+CLASIFICADO_VALORES_CREACION_PROPIA = ["Medicamento Ancestral", "Planta Medicinal"]
 
 
 # 9 dimensiones de calidad de dato, pedido explicito del usuario ("Carlos me
@@ -294,13 +309,32 @@ def _columnas_marcadas(df_booleano: pd.DataFrame, separador: str) -> pd.Series:
 # varia segun venga de Excel o de Postgres.
 FECHAS_CENTINELA = frozenset({19000101, 18991230, 29991231})
 
+# El comodin de "no vence" del lado de INVIMA, que NO es una lista corta como
+# el de Gemma Net: `FECHA VENCIMIENTO` trae 45.776 fechas del ano 3000 en
+# adelante, repartidas en decenas de variantes (3000-01-01 x40.482,
+# 3000-12-31 x4.323, 3001-01-01, 3000-10-10, 3000-04-04...). Por eso se corta
+# por ANO y no enumerando fechas: una lista fija dejaba pasar la cola larga.
+# Medido contra el snapshot real el 2026-09-03: tratarlas como fecha de verdad
+# producia 11.242 hallazgos falsos de "Falta actualizar FECHA_FIN en Gemma Net:
+# INVIMA reporta FECHA VENCIMIENTO el 3000-01-01" -- el 54% de todos los
+# hallazgos de fecha. Es el mismo caso que `-999` en Gemma Net: un centinela de
+# "sin dato", no un valor. Aparecio al pasar el par de FECHA_FIN de `FECHA
+# INACTIVO` a `FECHA VENCIMIENTO` (2026-09-02): es FECHA VENCIMIENTO la que lo
+# trae. El corte va en 3000 y no antes para no tocar el `2999-12-31` de Gemma
+# Net, que ya vive en FECHAS_CENTINELA y significa lo mismo.
+ANIO_CENTINELA_SIN_VENCIMIENTO = 3000
+
 
 def _es_fecha_real(serie: pd.Series) -> pd.Series:
     """True donde la fecha es un dato de verdad, no un comodin ni un vacio."""
     if not pd.api.types.is_datetime64_any_dtype(serie):
         serie = pd.to_datetime(serie, errors="coerce")
     aaaammdd = serie.dt.year * 10000 + serie.dt.month * 100 + serie.dt.day
-    return serie.notna() & ~aaaammdd.isin(FECHAS_CENTINELA)
+    return (
+        serie.notna()
+        & ~aaaammdd.isin(FECHAS_CENTINELA)
+        & (serie.dt.year < ANIO_CENTINELA_SIN_VENCIMIENTO)
+    )
 
 
 def _es_fecha_comodin(serie: pd.Series) -> pd.Series:
@@ -312,7 +346,83 @@ def _es_fecha_comodin(serie: pd.Series) -> pd.Series:
     if not pd.api.types.is_datetime64_any_dtype(serie):
         serie = pd.to_datetime(serie, errors="coerce")
     aaaammdd = serie.dt.year * 10000 + serie.dt.month * 100 + serie.dt.day
-    return serie.notna() & aaaammdd.isin(FECHAS_CENTINELA)
+    return serie.notna() & (
+        aaaammdd.isin(FECHAS_CENTINELA)
+        | (serie.dt.year >= ANIO_CENTINELA_SIN_VENCIMIENTO)
+    )
+
+
+# Los DOS pares de fechas que negocio pidio contrastar entre las dos fuentes
+# (2026-09-01), verificados contra el caso real 20102710-2 en el listado de
+# Vencidos: INVIMA `FECHA ACTIVO` es el equivalente de `FECHA_INICIO` de Gemma
+# Net, y `FECHA INACTIVO` el de `FECHA_FIN`. NO es FECHA_VENCIMIENTO: esa es la
+# vigencia del registro sanitario (dimension 10, `_contrastar_vigencia_invima`),
+# no la fecha en que la presentacion comercial entro o salio de circulacion.
+#
+#   columna local -> (columna INVIMA ya propagada, como se lee en el mensaje)
+_PARES_FECHAS_GEMANET_INVIMA = {
+    "FECHA_INICIO": ("FECHA_ACTIVO_INVIMA", "FECHA ACTIVO"),
+    # FECHA_FIN se compara contra FECHA VENCIMIENTO, no contra FECHA INACTIVO
+    # -- correccion del usuario (2026-09-02): "fecha vencimiento invima =
+    # fecha fin gemma". Tiene sentido de negocio: FECHA_FIN es hasta cuando
+    # el medicamento se puede seguir formulando, y eso lo marca la vigencia
+    # del registro sanitario, no la baja administrativa del CUM (FECHA
+    # INACTIVO, que solo se llena cuando INVIMA da de baja la presentacion).
+    "FECHA_FIN": ("FECHA_VENCIMIENTO_INVIMA", "FECHA VENCIMIENTO"),
+}
+
+
+def _comparar_fechas_con_invima(
+    combinado: pd.DataFrame,
+    fechas_invima: dict[str, pd.Series],
+    invima_sabe_del_codigo: pd.Series,
+) -> pd.Series:
+    """Dimension 11 -- COHERENCIA DE FECHAS ENTRE FUENTES: la fecha que guarda
+    Gemma Net contra la que reporta INVIMA para el MISMO par de campos (ver
+    `_PARES_FECHAS_GEMANET_INVIMA`).
+
+    Solo compara donde AMBOS lados traen una fecha real. Un comodin de Gemma
+    Net (`2999-12-31`, `1900-01-01` -- ver FECHAS_CENTINELA) significa "sin
+    dato", no "fecha distinta": reportarlo aca seria contar como error de dato
+    lo que ya es un residuo conocido de la migracion, y ademas duplicaria la
+    novedad `actualizar_fecha_fin` que `_contrastar_vigencia_invima` ya emite
+    para exactamente ese caso (fecha ausente aca, presente alla).
+
+    `invima_sabe_del_codigo` es mas amplio que `tiene_correspondencia`: esa
+    ultima solo es cierta para las filas que cruzaron contra VIGENTES, y el
+    punto de este contraste es justamente que ahora las fechas tambien llegan
+    desde Vencidos/Otros Estados/Renovacion (ver `_FECHAS_INVIMA_PROPAGABLES`).
+
+    Vacio -- nunca "coincide" ni un 0 % -- cuando no hay con que comparar,
+    mismo criterio no negociable que `PORCENTAJE_CALIDAD`.
+    """
+    diferencias = {}
+    for columna_local, (columna_invima, etiqueta) in _PARES_FECHAS_GEMANET_INVIMA.items():
+        local = _columna_fecha(combinado, columna_local)
+        oficial = fechas_invima[columna_invima]
+        oficial_real = _es_fecha_real(oficial)
+        comparable = invima_sabe_del_codigo & _es_fecha_real(local) & oficial_real
+        difiere = comparable & (local != oficial)
+        mensaje = pd.Series("", index=combinado.index, dtype="object")
+        mensaje[difiere] = (
+            f"{columna_local} ("
+            + local[difiere].dt.strftime("%Y-%m-%d")
+            + f") no coincide con {etiqueta} de INVIMA ("
+            + oficial[difiere].dt.strftime("%Y-%m-%d")
+            + ")"
+        )
+        # Gemma Net sin la fecha (vacia o comodin) e INVIMA CON una fecha real:
+        # no es una diferencia de dato, es un dato que FALTA y que INVIMA ya
+        # tiene -- hay que copiarlo. Pedido explicito del usuario (2026-09-02):
+        # "requiere que digamos que hace falta actualizar la fecha porque el
+        # invima si tiene una fecha vencimiento diligenciada".
+        falta = invima_sabe_del_codigo & ~_es_fecha_real(local) & oficial_real
+        mensaje[falta] = (
+            f"Falta actualizar {columna_local} en Gemma Net: INVIMA reporta {etiqueta} el "
+            + oficial[falta].dt.strftime("%Y-%m-%d")
+        )
+        diferencias[columna_local] = mensaje
+    return _unir_no_vacios(pd.DataFrame(diferencias), "; ", combinado.index)
 
 
 def _unir_no_vacios(df: pd.DataFrame, separador: str, index=None) -> pd.Series:
@@ -897,9 +1007,21 @@ def _contrastar_vigencia_invima(
     Como representa INVIMA la vigencia (medido sobre el listado real, era la
     duda abierta): `FECHA_INACTIVO` **nula** significa que el CUM sigue
     activo -- 77.545 de 81.641 activos, el 95 %. `FECHA_VENCIMIENTO` nunca es
-    nula: siempre hay vencimiento del registro sanitario. Por eso se comparan
-    las dos y significan cosas distintas -- una da la novedad de dato, la
-    otra el riesgo de vigencia.
+    nula: siempre hay vencimiento del registro sanitario.
+
+    Correccion del usuario (2026-09-01): el par correcto para comparar contra
+    FECHA_INICIO/FECHA_FIN de Gemma Net es FECHA_ACTIVO/FECHA_VENCIMIENTO de
+    INVIMA, no FECHA_INACTIVO -- esta ultima es la baja administrativa del
+    CUM puntual (una presentacion descontinuada), no el vencimiento del
+    registro sanitario. Bug real que esto corregia: un CUM con
+    FECHA_INACTIVO_INVIMA=2018-02-01 pero FECHA_VENCIMIENTO_INVIMA=2028-03-08
+    generaba la novedad "actualizar FECHA_FIN a 2018-02-01" -- cerrarlo en
+    Gemma Net DIEZ ANOS antes de que venciera su registro sanitario real.
+    `FECHA_INACTIVO_INVIMA` sigue siendo util como CONTEXTO informativo (ej.
+    en el mensaje de "riesgo: activo aca, inactivo en INVIMA" mas abajo,
+    donde solo se informa una fecha, no se prescribe un valor para FECHA_FIN)
+    -- lo que cambia es que ya NO es la fuente para decirle a alguien que
+    valor ESCRIBIR en FECHA_FIN.
 
     Devuelve (clasificacion, detalle). El detalle lleva las fechas de los dos
     lados: sin eso la novedad no se puede fundamentar sin abrir otra
@@ -930,12 +1052,21 @@ def _contrastar_vigencia_invima(
 
     # De menor a mayor prioridad: la ultima asignacion gana, asi la fila queda
     # con el hallazgo mas grave sin tener que ordenar condiciones a mano.
+    # El VALOR sugerido para FECHA_FIN es FECHA_VENCIMIENTO_INVIMA (el
+    # vencimiento del registro sanitario), NO FECHA_INACTIVO_INVIMA (la baja
+    # administrativa del CUM puntual) -- ver correccion documentada arriba.
+    # El GATILLO de la novedad (`inactivo_invima_real`) se deja igual: solo
+    # tiene sentido sugerir completar FECHA_FIN cuando INVIMA de verdad
+    # marco esa presentacion como inactiva, no para cualquier CUM vigente
+    # sin fecha de fin (eso no seria una novedad, seria el estado normal).
     actualizar = tiene_correspondencia & ~fin_local_real & inactivo_invima_real
     clasificacion[actualizar] = NOVEDAD_ACTUALIZAR_FECHA_FIN
     detalle[actualizar] = (
-        "Sin fecha de fin en Gemma Net, pero INVIMA registra que el CUM se inactivo el "
+        "Sin fecha de fin en Gemma Net; INVIMA marco el CUM como inactivo el "
         + _fecha(fecha_inactivo_invima, actualizar)
-        + ". Novedad: actualizar FECHA_FIN."
+        + " y el registro sanitario vence el "
+        + _fecha(fecha_vencimiento_invima, actualizar)
+        + ". Novedad: actualizar FECHA_FIN con la fecha de vencimiento."
     )
 
     reactivar = tiene_correspondencia & ~activo_local & activo_invima
@@ -1185,22 +1316,47 @@ def _validar_integridad_referencial_catalogo(
     return _unir_no_vacios(hallazgos, "; ", reporte_gemanet.index)
 
 
+# Columna final expuesta en `resultado` -> columna equivalente que trae cada
+# dataset auxiliar (Vencidos/Otros Estados/Renovacion comparten las mismas 29
+# columnas que Vigentes, ver ingesta/invima_socrata.py::CAMPOS_API -- todas
+# pasan por la misma `leer_catalogo_invima_api()`, solo cambia el `dataset`).
+_FECHAS_INVIMA_PROPAGABLES = {
+    "FECHA_ACTIVO_INVIMA": "FECHA_ACTIVO",
+    "FECHA_INACTIVO_INVIMA": "FECHA_INACTIVO",
+    "FECHA_VENCIMIENTO_INVIMA": "FECHA_VENCIMIENTO",
+}
+
+
 def _aplicar_dataset_auxiliar(
     estado: pd.Series,
     detalle: pd.Series,
+    fechas_invima: dict[str, pd.Series],
+    estado_cum_invima: pd.Series,
     gemanet_codigos: pd.Series,
     df_auxiliar: pd.DataFrame | None,
     estado_valor: str,
-) -> tuple[pd.Series, pd.Series]:
+) -> tuple[pd.Series, pd.Series, dict[str, pd.Series], pd.Series]:
     """Marca con `estado_valor` los codigos AUN sin resolver (estado sigue
     en SIN_CORRESPONDENCIA_INVIMA) que SI aparecen en `df_auxiliar`, y deja
     en `detalle` el ESTADO_REGISTRO real reportado por INVIMA para ese
     codigo (primera fila si el dataset trae mas de una) -- nunca sobre-
     escribe un estado ya resuelto por un dataset de mayor prioridad (ver
     orden de llamada en auditar_coherencia: Vencidos, luego Otros Estados,
-    luego Tramite de Renovacion)."""
+    luego Tramite de Renovacion).
+
+    `fechas_invima` (ver `_FECHAS_INVIMA_PROPAGABLES`) trae, por columna
+    final, la fecha que ya dejo el merge contra Vigentes (NaT si esa fila
+    no tuvo correspondencia ahi). Se completa -- nunca se pisa -- con la
+    fecha equivalente de `df_auxiliar` SOLO en las filas que este dataset
+    auxiliar resuelve (`coincide`) Y que todavia estan vacias: una fila que
+    SI tiene fecha real de Vigentes no debe perderla porque ademas aparezca,
+    por ejemplo, en Otros Estados.
+
+    `estado_cum_invima` igual: se completa -- nunca se pisa -- con el
+    ESTADO_CUM real de `df_auxiliar` en las filas que este dataset
+    resuelve y que todavia estan vacias."""
     if df_auxiliar is None or df_auxiliar.empty:
-        return estado, detalle
+        return estado, detalle, fechas_invima, estado_cum_invima
     auxiliar = df_auxiliar.dropna(subset=["CODIGO_INTERNO"]).drop_duplicates(
         subset="CODIGO_INTERNO", keep="first"
     )
@@ -1211,7 +1367,30 @@ def _aplicar_dataset_auxiliar(
     if "ESTADO_REGISTRO" in auxiliar_indexado.columns:
         valores_detalle = gemanet_codigos.map(auxiliar_indexado["ESTADO_REGISTRO"].astype(str).str.strip())
         detalle = detalle.where(~coincide, valores_detalle)
-    return estado, detalle
+
+    fechas_invima = dict(fechas_invima)
+    for columna_final, columna_origen in _FECHAS_INVIMA_PROPAGABLES.items():
+        serie_actual = fechas_invima.get(columna_final)
+        if serie_actual is None or columna_origen not in auxiliar_indexado.columns:
+            continue
+        aun_vacia = serie_actual.isna()
+        valores_auxiliar = pd.to_datetime(
+            gemanet_codigos.map(auxiliar_indexado[columna_origen]), errors="coerce"
+        )
+        fechas_invima[columna_final] = serie_actual.where(~(coincide & aun_vacia), valores_auxiliar)
+
+    if "ESTADO_CUM" in auxiliar_indexado.columns:
+        # "Vacio" aca es la cadena vacia, NO NaN: `estado_cum_invima` nace de
+        # `_columna_o_vacia`, que ya rellena los faltantes con "". Usar
+        # `.isna()` daba False en todas las filas y la propagacion no se
+        # aplicaba nunca -- medido contra el snapshot real: ESTADO_CUM_INVIMA
+        # quedaba al 100 % en 'vigente' y al 0 % en vencido/renovacion/
+        # otros_estados, dejando las tarjetas de esos listados sin veredicto.
+        aun_vacio = estado_cum_invima.isna() | estado_cum_invima.fillna("").astype(str).str.strip().eq("")
+        valores_estado_cum = gemanet_codigos.map(auxiliar_indexado["ESTADO_CUM"].astype(str).str.strip())
+        estado_cum_invima = estado_cum_invima.where(~(coincide & aun_vacio), valores_estado_cum)
+
+    return estado, detalle, fechas_invima, estado_cum_invima
 
 
 # Valor real de ESTADO_REGISTRO dentro de Otros Estados que en realidad
@@ -1415,6 +1594,30 @@ def _coincide_con_alguna_sigla(
     return clave.isin(claves_validas)
 
 
+# ESTADO_COHERENCIA (8 valores) resumido a la pregunta de negocio "esta
+# listado hoy en algun dataset oficial de INVIMA, y en cual" -- pedido para
+# poder filtrar el universo auditable (ver filtrar_universo_auditable) sin
+# que cada consumidor tenga que conocer los 8 valores de EstadoCoherencia.
+_MAPA_ESTADO_LISTADO_INVIMA = {
+    EstadoCoherencia.CORRECTO.value: "vigente",
+    EstadoCoherencia.CON_DIFERENCIAS.value: "vigente",
+    EstadoCoherencia.VENCIDO_EN_INVIMA.value: "vencido",
+    EstadoCoherencia.EN_TRAMITE_RENOVACION_INVIMA.value: "renovacion",
+    EstadoCoherencia.ENCONTRADO_EN_OTRO_ESTADO_INVIMA.value: "otros_estados",
+    EstadoCoherencia.VIGENTE_NO_COMERCIALIZADO_INVIMA.value: "otros_estados",
+    EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value: "ninguno",
+    EstadoCoherencia.NO_VALIDA_CONTRA_INVIMA.value: "ninguno",
+}
+
+
+def _estado_listado_invima(estado_coherencia: pd.Series) -> pd.Series:
+    """Vectorizado (map, sin apply): agrupa los 8 valores de ESTADO_COHERENCIA
+    en el listado de INVIMA donde aparecen hoy -- ver _MAPA_ESTADO_LISTADO_
+    INVIMA. Los 8 valores del enum estan cubiertos; no hace falta un
+    fallback silencioso."""
+    return estado_coherencia.map(_MAPA_ESTADO_LISTADO_INVIMA)
+
+
 def auditar_coherencia(
     reporte_gemanet: pd.DataFrame,
     df_invima: pd.DataFrame,
@@ -1452,6 +1655,27 @@ def auditar_coherencia(
     real reportado por INVIMA en ese dataset (p.ej. "Inactivo", "Cancelado")
     -- Otros Estados es un dataset heterogeneo por naturaleza, esto evita
     esconder el valor real detras de una etiqueta generica.
+
+    ESTADO_LISTADO_INVIMA: los 8 valores de ESTADO_COHERENCIA agrupados en
+    uno de {"vigente", "vencido", "renovacion", "otros_estados", "ninguno"}
+    -- ver `_estado_listado_invima`. METADATO DE UBICACION, NO veredicto de
+    vigencia: dice en cual archivo/listado se encontro el registro. Sirve para
+    filtrar el universo auditable (ver `filtrar_universo_auditable`) sin depender
+    de los 8 valores finos.
+
+    ESTADO_CUM_INVIMA: el veredicto de vigencia real de INVIMA
+    ("Activo"/"Inactivo"), independiente del listado donde aparece el registro.
+    Se propaga desde Vigentes/Vencidos/Otros Estados/Renovacion con la misma
+    logica de "completa vacios, nunca pisa" que las fechas. Este es el campo
+    correcto para determinar si un medicamento sigue vigente en INVIMA, no
+    ESTADO_LISTADO_INVIMA.
+
+    FECHA_ACTIVO_INVIMA / FECHA_INACTIVO_INVIMA / FECHA_VENCIMIENTO_INVIMA:
+    la fecha equivalente que trae INVIMA para ese CODIGO_INTERNO, sea cual
+    sea el dataset que resolvio la fila (Vigentes, Vencidos, Otros Estados o
+    Tramite de Renovacion -- los 4 pasan por `_aplicar_dataset_auxiliar` o
+    por el merge directo contra Vigentes). Vacio si ninguno de esos datasets
+    trae esa fecha para el codigo -- nunca se inventa un valor.
 
     TIPO_SIN_CORRESPONDENCIA (solo poblado cuando ESTADO_COHERENCIA queda en
     sin_correspondencia_invima): distingue un codigo que SIGUE el formato
@@ -1672,12 +1896,31 @@ def auditar_coherencia(
     estado = estado.where(campos_con_diferencia == "", EstadoCoherencia.CON_DIFERENCIAS.value)
     estado = estado.where(tiene_correspondencia, EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value)
 
-    if df_invima_vencidos is not None and not df_invima_vencidos.empty:
-        codigos_vencidos = set(
-            df_invima_vencidos["CODIGO_INTERNO"].dropna().astype(str).str.strip()
-        )
-        es_vencido = (~tiene_correspondencia) & gemanet["_CLAVE_CRUCE_INVIMA"].isin(codigos_vencidos)
-        estado = estado.where(~es_vencido, EstadoCoherencia.VENCIDO_EN_INVIMA.value)
+    estado_invima_detalle = pd.Series("", index=combinado.index)
+    # Fecha ya resuelta por el merge contra Vigentes (NaT si esta fila no tuvo
+    # correspondencia ahi) -- ver _FECHAS_INVIMA_PROPAGABLES y el docstring de
+    # _aplicar_dataset_auxiliar: se completa, nunca se pisa, con la fecha
+    # equivalente de Vencidos/Otros Estados/Renovacion.
+    fechas_invima = {
+        columna_final: _columna_fecha(combinado, columna_final)
+        for columna_final in _FECHAS_INVIMA_PROPAGABLES
+    }
+
+    # ESTADO_CUM ya resuelto por el merge contra Vigentes (NaN si esta fila no
+    # tuvo correspondencia ahi) -- se completa, nunca se pisa, con el
+    # ESTADO_CUM equivalente de Vencidos/Otros Estados/Renovacion (misma
+    # prioridad y patrón que las fechas).
+    estado_cum_invima = _columna_o_vacia(combinado, "ESTADO_CUM_INVIMA")
+
+    # Vencidos usaba una asignacion manual de `estado` que nunca pasaba por
+    # _aplicar_dataset_auxiliar -- las 3 fechas de INVIMA quedaban NaT para
+    # el 100% de los codigos "vencido_en_invima" aunque el dataset de
+    # Vencidos SI trae fechaactivo/fechainactivo/fechavencimiento (mismas 29
+    # columnas que Vigentes). Caso real diagnosticado: 20102710-2 (2026-09-01).
+    estado, estado_invima_detalle, fechas_invima, estado_cum_invima = _aplicar_dataset_auxiliar(
+        estado, estado_invima_detalle, fechas_invima, estado_cum_invima, gemanet["_CLAVE_CRUCE_INVIMA"],
+        df_invima_vencidos, EstadoCoherencia.VENCIDO_EN_INVIMA.value,
+    )
 
     # Otros Estados y Tramite de Renovacion solo se evaluan sobre lo que
     # Vencidos dejo sin resolver -- ver _aplicar_dataset_auxiliar y el orden
@@ -1699,19 +1942,18 @@ def auditar_coherencia(
         ignore_index=True,
     ) if any(d is not None and not d.empty for d in [df_invima_renovacion, otros_estados_como_renovacion]) else None
 
-    estado_invima_detalle = pd.Series("", index=combinado.index)
     # Los vigentes van PRIMERO: si un codigo aparece tanto aqui como en el resto
     # de Otros Estados, la lectura correcta es la que dice que sigue vigente.
-    estado, estado_invima_detalle = _aplicar_dataset_auxiliar(
-        estado, estado_invima_detalle, gemanet["_CLAVE_CRUCE_INVIMA"],
+    estado, estado_invima_detalle, fechas_invima, estado_cum_invima = _aplicar_dataset_auxiliar(
+        estado, estado_invima_detalle, fechas_invima, estado_cum_invima, gemanet["_CLAVE_CRUCE_INVIMA"],
         otros_estados_vigentes, EstadoCoherencia.VIGENTE_NO_COMERCIALIZADO_INVIMA.value,
     )
-    estado, estado_invima_detalle = _aplicar_dataset_auxiliar(
-        estado, estado_invima_detalle, gemanet["_CLAVE_CRUCE_INVIMA"],
+    estado, estado_invima_detalle, fechas_invima, estado_cum_invima = _aplicar_dataset_auxiliar(
+        estado, estado_invima_detalle, fechas_invima, estado_cum_invima, gemanet["_CLAVE_CRUCE_INVIMA"],
         otros_estados_resto, EstadoCoherencia.ENCONTRADO_EN_OTRO_ESTADO_INVIMA.value,
     )
-    estado, estado_invima_detalle = _aplicar_dataset_auxiliar(
-        estado, estado_invima_detalle, gemanet["_CLAVE_CRUCE_INVIMA"],
+    estado, estado_invima_detalle, fechas_invima, estado_cum_invima = _aplicar_dataset_auxiliar(
+        estado, estado_invima_detalle, fechas_invima, estado_cum_invima, gemanet["_CLAVE_CRUCE_INVIMA"],
         df_renovacion_combinado, EstadoCoherencia.EN_TRAMITE_RENOVACION_INVIMA.value,
     )
 
@@ -1722,8 +1964,7 @@ def auditar_coherencia(
     # aparezca en INVIMA -- es que INVIMA no aplica (paso 4, ciclo 2).
     # CLASIFICADO puede no existir en algunos DataFrames de prueba: verificar primero.
     if "CLASIFICADO" in gemanet.columns:
-        valores_creacion_propia = set(SW_RESOLUCION_A_CLASIFICADO.values())
-        es_creacion_propia = gemanet["CLASIFICADO"].isin(valores_creacion_propia)
+        es_creacion_propia = gemanet["CLASIFICADO"].isin(CLASIFICADO_VALORES_CREACION_PROPIA)
         estado = estado.where(~es_creacion_propia, EstadoCoherencia.NO_VALIDA_CONTRA_INVIMA.value)
 
     # "sin_correspondencia_invima" a secas no distingue dos poblaciones muy
@@ -1761,13 +2002,21 @@ def auditar_coherencia(
     inconsistencia_fechas = _validar_fechas_activo(reporte_gemanet)
     activo_gemanet = _columna_o_vacia(reporte_gemanet, "ACTIVO").str.strip().str.upper()
     activo_vencido_en_invima = activo_gemanet.eq("SI") & (estado.values == EstadoCoherencia.VENCIDO_EN_INVIMA.value)
+    # `ya_tenia_hallazgo` se calcula ANTES de tocar la Serie y las dos ramas
+    # se derivan de esa foto. Bug real (2026-09-01, visible en 20102710-2):
+    # encadenar dos `.mask()` hacia que el segundo evaluara la Serie YA
+    # modificada por el primero, asi que la fila que acababa de recibir el
+    # aviso volvia a cumplir "no esta vacia" y se lo anexaba una segunda vez
+    # ("...VENCIDO en INVIMA; ...VENCIDO en INVIMA").
+    aviso_vencido_y_activo = "ACTIVO=SI pero el registro sanitario esta VENCIDO en INVIMA"
+    ya_tenia_hallazgo = inconsistencia_fechas != ""
     inconsistencia_fechas = inconsistencia_fechas.mask(
-        activo_vencido_en_invima & (inconsistencia_fechas == ""),
-        "ACTIVO=SI pero el registro sanitario esta VENCIDO en INVIMA",
+        activo_vencido_en_invima & ~ya_tenia_hallazgo,
+        aviso_vencido_y_activo,
     )
     inconsistencia_fechas = inconsistencia_fechas.mask(
-        activo_vencido_en_invima & (inconsistencia_fechas != ""),
-        inconsistencia_fechas + "; ACTIVO=SI pero el registro sanitario esta VENCIDO en INVIMA",
+        activo_vencido_en_invima & ya_tenia_hallazgo,
+        inconsistencia_fechas + "; " + aviso_vencido_y_activo,
     )
 
     resultado = reporte_gemanet.copy()
@@ -1778,6 +2027,16 @@ def auditar_coherencia(
     # siendo el codigo real de Gemma Net, nunca se reescribe.
     resultado["CUM_RECONSTRUIDO"] = clave_cruce_invima.where(es_cum_con_sufijo_atc, "").values
     resultado["ESTADO_COHERENCIA"] = estado.values
+    # Los 8 valores de ESTADO_COHERENCIA agrupados por "en que listado oficial
+    # de INVIMA aparece hoy" -- ver _estado_listado_invima. Cerca de
+    # ESTADO_COHERENCIA a proposito: es la misma pregunta, resumida.
+    # METADATO DE UBICACION, NO veredicto de vigencia: es el archivo donde se
+    # encontro el registro. Para vigencia usa ESTADO_CUM_INVIMA (ver abajo).
+    resultado["ESTADO_LISTADO_INVIMA"] = _estado_listado_invima(estado).values
+    # El veredicto de vigencia real de INVIMA ("Activo"/"Inactivo"), independiente
+    # del listado donde aparece el registro. Este es el campo correcto para
+    # determinar si un medicamento sigue vigente en INVIMA.
+    resultado["ESTADO_CUM_INVIMA"] = estado_cum_invima.values
     resultado["ESTADO_INVIMA_DETALLE"] = estado_invima_detalle.values
     resultado["CAMPOS_CON_DIFERENCIA"] = campos_con_diferencia.values
     resultado["PORCENTAJE_CALIDAD"] = porcentaje_calidad.values
@@ -1819,18 +2078,65 @@ def auditar_coherencia(
     # que se pueda acotar por rango ("los que vencen en 6 meses") en vez de
     # tener que esperar a que venzan para enterarse. Vacio si la fecha es un
     # comodin o no hay correspondencia: no se inventa una cuenta regresiva.
-    vencimiento = _columna_fecha(combinado, "FECHA_VENCIMIENTO_INVIMA")
+    #
+    # `fechas_invima["FECHA_VENCIMIENTO_INVIMA"]` en vez de releer `combinado`:
+    # ya trae completadas (nunca pisadas, ver _aplicar_dataset_auxiliar) las
+    # filas que solo resolvieron Otros Estados/Renovacion, no Vigentes.
+    vencimiento = fechas_invima["FECHA_VENCIMIENTO_INVIMA"]
     dias_para_vencer = (vencimiento - pd.Timestamp.now().normalize()).dt.days
     dias_para_vencer = dias_para_vencer.where(
         _es_fecha_real(vencimiento) & tiene_correspondencia
     )
+    resultado["FECHA_ACTIVO_INVIMA"] = fechas_invima["FECHA_ACTIVO_INVIMA"].values
+    resultado["FECHA_INACTIVO_INVIMA"] = fechas_invima["FECHA_INACTIVO_INVIMA"].values
     resultado["FECHA_VENCIMIENTO_INVIMA"] = vencimiento.values
     resultado["DIAS_PARA_VENCER_INVIMA"] = dias_para_vencer.values
+
+    # VIGENCIA NO CONFIRMABLE -- bug real reportado por el usuario (2026-09-02)
+    # con el caso 19931314-1: la auditoria lo daba como "Vigentes y correctos"
+    # y al revisar INVIMA a mano ya no estaba en el listado de vigentes.
+    #
+    # Causa: aparecer en el dataset "Vigentes" solo significa que estaba
+    # vigente AL CORTE DEL CATALOGO, no hoy. El catalogo en uso es el respaldo
+    # local de 2022 (corte 2022-12-15; Socrata lleva meses devolviendo 0 filas)
+    # y ese CUM traia FECHA_VENCIMIENTO = 2023-04-03 -- vencido hace mas de tres
+    # años. Nunca se comparaba esa fecha contra hoy: se afirmaba "vigente" con
+    # el dato del listado y nada mas. Medido: 16.146 de 22.534 "correctos"
+    # (el 72 %) tienen el registro ya vencido segun la propia fecha de INVIMA.
+    #
+    # No se afirma "VENCIDO" -- eso seria la otra decision a ciegas: el
+    # registro pudo renovarse despues del corte y esta copia no se entera
+    # (mismo criterio que ya aplica `_corte_catalogo_invima`). Se afirma lo
+    # unico que SI se sabe: que con este catalogo no se puede confirmar la
+    # vigencia, y por que.
+    corte_invima = _corte_catalogo_invima(df_invima)
+    corte_texto = corte_invima.strftime("%Y-%m-%d") if corte_invima is not None else "desconocido"
+    vencimiento_pasado = _es_fecha_real(vencimiento) & (vencimiento < pd.Timestamp.now().normalize())
+    vigencia_no_confirmable = pd.Series("", index=combinado.index, dtype="object")
+    vigencia_no_confirmable[vencimiento_pasado] = (
+        "Vencido el "
+        + vencimiento[vencimiento_pasado].dt.strftime("%Y-%m-%d")
+        + " segun la propia FECHA_VENCIMIENTO que reporta INVIMA. "
+        f"(El catalogo en uso llega hasta {corte_texto}, asi que si hubo una renovacion "
+        "posterior no aparece aca: confirmarla en INVIMA antes de reactivar.)"
+    )
+    resultado["VIGENCIA_NO_CONFIRMABLE"] = vigencia_no_confirmable.values
+
+    # Dimension 11 -- coherencia de fechas entre las dos fuentes. El universo
+    # es "INVIMA sabe algo de este codigo" (ESTADO_LISTADO_INVIMA != ninguno),
+    # NO `tiene_correspondencia`: esa ultima solo cubre lo que cruzo contra
+    # Vigentes, y el punto es que las fechas ahora tambien llegan desde
+    # Vencidos/Otros Estados/Renovacion (caso real 20102710-2, que vive solo
+    # en Vencidos y antes no tenia ninguna fecha de INVIMA con que contrastar).
+    invima_sabe_del_codigo = _estado_listado_invima(estado).ne("ninguno")
+    resultado["COHERENCIA_FECHAS_INVIMA"] = _comparar_fechas_con_invima(
+        combinado, fechas_invima, invima_sabe_del_codigo
+    ).values
 
     novedad_vigencia, detalle_vigencia = _contrastar_vigencia_invima(
         combinado,
         tiene_correspondencia,
-        _corte_catalogo_invima(df_invima),
+        corte_invima,
         estado_coherencia=estado,
     )
     resultado["NOVEDAD_VIGENCIA_INVIMA"] = novedad_vigencia.values
@@ -1876,6 +2182,11 @@ def auditar_coherencia(
     )
     resultado["NATURALEZA_HALLAZGO"] = naturaleza.values
     resultado["ACCION_SUGERIDA"] = naturaleza.map(ACCION_POR_NATURALEZA).fillna("").values
+    # Se calcula al final: necesita CODIGO_INTERNO, CUM_RECONSTRUIDO y ACTIVO
+    # ya puestos en `resultado` (busca la fila HERMANA dentro del mismo
+    # DataFrame). Ver el docstring para el hallazgo de produccion que motiva
+    # esta columna.
+    resultado["FILA_LEGADA_DUPLICADA"] = _detectar_fila_legada_duplicada(resultado)
     resultado.attrs["advertencias_calidad"] = _detectar_campos_sistemicamente_no_diligenciados(
         reporte_gemanet
     ) + _detectar_capa_legada_atc(tipo_codigo_interno) + _detectar_codigos_huerfanos(estado, activo_gemanet) + _detectar_solape_vencidos_renovacion(
@@ -1896,3 +2207,186 @@ def auditar_coherencia(
     if mascara_codigos_huerfanos.any():
         resultado.attrs["codigos_huerfanos_mascara"] = mascara_codigos_huerfanos
     return resultado
+
+
+# TIPO_CODIGO_INTERNO que SI son medicamentos CUM auditable contra el
+# catalogo de INVIMA -- ver design/tipos_codigo_interno.md. El resto (ium,
+# atc_expediente_consecutivo, registro_sanitario, forma_cups, codigo_propio,
+# sin_clasificar) no sigue el formato EXPEDIENTE-CONSECUTIVO real y no tiene
+# sentido cruzarlo contra ese catalogo.
+# SOLO "cum" -- el EXPEDIENTE-CONSECUTIVO limpio. Pedido explicito y repetido
+# del usuario (2026-09-01): "codigos legados no deben aparecer".
+#
+# "cum_con_sufijo_atc" (formato EXPEDIENTE(8)-CONSECUTIVO(2)-0ATC(7)) SE
+# EXCLUYE: se habia incluido por ser "CUM valido", pero verificado contra
+# produccion es la capa legada, y es justo donde viven los suplementos e
+# insumos que el negocio no quiere auditar (ENSURE, PEDIASURE, REPLENA...).
+# Ademas su EXPEDIENTE real es "-999" en la base y no tienen fechas: son
+# registros que nunca se migraron bien, no medicamentos con registro
+# sanitario que valga la pena contrastar contra INVIMA.
+_TIPOS_CODIGO_AUDITABLES = ["cum"]
+
+
+def _detectar_fila_legada_duplicada(resultado: pd.DataFrame) -> pd.Series:
+    """Filas de codigo legado que conviven con OTRA fila del mismo medicamento
+    bajo su CUM real -- y en que estado esta cada una.
+
+    Hallazgo verificado contra la base de produccion el 2026-09-01, a partir de
+    un caso que reporto el usuario (`00028983-02-0N01BB02`). Gemma Net guarda
+    DOS registros del mismo medicamento:
+
+        codigo_interno         fecha_inicio  fecha_fin   sw_activo  expediente
+        00028983-02-0N01BB02   NULL          NULL        1          -999
+        28983-2                2006-11-10    2007-11-19  0          28983
+
+    La fila legada no tiene fechas ni expediente (por eso la auditoria las
+    mostraba vacias, que parecia un defecto de lectura y no lo era), pero
+    **sigue ACTIVA**, mientras el CUM real ya esta correctamente inactivo.
+    Medido sobre las 140 filas `cum_con_sufijo_atc`: 119 tienen hermana, y en
+    **19** la legada esta activa con el CUM real inactivo -- el medicamento se
+    ve atendido bajo su codigo bueno y sin embargo se puede seguir formulando
+    por el legado.
+
+    NO se fusionan ni se deduplican las filas (regla de diseno #1: fusionar
+    filas con el mismo medicamento pierde informacion). Se REPORTA la relacion
+    para que una persona decida, que es lo que el proyecto siempre hace con lo
+    ambiguo.
+
+    Vacio en las filas que no son legadas o que no tienen hermana.
+    """
+    if "CUM_RECONSTRUIDO" not in resultado.columns:
+        return pd.Series("", index=resultado.index, dtype="object")
+    codigo = _columna_o_vacia(resultado, "CODIGO_INTERNO").str.strip()
+    reconstruido = _columna_o_vacia(resultado, "CUM_RECONSTRUIDO").str.strip()
+    activo = _columna_o_vacia(resultado, "ACTIVO").str.strip().str.upper()
+
+    # Estado de la fila hermana, buscada por su CODIGO_INTERNO. `map` sobre un
+    # indice de Series, no un merge: son 200.000 filas y esto es una sola
+    # busqueda hash vectorizada.
+    activo_por_codigo = pd.Series(activo.values, index=codigo.values)
+    activo_por_codigo = activo_por_codigo[~activo_por_codigo.index.duplicated(keep="first")]
+    activo_hermana = reconstruido.map(activo_por_codigo)
+
+    tiene_hermana = reconstruido.ne("") & activo_hermana.notna()
+    diagnostico = pd.Series("", index=resultado.index, dtype="object")
+
+    # El caso de riesgo: la legada ACTIVA y el CUM real ya INACTIVO.
+    riesgo = tiene_hermana & activo.eq("SI") & activo_hermana.eq("NO")
+    diagnostico[riesgo] = (
+        "Codigo legado ACTIVO que duplica a " + reconstruido[riesgo]
+        + ", el CUM real, que ya esta INACTIVO. Se puede seguir formulando por este "
+        "codigo aunque el medicamento ya se dio de baja bajo su codigo bueno."
+    )
+    # El resto de las convivencias: informativo, no riesgo.
+    resto = tiene_hermana & ~riesgo
+    diagnostico[resto] = (
+        "Convive con " + reconstruido[resto] + ", el CUM real del mismo medicamento "
+        "(activo alla: " + activo_hermana[resto].fillna("?") + ")."
+    )
+    return diagnostico
+
+
+def filtrar_universo_auditable(resultado: pd.DataFrame) -> pd.DataFrame:
+    """Recorta lo que devuelve `auditar_coherencia()` al universo que
+    negocio SI quiere ver en la auditoria de coherencia -- decision
+    confirmada explicitamente por el usuario (2026-09-01). Recibe el
+    DataFrame ya calculado (con TIPO_CODIGO_INTERNO, ESTADO_COHERENCIA,
+    ESTADO_LISTADO_INVIMA y ESTADO_CUM_INVIMA) y aplica, EN ORDEN, tres
+    mascaras booleanas (vectorizado, sin apply/bucle):
+
+    1. TIPO_CODIGO_INTERNO en {"cum", "cum_con_sufijo_atc"} -- ver
+       `_TIPOS_CODIGO_AUDITABLES`: excluye codigo legado/CUPS/insumo que no
+       es un medicamento con registro sanitario real.
+    2. Excluye ESTADO_COHERENCIA == no_valida_contra_invima -- medicamentos
+       ancestrales y plantas medicinales (creacion propia de la entidad, ver
+       CLASIFICADO_VALORES_CREACION_PROPIA): INVIMA no aplica, no es un
+       hallazgo de coherencia.
+    3. Activos, con una excepcion: se conserva la fila si ACTIVO=='SI', o si
+       ACTIVO!='SI' pero ESTADO_CUM_INVIMA=='Activo' -- un inactivo en Gemma
+       Net que INVIMA SI declara vigente (ESTADO_CUM_INVIMA="Activo") es el
+       unico caso de inactivo que negocio quiere ver (la novedad de mayor
+       riesgo). Equivale a `ACTIVO=='SI' OR ESTADO_CUM_INVIMA=='Activo'`
+       (A o (no A y B) es A o B), se deja como una sola mascara por eso.
+       Degrada en cascada si ESTADO_CUM_INVIMA no esta disponible (snapshot
+       viejo): usa ESTADO_LISTADO_INVIMA como fallback, y si eso tampoco esta
+       disponible, aplica el criterio estricto (solo activos).
+
+    Suplementos: pedido tambien de negocio, pero NO se filtran aca. Ni
+    CLASIFICADO ni TIPO_CODIGO_INTERNO tienen hoy una categoria para
+    "suplemento", y `design/tipos_codigo_interno.md` no reporta ninguna
+    senal estructural verificada contra produccion para identificarlos
+    (a diferencia de paquete/insumo/CUPS, que si tienen una pista
+    documentada, aunque de prioridad baja). Inventar una regla por texto
+    (ej. buscar "SUPLEMENTO" en DESCRIPCION) seria una decision a ciegas
+    sobre datos reales sin verificar -- queda pendiente, igual que
+    paquetes/insumos/CUPS en ese documento, hasta que exista una senal
+    confiable. Los filtros 1-3 ya cubren la mayoria de los casos no
+    deseados (ancestral, planta, sin expediente real).
+    """
+    # Cada mascara se aplica solo si estan las columnas que necesita. Un
+    # snapshot escrito por una version anterior de `auditar_coherencia` puede
+    # no traer TIPO_CODIGO_INTERNO o ESTADO_LISTADO_INVIMA, y reventar con
+    # KeyError dejaria la seccion entera de auditoria en 500 hasta el proximo
+    # refresco. Degradacion EXPLICITA (regla #2): lo que no se pudo aplicar
+    # queda anotado en attrs["recorte_omitido"], nunca se asume en silencio
+    # que el recorte se hizo completo.
+    universo = pd.Series(True, index=resultado.index)
+    omitidos: list[str] = []
+
+    if "TIPO_CODIGO_INTERNO" in resultado.columns:
+        universo &= resultado["TIPO_CODIGO_INTERNO"].isin(_TIPOS_CODIGO_AUDITABLES)
+    else:
+        omitidos.append("TIPO_CODIGO_INTERNO (no se pudo excluir codigo legado/CUPS/insumo)")
+
+    if "ESTADO_COHERENCIA" in resultado.columns:
+        universo &= resultado["ESTADO_COHERENCIA"] != EstadoCoherencia.NO_VALIDA_CONTRA_INVIMA.value
+    else:
+        omitidos.append("ESTADO_COHERENCIA (no se pudo excluir ancestrales/plantas)")
+
+    activo = _columna_o_vacia(resultado, "ACTIVO").str.strip().str.upper()
+    if "ESTADO_CUM_INVIMA" in resultado.columns:
+        # Criterio correcto: usar ESTADO_CUM_INVIMA (veredicto de vigencia real
+        # de INVIMA), no ESTADO_LISTADO_INVIMA (que es solo ubicacion en cual
+        # archivo aparece el registro).
+        universo &= activo.eq("SI") | resultado["ESTADO_CUM_INVIMA"].eq("Activo")
+    elif "ESTADO_LISTADO_INVIMA" in resultado.columns:
+        # Fallback: si el snapshot no tiene ESTADO_CUM_INVIMA (version anterior),
+        # usar ESTADO_LISTADO_INVIMA con su limitacion conocida (ubicacion, no
+        # vigencia).
+        universo &= activo.eq("SI") | resultado["ESTADO_LISTADO_INVIMA"].eq("vigente")
+        omitidos.append("ESTADO_CUM_INVIMA (se uso ESTADO_LISTADO_INVIMA como fallback para la excepcion inactivo/vigente)")
+    elif "ACTIVO" in resultado.columns:
+        # Sin ESTADO_CUM_INVIMA ni ESTADO_LISTADO_INVIMA no se puede reconocer
+        # la excepcion inactivo-aqui/vigente-en-INVIMA, asi que se aplica el
+        # criterio estricto (solo activos) y se anota que la excepcion quedo
+        # fuera -- perder de vista un activo seria peor que perder la excepcion.
+        universo &= activo.eq("SI")
+        omitidos.append("ESTADO_CUM_INVIMA (no se pudo conservar la excepcion inactivo/vigente-en-INVIMA)")
+    else:
+        omitidos.append("ACTIVO (no se pudo excluir inactivos)")
+
+    filtrado = resultado.loc[universo].copy()
+    # Las mascaras booleanas de attrs (ej. "capa_legada_atc_mascara",
+    # "codigos_huerfanos_mascara", "campos_calidad_mascaras") vienen
+    # indexadas sobre las filas de ANTES de este filtro -- recortarlas al
+    # mismo indice que "filtrado" evita que un consumidor futuro haga
+    # `filtrado.loc[mascara_vieja]` y reciba filas desalineadas o un
+    # IndexError silencioso.
+    attrs_recortados = {}
+    for clave, valor in resultado.attrs.items():
+        if isinstance(valor, pd.Series):
+            attrs_recortados[clave] = valor.reindex(filtrado.index)
+        elif isinstance(valor, dict):
+            attrs_recortados[clave] = {
+                subclave: subvalor.reindex(filtrado.index) if isinstance(subvalor, pd.Series) else subvalor
+                for subclave, subvalor in valor.items()
+            }
+        else:
+            attrs_recortados[clave] = valor
+    # Cuantas filas habia antes del recorte y que criterios no se pudieron
+    # aplicar: sin esto, un snapshot viejo servido a medio filtrar se veria
+    # igual que uno filtrado bien (ver el bloque de `omitidos` arriba).
+    attrs_recortados["filas_antes_del_recorte"] = len(resultado)
+    attrs_recortados["recorte_omitido"] = omitidos
+    filtrado.attrs = attrs_recortados
+    return filtrado

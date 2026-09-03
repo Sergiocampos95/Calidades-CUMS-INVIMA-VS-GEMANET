@@ -63,6 +63,15 @@ SELECT
         WHEN m.sw_resolucion = 2 THEN 'Medicamento Ancestral'
         ELSE 'No'
     END AS "CLASIFICADO",
+    -- MARCA_MEDICAMENTO y UNIDAD_MEDIDA quedan como CODIGO crudo, no como
+    -- texto ya resuelto: coherencia_invima.py hace su propio JOIN contra el
+    -- codigo (_a_entero + comparacion contra siglas/catalogo) para decidir
+    -- si coincide con INVIMA, y guarda el texto resuelto aparte en
+    -- MARCA_MEDICAMENTO_GEMANET/UNIDAD_MEDIDA_GEMANET. Resolver el texto
+    -- aca (con un JOIN a tb_marca_medicamento/tb_unidad_medida) rompe esa
+    -- comparacion por codigo -- bug real 2026-08-31: ESTADO_COHERENCIA
+    -- "correcto" caia de 31.108 a 0 porque el texto resuelto aca nunca
+    -- calzaba exacto contra el titular/unidad de INVIMA.
     m.marca_medicamento                                 AS "MARCA_MEDICAMENTO",
     m.expediente                                        AS "EXPEDIENTE",
     m.consecutivo                                       AS "CONSECUTIVO",

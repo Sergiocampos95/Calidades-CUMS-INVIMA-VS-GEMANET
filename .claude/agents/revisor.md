@@ -1,6 +1,6 @@
 ---
 name: revisor
-description: Revisa codigo ya escrito buscando bugs de correctitud, violaciones de las reglas de negocio y problemas de rendimiento a escala de 200.000 filas. Usalo despues de que implementador o ui-streamlit terminen un cambio, o antes de un commit. Solo lee y reporta, nunca edita — asi no tapa lo que encuentra.
+description: Revisa codigo ya escrito buscando bugs de correctitud, violaciones de las reglas de negocio y problemas de rendimiento a escala de 200.000 filas. Usalo despues de que implementador o ui-vite terminen un cambio, o antes de un commit. Solo lee y reporta, nunca edita — asi no tapa lo que encuentra.
 tools: Read, Grep, Glob, Bash
 model: opus
 effort: high
@@ -34,6 +34,12 @@ Empeza por `git diff` y `git status` para ver que cambio realmente.
    planas. Eso es una regresion, reportala como tal.
 5. **Fugas de datos.** Cualquier cosa que meta contenido de `data/` en el repo,
    en un log o en un reporte.
+6. **Si el diff toca `frontend/` o `backend/`** (ver `ui-vite`): HTML sin
+   escapar antes de `innerHTML` (XSS), color hardcodeado en vez de
+   `var(--token)` (se rompe en el tema que no se probo), un router que
+   importa `gemanet_db`/ejecuta el pipeline dentro de un request en vez de
+   solo leer `worker/almacen_snapshots.py`, o una tabla nueva que no usa
+   `TablaFiltrable`.
 
 ## Como reportas
 

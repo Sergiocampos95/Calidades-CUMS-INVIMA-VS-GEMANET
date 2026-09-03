@@ -8,8 +8,8 @@ pesado -- mismo criterio ya documentado en cadena_calidad.py."""
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
-import sys
 
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException
@@ -22,10 +22,20 @@ from backend.app.schemas import (
     DimensionesCalidad,
     HallazgoNaturaleza,
     PaginaTabla,
+    SeccionCalidad,
 )
-
-from gemma_cum_loader.auditoria.calidades import Calidad, calidades_auditoria
-from gemma_cum_loader.auditoria.coherencia_invima import ACCION_POR_NATURALEZA
+from gemma_cum_loader.auditoria.calidades import (
+    ETIQUETAS_CAMPO_DIFERENCIA,
+    Calidad,
+    calidad_admite_secciones,
+    calidades_auditoria,
+    filtrar_por_seccion,
+    secciones_de_diferencia,
+)
+from gemma_cum_loader.auditoria.coherencia_invima import (
+    ACCION_POR_NATURALEZA,
+    filtrar_universo_auditable,
+)
 from worker.almacen_snapshots import leer_tabla
 
 router = APIRouter(prefix="/auditoria", tags=["calidad del catalogo"])
@@ -35,11 +45,6 @@ _MENSAJE_SIN_AUDITORIA = (
     "Consulta /salud para ver el estado del ultimo refresco."
 )
 
-# CACHE DESHABILITADO TEMPORALMENTE PARA DEBUG
-# Mismo criterio de cache que cadena_calidad.py: una entrada por carpeta,
-# se reemplaza sola al llegar un snapshot nuevo -- nunca crece sin limite.
-_CACHE_CALIDADES: dict[str, tuple[str, list[Calidad]]] = {}
-
 
 def _tabla_auditoria(carpeta: Path):
     df = leer_tabla("auditoria", carpeta)
@@ -48,42 +53,54 @@ def _tabla_auditoria(carpeta: Path):
     return df
 
 
+def _con_estado_listado_invima(calidad: Calidad, auditoria: pd.DataFrame) -> Calidad:
+    """Agrega ESTADO_LISTADO_INVIMA y ESTADO_CUM_INVIMA a cada calidad, al
+    lado de ACTIVO -- pedido explicito del usuario (2026-09-02): comparar el
+    estado local con el de INVIMA en la misma fila, en TODAS las tablas de
+    calidades. ESTADO_CUM_INVIMA es la vigencia real de INVIMA
+    (Activo/Inactivo), mientras ESTADO_LISTADO_INVIMA es solo metadato de
+    ubicacion (vigente/vencido/renovacion/otros_estados).
+    No toca `calidades_auditoria()` (src/gemma_cum_loader): se inserta la
+    columna aca, en la capa de lectura."""
+    # Ya inyectadas por calidades.py, nada que hacer
+    if "ESTADO_CUM_INVIMA" in calidad.columnas and "ESTADO_LISTADO_INVIMA" in calidad.columnas:
+        return calidad
+
+    columnas = list(calidad.columnas)
+    df_tabla = calidad.df_tabla.copy()
+
+    # Inyectar ESTADO_CUM_INVIMA si falta (despues de ACTIVO)
+    if "ESTADO_CUM_INVIMA" not in columnas and "ESTADO_CUM_INVIMA" in auditoria.columns:
+        if "ACTIVO" in columnas:
+            columnas.insert(columnas.index("ACTIVO") + 1, "ESTADO_CUM_INVIMA")
+        else:
+            columnas.insert(0, "ESTADO_CUM_INVIMA")
+        df_tabla["ESTADO_CUM_INVIMA"] = auditoria.loc[df_tabla.index, "ESTADO_CUM_INVIMA"]
+
+    # Inyectar ESTADO_LISTADO_INVIMA si falta (despues de ESTADO_CUM_INVIMA)
+    if "ESTADO_LISTADO_INVIMA" not in columnas and "ESTADO_LISTADO_INVIMA" in auditoria.columns:
+        if "ESTADO_CUM_INVIMA" in columnas:
+            columnas.insert(columnas.index("ESTADO_CUM_INVIMA") + 1, "ESTADO_LISTADO_INVIMA")
+        elif "ACTIVO" in columnas:
+            columnas.insert(columnas.index("ACTIVO") + 1, "ESTADO_LISTADO_INVIMA")
+        else:
+            columnas.append("ESTADO_LISTADO_INVIMA")
+        df_tabla["ESTADO_LISTADO_INVIMA"] = auditoria.loc[df_tabla.index, "ESTADO_LISTADO_INVIMA"]
+
+    df_tabla = df_tabla[columnas]
+    return replace(calidad, columnas=tuple(columnas), df_tabla=df_tabla)
+
+
 def _calidades(carpeta: Path) -> list[Calidad]:
     auditoria = _tabla_auditoria(carpeta)
-    # CACHE DESHABILITADO - Siempre recalcula para debug
-    calidades = calidades_auditoria(auditoria)
-    return calidades
-
-
-@router.get("/test-backend-calc")
-def test_calc(carpeta: Path = Depends(carpeta_snapshots)) -> dict:
-    """Debug: Return raw calculation without any response_model"""
-    auditoria = leer_tabla("auditoria", carpeta)
-    if auditoria is None:
-        return {"error": "No auditoria"}
-
-    # Call calidades_auditoria directly
-    # Force fresh import
-    if 'gemma_cum_loader.auditoria.calidades' in sys.modules:
-        del sys.modules['gemma_cum_loader.auditoria.calidades']
-    from gemma_cum_loader.auditoria.calidades import calidades_auditoria
-
     cals = calidades_auditoria(auditoria)
-    return {
-        "count": len(cals),
-        "total": sum(c.medicamentos for c in cals),
-        "detalles": [{"nombre": c.nombre, "meds": c.medicamentos} for c in cals]
-    }
+    return [_con_estado_listado_invima(c, auditoria) for c in cals]
+
 
 @router.get("/calidades", response_model=list[CalidadResumen])
 def listar_calidades(carpeta: Path = Depends(carpeta_snapshots)) -> list[CalidadResumen]:
     cals = _calidades(carpeta)
-    print(f"DEBUG: _calidades devolvió {len(cals)} calidades")
-    total_meds = sum(c.medicamentos for c in cals)
-    print(f"DEBUG: total medicamentos en calidades: {total_meds}")
-    for c in cals:
-        print(f"  {c.nombre}: {c.medicamentos}")
-    resultado = [
+    return [
         CalidadResumen(
             nombre=c.nombre,
             explica=c.explica,
@@ -93,8 +110,6 @@ def listar_calidades(carpeta: Path = Depends(carpeta_snapshots)) -> list[Calidad
         )
         for c in cals
     ]
-    print(f"DEBUG: devolviendo {len(resultado)} CalidadResumen con {total_meds} medicamentos total")
-    return resultado
 
 
 def _calidad_o_404(nombre: str, carpeta: Path) -> Calidad:
@@ -109,6 +124,36 @@ def _calidad_o_404(nombre: str, carpeta: Path) -> Calidad:
     return calidad
 
 
+@router.get("/calidades/{nombre}/secciones", response_model=list[SeccionCalidad])
+def listar_secciones_calidad(
+    nombre: str, carpeta: Path = Depends(carpeta_snapshots)
+) -> list[SeccionCalidad]:
+    """Los tipos de diferencia dentro de una calidad, de mayor a menor.
+
+    Existe porque una sola tarjeta puede traer decenas de miles de filas de
+    las que el 97 % es un unico problema (medido: 57.255 de 59.005 son
+    FECHA_FIN), y en una tabla unica los seis problemas chicos quedan
+    invisibles -- pedido del usuario (2026-09-02). Devuelve [] cuando la
+    calidad no tiene ninguna diferencia que partir (ej. "No existe en
+    INVIMA"), y tambien cuando la calidad no es de las que se seccionan (ver
+    CALIDADES_CON_SECCIONES): la UI entonces no dibuja secciones."""
+    calidad = _calidad_o_404(nombre, carpeta)
+    if not calidad_admite_secciones(nombre):
+        return []
+    return [
+        SeccionCalidad(
+            clave=s.clave,
+            etiqueta=s.etiqueta,
+            medicamentos=s.medicamentos,
+            # Humanizado aca y no en el frontend: el mapa de etiquetas vive en
+            # calidades.py junto a los campos que nombra, y duplicarlo en TS
+            # es garantia de que se desincronicen.
+            derivado_de=[ETIQUETAS_CAMPO_DIFERENCIA.get(c, c) for c in s.derivado_de],
+        )
+        for s in secciones_de_diferencia(calidad.df_tabla)
+    ]
+
+
 @router.get("/calidades/{nombre}", response_model=PaginaTabla)
 def obtener_calidad(
     nombre: str,
@@ -119,14 +164,17 @@ def obtener_calidad(
     ordenar_por: str | None = None,
     orden_descendente: bool = False,
     filtros_json: str | None = None,
+    seccion: str | None = None,
     carpeta: Path = Depends(carpeta_snapshots),
 ) -> PaginaTabla:
     calidad = _calidad_o_404(nombre, carpeta)
-    activos = (calidad.df_tabla["ACTIVO"].fillna("").astype(str).str.upper() == "SI").sum() if "ACTIVO" in calidad.df_tabla.columns else 0
-    total = len(calidad.df_tabla)
-    print(f"DEBUG obtener_calidad: {nombre} -> {activos}/{total} activos")
+    # El gate por calidad va aca tambien, y no solo en /secciones: si no, un
+    # enlace viejo con ?seccion= seguiria recortando una calidad que ya no se
+    # secciona, y la tabla mostraria menos filas de las que anuncia su tarjeta.
+    aplica = seccion is not None and calidad_admite_secciones(nombre)
+    tabla = filtrar_por_seccion(calidad.df_tabla, seccion) if aplica else calidad.df_tabla
     return paginar(
-        calidad.df_tabla,
+        tabla,
         q=q,
         limite=limite,
         offset=offset,
@@ -139,14 +187,114 @@ def obtener_calidad(
 
 @router.get("/calidades/{nombre}/valores")
 def valores_columna_calidad(
-    nombre: str, columna: str, carpeta: Path = Depends(carpeta_snapshots)
+    nombre: str,
+    columna: str,
+    seccion: str | None = None,
+    carpeta: Path = Depends(carpeta_snapshots),
 ) -> list[dict[str, object]]:
-    return valores_distintos(_calidad_o_404(nombre, carpeta).df_tabla, columna)
+    # Acota los valores a la seccion abierta: ofrecer como filtro un valor que
+    # no existe en lo que se esta viendo lleva a una tabla vacia sin explicar
+    # por que.
+    tabla = _calidad_o_404(nombre, carpeta).df_tabla
+    if seccion is not None and calidad_admite_secciones(nombre):
+        tabla = filtrar_por_seccion(tabla, seccion)
+    return valores_distintos(tabla, columna)
+
+
+# Cada dimension -> (columna que la marca, columnas utiles para entenderla).
+# Pedido del usuario (2026-09-01): "esas tarjetas deberian permitir ver cuales
+# son los medicamentos que se marcan con esa condicion" -- es el mismo
+# principio que ya rige las calidades ("cada cifra se puede abrir, no solo
+# mirar"), que a las dimensiones les faltaba.
+_COLUMNAS_BASE_DIMENSION = ["CODIGO_INTERNO", "DESCRIPCION", "ACTIVO", "ESTADO_LISTADO_INVIMA"]
+DIMENSIONES_ABRIBLES: dict[str, tuple[str, list[str]]] = {
+    "completitud": ("PORCENTAJE_COMPLETITUD_REPORTE", ["PORCENTAJE_COMPLETITUD_REPORTE"]),
+    "duplicados": ("CODIGO_DUPLICADO_EN_REPORTE", ["CODIGO_DUPLICADO_EN_REPORTE"]),
+    "fuera_de_dominio": ("VALORES_FUERA_DE_DOMINIO", ["VALORES_FUERA_DE_DOMINIO"]),
+    "inconsistencia_numerica": ("INCONSISTENCIA_NUMERICA", ["INCONSISTENCIA_NUMERICA"]),
+    "formato_invalido": ("FORMATO_CODIGO_INTERNO_INVALIDO", ["FORMATO_CODIGO_INTERNO_INVALIDO"]),
+    "integridad_referencial": ("INTEGRIDAD_REFERENCIAL_CATALOGO", ["INTEGRIDAD_REFERENCIAL_CATALOGO"]),
+}
+
+
+def _tabla_dimension(clave: str, carpeta: Path) -> pd.DataFrame:
+    """Los medicamentos que caen en una dimension. Sobre el snapshot COMPLETO,
+    igual que el contador de esa dimension: si se recortara al universo
+    auditable, la tabla no cuadraria con el numero de la tarjeta."""
+    if clave not in DIMENSIONES_ABRIBLES:
+        raise HTTPException(
+            status_code=404,
+            detail=f"'{clave}' no es una dimension reconocida. Disponibles: {', '.join(DIMENSIONES_ABRIBLES)}.",
+        )
+    columna, extra = DIMENSIONES_ABRIBLES[clave]
+    auditoria = _tabla_auditoria(carpeta)
+    if columna not in auditoria.columns:
+        return pd.DataFrame(columns=[*_COLUMNAS_BASE_DIMENSION, *extra])
+    serie = auditoria[columna]
+    if clave == "completitud":
+        # "Abrir" completitud = los que NO estan completos, ordenados por los
+        # peores primero. Un 100 % no es un hallazgo que revisar.
+        mascara = pd.to_numeric(serie, errors="coerce").fillna(100) < 100
+        filtrado = auditoria[mascara].sort_values(columna)
+    elif serie.dtype == bool:
+        filtrado = auditoria[serie]
+    else:
+        filtrado = auditoria[serie.fillna("").astype(str).str.strip().ne("")]
+    columnas = [c for c in [*_COLUMNAS_BASE_DIMENSION, *extra] if c in filtrado.columns]
+    return filtrado[columnas].copy()
+
+
+@router.get("/dimensiones/{clave}", response_model=PaginaTabla)
+def obtener_dimension(
+    clave: str,
+    q: str | None = None,
+    limite: int = LIMITE_PREVISUALIZACION_DEFECTO,
+    offset: int = 0,
+    todo: bool = False,
+    ordenar_por: str | None = None,
+    orden_descendente: bool = False,
+    filtros_json: str | None = None,
+    carpeta: Path = Depends(carpeta_snapshots),
+) -> PaginaTabla:
+    return paginar(
+        _tabla_dimension(clave, carpeta),
+        q=q,
+        limite=limite,
+        offset=offset,
+        todo=todo,
+        ordenar_por=ordenar_por,
+        orden_descendente=orden_descendente,
+        filtros_json=filtros_json,
+    )
+
+
+@router.get("/dimensiones/{clave}/valores")
+def valores_columna_dimension(
+    clave: str, columna: str, carpeta: Path = Depends(carpeta_snapshots)
+) -> list[dict[str, object]]:
+    return valores_distintos(_tabla_dimension(clave, carpeta), columna)
 
 
 @router.get("/dimensiones", response_model=DimensionesCalidad)
 def dimensiones_calidad(carpeta: Path = Depends(carpeta_snapshots)) -> DimensionesCalidad:
+    """Las dimensiones de AUTO-consistencia del reporte contra si mismo
+    (duplicados, formato invalido, dominio, razonabilidad numerica).
+
+    Estas cuentan sobre el reporte COMPLETO a proposito, no sobre el universo
+    auditable: son deteccion de basura, y si el recorte corriera antes la fila
+    con el problema ya no existiria para contarla (medido: `formato_invalido`
+    pasaba de 1 a 0 -- no porque se arreglara el dato, sino porque la fila
+    desaparecio). Es la misma razon por la que el worker persiste el snapshot
+    entero (ver pipeline.py).
+
+    `n_total_auditado` SI es el universo auditable: es la cifra que la UI
+    muestra como "lo que auditamos", y despues de la decision del usuario
+    (2026-09-01) ese numero es el de CUMs activos, no las 199.611 filas del
+    catalogo. Los contadores de arriba y este total responden preguntas
+    distintas a proposito -- por eso no coinciden, y por eso se documenta.
+    """
     auditoria = _tabla_auditoria(carpeta)
+    n_auditable = len(filtrar_universo_auditable(auditoria))
     completitud = (
         auditoria["PORCENTAJE_COMPLETITUD_REPORTE"].mean()
         if "PORCENTAJE_COMPLETITUD_REPORTE" in auditoria.columns
@@ -159,7 +307,7 @@ def dimensiones_calidad(carpeta: Path = Depends(carpeta_snapshots)) -> Dimension
         return int((auditoria[columna] != "").sum())
 
     return DimensionesCalidad(
-        n_total_auditado=len(auditoria),
+        n_total_auditado=n_auditable,
         completitud_promedio=None if completitud is None or pd.isna(completitud) else round(float(completitud), 1),
         duplicados=int(auditoria["CODIGO_DUPLICADO_EN_REPORTE"].sum()) if "CODIGO_DUPLICADO_EN_REPORTE" in auditoria.columns else 0,
         fuera_de_dominio=_contar_no_vacio("VALORES_FUERA_DE_DOMINIO"),
@@ -174,8 +322,11 @@ def naturaleza_hallazgos(carpeta: Path = Depends(carpeta_snapshots)) -> list[Hal
     """"Que hacer con cada hallazgo" -- una fila por NATURALEZA_HALLAZGO con
     conteo > 0, en el mismo orden de prioridad de atencion que
     ACCION_POR_NATURALEZA (lo que pone en riesgo una autorizacion primero,
-    lo residual de la migracion al final)."""
-    auditoria = _tabla_auditoria(carpeta)
+    lo residual de la migracion al final). Filtrado al universo auditable
+    (mismo criterio que /resumen, ver auditoria.py) -- sin esto, un hallazgo
+    en un CUM inactivo o en un codigo que no es CUM infla el conteo de algo
+    que no hay que accionar."""
+    auditoria = filtrar_universo_auditable(_tabla_auditoria(carpeta))
     if "NATURALEZA_HALLAZGO" not in auditoria.columns:
         return []
     conteo = auditoria["NATURALEZA_HALLAZGO"].value_counts()

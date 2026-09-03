@@ -42,6 +42,17 @@ export interface CalidadResumen {
   columnas: string[];
 }
 
+/** Un TIPO de diferencia dentro de una calidad. Las secciones NO son
+ * excluyentes: sus conteos no suman el total de la calidad, porque una misma
+ * fila puede tener dos campos distintos. `derivado_de` viene con los campos
+ * de los que ESTE es consecuencia (ej. Descripcion <- Principio activo). */
+export interface SeccionCalidad {
+  clave: string;
+  etiqueta: string;
+  medicamentos: number;
+  derivado_de: string[];
+}
+
 export interface DimensionesCalidad {
   n_total_auditado: number;
   completitud_promedio: number | null;

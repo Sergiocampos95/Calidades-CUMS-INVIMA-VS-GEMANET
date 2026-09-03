@@ -65,6 +65,21 @@ class CalidadResumen(BaseModel):
     columnas: list[str]
 
 
+class SeccionCalidad(BaseModel):
+    """Un TIPO de diferencia dentro de una calidad (ver
+    `auditoria/calidades.py::secciones_de_diferencia`), para poder partir una
+    tarjeta de decenas de miles de filas en cortes analizables.
+
+    Las secciones NO son excluyentes: sus conteos no suman `medicamentos` de
+    la calidad, porque una misma fila puede tener dos campos distintos.
+    `derivado_de` marca el campo que es CONSECUENCIA de otro."""
+
+    clave: str
+    etiqueta: str
+    medicamentos: int
+    derivado_de: list[str]
+
+
 class DimensionesCalidad(BaseModel):
     """Las 6 dimensiones de calidad de dato que todavia no tenian endpoint
     propio (Completitud, Unicidad, Validez de dominio, Razonabilidad

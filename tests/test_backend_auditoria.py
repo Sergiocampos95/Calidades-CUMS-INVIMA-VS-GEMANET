@@ -99,15 +99,70 @@ def test_valores_de_columna_para_el_filtro_estilo_excel(tmp_path):
         app.dependency_overrides.clear()
 
 
+def _fila_auditable(codigo_interno, **overrides):
+    """`filtrar_universo_auditable` (coherencia_invima.py) exige
+    TIPO_CODIGO_INTERNO y ESTADO_LISTADO_INVIMA -- toda fila de estos tests
+    de /resumen debe traerlas, o KeyError."""
+    base = {
+        "CODIGO_INTERNO": codigo_interno,
+        "ACTIVO": "Si",
+        "TIPO_CODIGO_INTERNO": "cum",
+        "ESTADO_LISTADO_INVIMA": "vigente",
+    }
+    base.update(overrides)
+    return base
+
+
 def test_resumen_auditoria_cuenta_por_estado_coherencia(tmp_path):
     cliente, carpeta = _cliente(tmp_path)
     try:
         df = pd.DataFrame(
-            {"ESTADO_COHERENCIA": ["correcto", "correcto", "con_diferencias"]}
+            [
+                _fila_auditable("1-1", ESTADO_COHERENCIA="correcto"),
+                _fila_auditable("2-2", ESTADO_COHERENCIA="correcto"),
+                _fila_auditable("3-3", ESTADO_COHERENCIA="con_diferencias"),
+            ]
         )
         escribir_snapshot({"auditoria": df}, carpeta=carpeta)
 
         r = cliente.get("/auditoria/resumen")
         assert r.json() == {"correcto": 2, "con_diferencias": 1}
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_resumen_auditoria_filtra_inactivos_salvo_la_excepcion_vigente(tmp_path):
+    """Bug real (2026-09-01): el docstring de /resumen decia que el
+    snapshot "auditoria" ya llegaba filtrado al universo auditable desde
+    `pipeline.py` -- pero ese filtro se saco de ahi (para que
+    /auditoria/dimensiones pueda ver el universo COMPLETO, ver
+    pipeline.py) y el router nunca compenso. Resultado medido en
+    produccion: "Vencido en INVIMA" mostraba 50.039 en vez de los 371
+    activos reales. El router debe filtrar el mismo universo auditable que
+    ya usan las calidades (`filtrar_universo_auditable`): activos, mas la
+    unica excepcion (inactivo en Gemma Net pero INVIMA lo declara vigente)."""
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        df = pd.DataFrame(
+            [
+                _fila_auditable("1-1", ESTADO_COHERENCIA="correcto", ACTIVO="Si"),
+                # Inactivo y SIN correspondencia vigente en INVIMA -- debe
+                # descartarse, es el caso que el bug dejaba pasar.
+                _fila_auditable(
+                    "2-2", ESTADO_COHERENCIA="con_diferencias", ACTIVO="No",
+                    ESTADO_LISTADO_INVIMA="vencido",
+                ),
+                # Inactivo pero INVIMA SI lo declara vigente -- la unica
+                # excepcion, debe contarse igual.
+                _fila_auditable(
+                    "3-3", ESTADO_COHERENCIA="con_diferencias", ACTIVO="No",
+                    ESTADO_LISTADO_INVIMA="vigente",
+                ),
+            ]
+        )
+        escribir_snapshot({"auditoria": df}, carpeta=carpeta)
+
+        r = cliente.get("/auditoria/resumen")
+        assert r.json() == {"correcto": 1, "con_diferencias": 1}
     finally:
         app.dependency_overrides.clear()

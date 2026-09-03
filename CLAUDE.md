@@ -17,11 +17,35 @@ para no romper convenciones.
 ## Comandos
 
 ```bash
-pytest                                    # suite completa (261 pruebas)
+pytest                                    # suite completa (572 pruebas)
 pytest tests/test_reglas.py -q            # un modulo
 ruff check src/ tests/ ui_revision/       # lint
-streamlit run ui_revision/app_streamlit.py
+
+# DESARROLLO (reinicia AUTOMÁTICAMENTE todo):
+.\reinicia_todo.ps1                       # backend + refresco + frontend
+.\reinicia_todo.ps1 -SinRefresco          # omite el refresco si el snapshot ya sirve
 ```
+
+**Importante**: Tras cambios en `src/` o `backend/`, ejecuta `.\reinicia_todo.ps1` (no
+hagas esto a mano). Hacen falta CUATRO cosas y olvidar una sola deja la pantalla
+mostrando lo viejo **sin avisar**:
+
+1. Matar el `python` del proyecto (solo ese, no todo `python.exe`).
+2. Borrar `__pycache__`/`.pyc` — si no, se sirve el `.pyc` anterior.
+3. Refrescar el snapshot — si no, faltan las **columnas** nuevas y las cifras
+   salen en cero, que se lee como "no hay hallazgos".
+4. Tener el frontend vivo en 5173 — si está caído se ve una página rancia.
+
+Dos trampas ya medidas, y por las que el script no se puede "simplificar":
+
+- `ejecutar_refresco()` (está en `worker/tareas.py`, **no** en `pipeline.py`)
+  **nunca lanza excepción**: registra `ESTADO_ERROR` y devuelve el estado. Mirar
+  `$LASTEXITCODE` daría "todo bien" sobre un refresco roto. El script inspecciona
+  el `EstadoRefresco` devuelto **y** `desfases_de_esquema()`, y aborta sin
+  levantar el backend sobre datos malos.
+- Vite se enlaza a `::1` (IPv6). Un chequeo por `TcpClient`/`127.0.0.1` lo da por
+  libre y arranca un **segundo** vite en 5174 mientras el navegador sigue en 5173
+  mirando la instancia vieja. Se comprueba con `Get-NetTCPConnection -State Listen`.
 
 Entorno: Python 3.12+, venv en `.venv/`, Windows. Instalacion: `pip install -e ".[dev]"`.
 

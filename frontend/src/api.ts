@@ -1,6 +1,7 @@
 import type {
   AdvertenciaMalla,
   CalidadResumen,
+  SeccionCalidad,
   DimensionesCalidad,
   EslabonResumen,
   EstadoSalud,
@@ -40,13 +41,24 @@ async function obtenerJSON<T>(
       url.searchParams.set(clave, String(valor));
     }
   }
-  const respuesta = await fetch(url);
-  if (!respuesta.ok) {
-    const cuerpo = await respuesta.json().catch(() => null);
-    const detalle = cuerpo?.detail ?? `Error ${respuesta.status} consultando ${ruta}`;
-    throw new ErrorAPI(detalle, respuesta.status);
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000); // 30 segundo timeout
+    const respuesta = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
+    if (!respuesta.ok) {
+      const cuerpo = await respuesta.json().catch(() => null);
+      const detalle = cuerpo?.detail ?? `Error ${respuesta.status} consultando ${ruta}`;
+      throw new ErrorAPI(detalle, respuesta.status);
+    }
+    return (await respuesta.json()) as T;
+  } catch (error) {
+    if (error instanceof ErrorAPI) throw error;
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new ErrorAPI(`Timeout: la consulta tardó más de 30 segundos`, 408);
+    }
+    throw new ErrorAPI(`Failed to fetch: ${error instanceof Error ? error.message : String(error)}`, 0);
   }
-  return (await respuesta.json()) as T;
 }
 
 export function obtenerSalud(): Promise<EstadoSalud> {
@@ -97,8 +109,15 @@ export interface ValorColumna {
  * si el backend decide que la columna tiene demasiados valores distintos
  * para este filtro (ver LIMITE_VALORES_DISTINTOS en paginacion.py) -- la
  * busqueda libre de la tabla sigue siendo la herramienta correcta ahi. */
-export function obtenerValoresColumna(ruta: string, columna: string): Promise<ValorColumna[]> {
-  return obtenerJSON<ValorColumna[]>(ruta, { columna });
+export function obtenerValoresColumna(
+  ruta: string,
+  columna: string,
+  seccion?: string,
+): Promise<ValorColumna[]> {
+  // `seccion` acota los valores ofrecidos como filtro a la seccion abierta:
+  // ofrecer un valor que no existe en lo que se ve deja la tabla vacia sin
+  // explicar por que.
+  return obtenerJSON<ValorColumna[]>(ruta, { columna, seccion });
 }
 
 export interface ParametrosCandidatos extends ParametrosTabla {
@@ -153,8 +172,21 @@ export function obtenerCalidad(nombre: string, parametros: ParametrosTabla = {})
   return obtenerJSON<PaginaTabla>(`/auditoria/calidades/${encodeURIComponent(nombre)}`, parametros);
 }
 
+export function obtenerSeccionesCalidad(nombre: string): Promise<SeccionCalidad[]> {
+  return obtenerJSON<SeccionCalidad[]>(
+    `/auditoria/calidades/${encodeURIComponent(nombre)}/secciones`,
+  );
+}
+
 export function obtenerDimensionesCalidad(): Promise<DimensionesCalidad> {
   return obtenerJSON<DimensionesCalidad>("/auditoria/dimensiones");
+}
+
+/** Los medicamentos que caen en una dimension -- "cada cifra se puede abrir,
+ * no solo mirar" (pedido del usuario, 2026-09-01). `clave` es una de las de
+ * DIMENSIONES_ABRIBLES en backend/app/routers/calidades.py. */
+export function obtenerDimension(clave: string, parametros: ParametrosTabla = {}): Promise<PaginaTabla> {
+  return obtenerJSON<PaginaTabla>(`/auditoria/dimensiones/${encodeURIComponent(clave)}`, parametros);
 }
 
 export function obtenerNaturalezaHallazgos(): Promise<HallazgoNaturaleza[]> {

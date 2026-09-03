@@ -20,7 +20,12 @@ otro agente que no ha visto el codigo. El plan debe incluir:
 2. **Decision de ubicacion**: en que modulo vive cada pieza nueva y por que.
    Respeta la separacion existente: `ingesta/` solo lee, `armado/` construye el
    universo, `validacion/` decide acciones, `auditoria/` compara contra INVIMA,
-   `exportacion/` escribe, `normaliza/` es utilitario puro sin estado.
+   `exportacion/` escribe, `normaliza/` es utilitario puro sin estado. Si el
+   cambio cruza a la app real (`backend/app/routers/`, `frontend/src/`),
+   respeta esa frontera tambien: un router es un lector delgado sobre
+   `worker/almacen_snapshots.py` (nunca ejecuta el pipeline en un request),
+   y `TablaFiltrable` es el unico componente de tabla del frontend -- ver
+   `ui-vite.md` para el detalle completo de esa capa.
 3. **Pasos ordenados**, cada uno con archivos a tocar y un criterio de "listo".
 4. **Pruebas que deben existir** al terminar, por nombre.
 5. **Riesgos y trampas**, especialmente de rendimiento: los flujos reales

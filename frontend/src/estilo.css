@@ -272,6 +272,131 @@ button, select, input { font-family: inherit; }
 }
 .btn-copiar-sql:hover { border-color: var(--accent); }
 
+/* DETALLE_DIFERENCIAS -- lleva a "Consultar INVIMA" con el codigo de esa
+   fila precargado (pedido del usuario, 2026-09-01). Pildora solida, no un
+   link subrayado -- pedido explicito: "quiero que se vea como un boton". */
+.btn-ver-diferencias {
+  border: 1px solid transparent; background: var(--accent-soft); color: var(--accent);
+  font-size: 0.78rem; font-weight: 700; font-family: inherit; cursor: pointer;
+  border-radius: var(--radio-pill); padding: 4px 10px; white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.btn-ver-diferencias:hover { background: var(--accent); color: #fff; }
+
+/* CODIGO_INTERNO en CUALQUIER tabla (tabla.ts::formatearCeldaDefecto) --
+   boton chico para saltar directo a "Consultar INVIMA" con ese codigo
+   (pedido del usuario, 2026-09-01: "en todas las filas en las que pueda
+   tener un efecto positivo"). Mismo tamaño/forma que btn-copiar-sql --
+   icono discreto, no compite con el codigo mono que acompaña. */
+.celda-codigo { display: inline-flex; align-items: center; gap: 6px; }
+.btn-consultar-invima {
+  flex-shrink: 0; width: 20px; height: 20px; border-radius: 5px; border: 1px solid transparent;
+  background: transparent; cursor: pointer; font-size: 0.68rem; padding: 0; opacity: 0.55;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: opacity 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.btn-consultar-invima:hover { opacity: 1; border-color: var(--accent); background: var(--accent-soft); }
+
+/* ============================= CONSULTAR INVIMA (vistas/consulta_detalle.ts) ============================= */
+/* Reescrito 2026-09-01: la version original tenia TODO en estilos inline
+   con hex fijos (#f9f9f9, #333, #666...) pensados solo para tema claro --
+   en modo oscuro el texto de la tabla quedaba casi invisible (gris claro
+   sobre fondo oscuro) y las tarjetas de diagnostico se veian como recortes
+   de papel blanco flotando en la pagina. Todo pasa a los mismos tokens que
+   usa el resto de la app (--surface/--text/--border/--ok/--warn/--danger),
+   que ya tienen su variante oscura resuelta en :root con prefers-color-
+   scheme y [data-theme] (ver arriba en este archivo). */
+.consulta-invima__separador { border: none; border-top: 1px solid var(--border); margin: 28px 0 18px; }
+.consulta-invima__form { margin-bottom: 20px; display: flex; gap: 8px; }
+.consulta-invima__input {
+  flex: 1; padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--radio-sm);
+  background: var(--surface); color: var(--text); font-size: 0.86rem; font-family: inherit;
+}
+.consulta-invima__input::placeholder { color: var(--text-faint); }
+
+.consulta-invima__mensaje { font-size: 0.86rem; padding: 8px 0; margin: 0; }
+.consulta-invima__mensaje--espera { color: var(--text-muted); }
+.consulta-invima__mensaje--advertencia { color: var(--warn); }
+
+.consulta-invima__diagnostico {
+  border-radius: var(--radio-md); border-left: 4px solid var(--accent); background: var(--accent-soft);
+  padding: 14px 16px; margin-bottom: 18px;
+}
+.consulta-invima__diagnostico h3 { margin: 0 0 6px; font-size: 1rem; color: var(--accent); }
+.consulta-invima__diagnostico p { margin: 0 0 4px; font-size: 0.88rem; color: var(--text); }
+.consulta-invima__diagnostico p:last-child { margin-bottom: 0; color: var(--text-muted); }
+.consulta-invima__diagnostico--ok { border-left-color: var(--ok); background: var(--ok-soft); }
+.consulta-invima__diagnostico--ok h3 { color: var(--ok); }
+.consulta-invima__diagnostico--advertencia { border-left-color: var(--warn); background: var(--warn-soft); }
+.consulta-invima__diagnostico--advertencia h3 { color: var(--warn); }
+.consulta-invima__diagnostico--critico { border-left-color: var(--danger); background: var(--danger-soft); }
+.consulta-invima__diagnostico--critico h3 { color: var(--danger); }
+.consulta-invima__diagnostico--informativo { border-left-color: var(--accent); background: var(--accent-soft); }
+.consulta-invima__diagnostico--informativo h3 { color: var(--accent); }
+
+.consulta-invima__pasos {
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radio-md);
+  padding: 14px 16px; margin-bottom: 18px;
+}
+.consulta-invima__pasos h4 { margin: 0 0 8px; font-size: 0.88rem; color: var(--text); }
+.consulta-invima__pasos ol { margin: 0; padding-left: 20px; color: var(--text); font-size: 0.85rem; }
+.consulta-invima__pasos li { margin-bottom: 6px; }
+.consulta-invima__pasos li:last-child { margin-bottom: 0; }
+
+.consulta-invima__bloque { margin-bottom: 26px; }
+.consulta-invima__bloque-titulo {
+  font-size: 0.9rem; font-weight: 700; padding-bottom: 8px; margin: 0 0 12px;
+  border-bottom: 3px solid var(--accent); color: var(--text);
+}
+.consulta-invima__bloque-titulo--gemma { border-bottom-color: var(--accent-2); }
+
+.consulta-invima__envoltorio { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radio-md); }
+.consulta-invima__tabla { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.consulta-invima__tabla th {
+  border: 1px solid var(--border); padding: 8px 10px; text-align: left; font-weight: 700;
+  background: var(--surface-2); color: var(--text); position: sticky; top: 0;
+}
+.consulta-invima__tabla td {
+  border: 1px solid var(--border); padding: 8px 10px; color: var(--text); background: var(--surface);
+  /* Envuelve en vez de cortar (pedido del usuario, 2026-09-01): esta tabla
+     existe para comparar campos a ojo, un valor largo (ej. CONCENTRACION)
+     truncado en silencio escondia justo la diferencia que se buscaba. El
+     ancho maximo evita que una sola celda larga estire toda la tabla. */
+  max-width: 320px; white-space: normal; word-break: break-word;
+}
+.consulta-invima__tabla-td--vacio { color: var(--text-faint); }
+.consulta-invima__tabla-td--comodin {
+  color: var(--alert); font-style: italic;
+  background-color: var(--surface-warning-subtle);
+}
+
+/* Comparacion lado a lado Gemma Net vs INVIMA (fechas + estado) -- pedido
+   del usuario (2026-09-01): que ambas fuentes se vean juntas sin tener que
+   ir a buscarlas en las tablas de detalle de mas abajo. */
+.consulta-invima__comparacion {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radio-md);
+  padding: 14px 16px; margin-bottom: 18px;
+}
+.consulta-invima__comparacion-col h4 {
+  margin: 0 0 8px; font-size: 0.85rem; color: var(--text); border-bottom: 2px solid var(--border); padding-bottom: 6px;
+}
+.consulta-invima__comparacion-col--gemma h4 { border-bottom-color: var(--accent-2); }
+.consulta-invima__comparacion-col--invima h4 { border-bottom-color: var(--accent); }
+.consulta-invima__comparacion-fila { display: flex; justify-content: space-between; gap: 8px; font-size: 0.83rem; padding: 4px 0; color: var(--text); }
+.consulta-invima__comparacion-fila span:first-child { color: var(--text-muted); }
+.consulta-invima__comparacion-fila span:last-child { font-weight: 600; text-align: right; }
+@media (max-width: 640px) { .consulta-invima__comparacion { grid-template-columns: 1fr; } }
+
+
+.consulta-invima__error {
+  background: var(--danger-soft); border-left: 4px solid var(--danger); padding: 14px 16px;
+  border-radius: var(--radio-md);
+}
+.consulta-invima__error p:first-child { margin: 0; font-weight: 700; color: var(--danger); }
+.consulta-invima__error p { margin: 8px 0 0; font-size: 0.85rem; color: var(--text-muted); }
+.consulta-invima__error ul { margin: 4px 0 0; padding-left: 20px; }
+
 /* ============================= PANEL GENERICO ============================= */
 .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radio-md); box-shadow: var(--shadow-sm); overflow: hidden; margin-bottom: 16px; }
 .panel__cab { padding: 14px 16px 0; }
@@ -385,6 +510,36 @@ tbody tr:hover { background: var(--accent-soft); }
 /* ============================= VARIOS ============================= */
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
+
+/* Patron "seleccionar arriba, detalle abajo" -- pedido del usuario
+   (2026-09-01): las CALIDADES (lo que se elige) van arriba en fila
+   organizada, y las estadisticas de solo lectura pasan a la columna
+   lateral. Antes era al reves: lo elegible vivia apretado en una columna
+   angosta y las cifras que nadie clickea ocupaban todo el ancho superior.
+   Se usa en las DOS vistas que comparten el patron (calidades y cadena
+   H1-H6) para que se vean igual -- "este cambio debe ser normalizado". */
+.selector-fila { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; margin-bottom: 18px; }
+/* .cadena-paso trae margin-bottom para cuando se apila; dentro de la
+   rejilla el gap ya separa, y el margen extra desalinea las filas. */
+.selector-fila .cadena-paso { margin-bottom: 0; }
+
+/* Aside de estadisticas + contenido principal. El aside es angosto y de
+   ancho fijo: son cifras de una linea, no necesitan mas, y asi la tabla
+   -- que si tiene muchas columnas -- se queda con todo el ancho util. */
+.grid-lateral { display: grid; grid-template-columns: minmax(190px, 230px) 1fr; gap: 16px; align-items: start; }
+/* Solo la calidad de diferencias se secciona; en las otras el aside sobra y
+   la tabla (que es ancha: 30+ columnas) se queda con todo el ancho, en vez
+   de dejar una columna vacia al lado. */
+.grid-lateral--sin-aside { grid-template-columns: 1fr; }
+.grid-lateral--sin-aside .grid-lateral__aside { display: none; }
+.grid-lateral__aside { display: grid; gap: 10px; min-width: 0; }
+.grid-lateral__principal { min-width: 0; }
+@media (max-width: 900px) {
+  .grid-lateral { grid-template-columns: 1fr; }
+  /* En pantalla angosta el aside vuelve a fila: apilado ocuparia toda la
+     altura visible antes de llegar a la tabla. */
+  .grid-lateral__aside { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+}
 .celda-mono { font-family: var(--font-mono); font-size: 0.78rem; color: var(--text-muted); }
 .celda-muda { color: var(--text-faint); }
 .mini-barra { height: 6px; border-radius: var(--radio-pill); background: var(--surface-2); overflow: hidden; margin-top: 4px; }
@@ -413,3 +568,26 @@ tbody tr:hover { background: var(--accent-soft); }
 
 .aviso { padding: 0.6rem 0.9rem; border-radius: var(--radio-sm); font-size: 0.82rem; }
 .aviso--error { background: var(--danger-soft); color: var(--danger); }
+
+/* Tabla de comparacion emparejada de "Consultar INVIMA" -- cada fila es un
+   campo con su valor de CADA fuente y el veredicto al lado, en vez de dos
+   listas sueltas donde no se veia que corresponde con que. */
+.consulta-invima__pares th[scope="row"] { text-align: left; font-weight: 600; color: var(--text-muted); white-space: nowrap; }
+.consulta-invima__pares td { font-variant-numeric: tabular-nums; }
+.consulta-invima__par--difiere { background: var(--warn-soft); }
+
+/* Veredicto en lenguaje llano bajo el numero de cada dimension -- el numero
+   solo no dice si esta bien o mal (pedido del usuario, 2026-09-01). */
+.tarjeta-metrica__veredicto { font-size: 0.7rem; color: var(--text-muted); margin-top: 4px; line-height: 1.25; }
+.tarjeta-metrica--ok .tarjeta-metrica__veredicto { color: var(--ok); }
+.tarjeta-metrica--atencion .tarjeta-metrica__veredicto { color: var(--warn); }
+
+/* Las tarjetas de dimension son botones: se abren a los medicamentos que las
+   componen (pedido del usuario, 2026-09-01). Heredan el look de
+   .tarjeta-metrica; esto solo agrega el afford de "clickeable". */
+.tarjeta-metrica--abrible { width: 100%; text-align: left; cursor: pointer; font: inherit; color: inherit; display: block; }
+.tarjeta-metrica--abrible:hover { border-color: var(--accent); }
+.tarjeta-metrica--abrible.activo { border-color: var(--accent); background: var(--accent-soft); }
+.tarjeta-metrica__abrir { display: block; margin-top: 6px; font-size: 0.68rem; color: var(--accent); opacity: 0; transition: opacity 0.15s ease; }
+.tarjeta-metrica--abrible:hover .tarjeta-metrica__abrir,
+.tarjeta-metrica--abrible.activo .tarjeta-metrica__abrir { opacity: 1; }

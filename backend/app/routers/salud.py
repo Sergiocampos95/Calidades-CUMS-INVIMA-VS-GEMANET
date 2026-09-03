@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends
 
 from backend.app.dependencies import carpeta_snapshots, ruta_estado
 from backend.app.schemas import EstadoSalud
-from worker.almacen_snapshots import snapshot_actual
+from worker.almacen_snapshots import desfases_de_esquema, snapshot_actual
 from worker.estado import ESTADO_ERROR, ultimo_refresco
 
 router = APIRouter(prefix="/salud", tags=["salud"])
@@ -45,9 +45,40 @@ def obtener_salud(
     generado = datetime.strptime(snapshot.generado_utc, _FORMATO_MARCA).replace(tzinfo=UTC)
     antiguedad = (datetime.now(UTC) - generado).total_seconds()
 
+    # Colision de versiones: el snapshot en disco lo escribio una version
+    # anterior del codigo y le faltan columnas que los calculos de hoy dan por
+    # sentadas. Se reporta como "desactualizado" con el detalle, en vez de
+    # dejar que las cifras salgan en cero y se lean como "no hay hallazgos"
+    # (regla que pidio el usuario, 2026-09-02).
+    desfases = desfases_de_esquema(carpeta)
+    detalle_desfase = ""
+    if desfases:
+        detalle_desfase = (
+            "El snapshot vigente lo genero una version anterior del codigo y le faltan "
+            "columnas: "
+            + "; ".join(f"{tabla} -> {', '.join(cols)}" for tabla, cols in desfases.items())
+            + ". Las cifras que dependan de ellas van a salir en cero. Corre un refresco."
+        )
+
+    # DOS problemas distintos, que no se pueden colapsar en uno:
+    #
+    #   a) El snapshot esta VIEJO (nadie corrio un refresco hace rato). Es
+    #      cuestion de frescura y admite margen: el worker corre cada 50 min,
+    #      asi que avisar antes solo genera ruido -- pedido del usuario
+    #      (2026-09-02): "esto deberia salir despues de los 50 minutos".
+    #
+    #   b) Al snapshot le FALTAN COLUMNAS que el codigo de hoy usa para
+    #      decidir. Eso no es frescura, es esquema roto, y no mejora por
+    #      esperar: las cifras que dependan de esas columnas ya estan mal
+    #      AHORA (degradan a un fallback o a cero). Un snapshot de 2 minutos
+    #      al que le falta ESTADO_CUM_INVIMA reporta vigencia con el criterio
+    #      equivocado, y callarlo por ser reciente es justo el fallo silencioso
+    #      que la regla #2 prohibe.
+    #
+    # Se separan: (b) avisa siempre, (a) solo pasado el umbral.
     if refresco.estado == ESTADO_ERROR:
         estado = "error"
-    elif antiguedad > UMBRAL_DESACTUALIZADO_SEGUNDOS:
+    elif desfases or antiguedad > UMBRAL_DESACTUALIZADO_SEGUNDOS:
         estado = "desactualizado"
     else:
         estado = "ok"
@@ -57,5 +88,5 @@ def obtener_salud(
         ultima_actualizacion_utc=snapshot.generado_utc,
         antiguedad_segundos=antiguedad,
         duracion_ultimo_refresco_segundos=refresco.duracion_segundos,
-        detalle_error=refresco.detalle_error,
+        detalle_error=" ".join(x for x in (refresco.detalle_error, detalle_desfase) if x),
     )

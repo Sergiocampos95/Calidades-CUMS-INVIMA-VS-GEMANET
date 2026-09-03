@@ -182,6 +182,42 @@ def test_columnas_trio_incluyen_similitud_del_campo():
     assert "SIMILITUD_DESCRIPCION" in h2.df_tabla.columns
 
 
+def test_codigo_que_no_es_cum_no_aparece_en_ninguna_tabla_de_la_cadena():
+    """Pedido explicito del usuario (2026-09-01): un codigo que no tiene
+    formato EXPEDIENTE-CONSECUTIVO (legado, ancestral, IUM...) nunca puede
+    cruzar con INVIMA -- compararlo es ilogico, asi que no debe aparecer en
+    NINGUNA tabla de la cadena, ni siquiera en H1 (no es que "falle" H1: es
+    que ni entra al universo evaluado)."""
+    auditoria = _auditar(
+        [_fila_gemanet("500-1"), _fila_gemanet("codigo-legado-sin-formato-cum")],
+        [_fila_invima("500-1")],
+    )
+    cadena = construir_cadena_calidad(auditoria)
+    h1 = cadena[0]
+    assert h1.universo == 1  # solo "500-1" es CUM -- el legado ni entra
+    codigos_en_tabla = set(h1.df_tabla["CODIGO_INTERNO"])
+    assert "codigo-legado-sin-formato-cum" not in codigos_en_tabla
+    assert codigos_en_tabla == {"500-1"}
+
+
+def test_codigo_sin_correspondencia_no_aparece_en_h2_en_adelante():
+    """"500-2" ES un CUM (formato valido) pero no tiene correspondencia con
+    INVIMA (no esta en df_invima) -- falla H1, y por eso mismo NO debe
+    aparecer en la tabla de H2 en adelante: no hay nada del lado INVIMA
+    contra que comparar DESCRIPCION/PRINCIPIO_ACTIVO para esa fila."""
+    auditoria = _auditar(
+        [_fila_gemanet("500-1"), _fila_gemanet("500-2")],
+        [_fila_invima("500-1")],
+    )
+    cadena = construir_cadena_calidad(auditoria)
+    h1, h2 = cadena[0], cadena[1]
+    # H1 SI la muestra (es su universo: CUMs reales, con o sin correspondencia).
+    assert "500-2" in set(h1.df_tabla["CODIGO_INTERNO"])
+    # H2 en adelante, no: ya no tiene nada que comparar.
+    assert "500-2" not in set(h2.df_tabla["CODIGO_INTERNO"])
+    assert h2.universo == 1
+
+
 def test_construir_cadena_calidad_solo_recibe_el_dataframe_ya_auditado():
     """Contrato de rendimiento: la funcion no debe necesitar df_invima ni
     catalogos crudos -- todo lo que usa ya esta materializado en `auditoria`

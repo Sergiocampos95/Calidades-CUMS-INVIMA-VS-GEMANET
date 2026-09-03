@@ -36,6 +36,14 @@ consultas/verificar_auditoria.sql
 # verdad. Distinto de data/: no son el archivo original de INVIMA/Gemma Net,
 # son el resultado ya procesado que el worker recalcula cada ~50 min.
 data_runtime/
+# Nombre actual de esa misma carpeta. `data_runtime/` quedo del nombre
+# anterior y por si sola dejaba `snapshots/` sin ignorar: son ~94 MB de
+# Parquet derivados de la base de PRODUCCION de Pijao Salud, que segun
+# CLAUDE.md nunca deben subirse al repositorio.
+snapshots/
+
+# Log del uvicorn local.
+.uvicorn_out.log
 
 # Frontend (Fase 3): dependencias y build, se regeneran con npm install/
 # npm run build -- no son fuente, no se versionan.

@@ -24,6 +24,16 @@ ese campo del pedido de Sergio "hay que validarlo, esto solo fue un ejemplo"
 confirmado que sea lo mismo que "laboratorio" para el negocio. Sin decisiones
 a ciegas: se documenta como pendiente en vez de asumir.
 
+El universo de partida de TODA la cadena (antes de H1) es solo CUMs reales
+(`_es_cum`, formato EXPEDIENTE-CONSECUTIVO) -- pedido explicito del usuario
+(2026-09-01): un codigo que no es CUM (legado, ancestral, IUM...) nunca
+puede tener correspondencia con INVIMA, asi que compararlo aca es ilogico y
+ni siquiera debe aparecer en las tablas, no solo "fallar" H1. De ahi en
+adelante, cada tabla (`df_tabla`) muestra unicamente las filas que siguen
+vivas en ESE eslabon (su `universo_previo`) -- H2 en adelante nunca vuelve a
+mostrar un medicamento que ya no tuvo correspondencia en H1, porque no hay
+nada del lado INVIMA contra que comparar DESCRIPCION/PRINCIPIO_ACTIVO/etc.
+
 Este modulo NO recalcula nada de `coherencia_invima.auditar_coherencia()`:
 solo lee columnas que esa funcion ya dejo en el DataFrame resultado (el
 trio {CAMPO}_GEMANET/{CAMPO}_INVIMA/{CAMPO}_VALIDACION, ESTADO_COHERENCIA,
@@ -54,6 +64,7 @@ from gemma_cum_loader.auditoria.coherencia_invima import (
     VALIDACION_COINCIDE,
     EstadoCoherencia,
 )
+from gemma_cum_loader.normaliza.codigos import PATRON_CUM
 
 # El nombre de negocio (H1..H6) para cada eslabon, y el campo que agrega
 # sobre el anterior. `None` para H1: no agrega un campo del trio, evalua la
@@ -96,6 +107,39 @@ class EslabonCalidad:
     df_tabla: pd.DataFrame = field(repr=False)
 
 
+# Los mismos dos tipos que `coherencia_invima.filtrar_universo_auditable`
+# considera CUM auditable. Ver el mismo bug/fix en calidades.py::
+# _TIPOS_CODIGO_INTERNO_CUM -- PATRON_CUM solo no reconoce un CUM con sufijo
+# ATC (3 partes, la ultima con letras, ej. "00027649-01-0H02AA02").
+# Solo "cum": el codigo legado con sufijo ATC quedo fuera del universo
+# auditable (ver _TIPOS_CODIGO_AUDITABLES en coherencia_invima.py).
+_TIPOS_CODIGO_INTERNO_CUM = ("cum",)
+
+
+def _es_cum(auditoria: pd.DataFrame) -> pd.Series:
+    """Universo de partida de TODA la cadena: solo codigos con formato
+    EXPEDIENTE-CONSECUTIVO autentico. Sin esto, H1 mezclaba CUMs reales
+    que no cruzaron con INVIMA (un hallazgo real: dato que deberia coincidir
+    y no coincide) con codigos que NUNCA pueden cruzar porque no son CUM
+    (legados, ancestrales, IUM...) -- diluia "Correspondencia con INVIMA"
+    con casos estructuralmente imposibles de comparar, no con problemas de
+    calidad. Pedido explicito del usuario (2026-09-01): "no tienen porque
+    verse los medicamentos que no son cums... es ilogico compararlos ya que
+    nunca habra ningun cruce".
+
+    Usa TIPO_CODIGO_INTERNO (ya calculado por `auditar_coherencia`) cuando
+    esta disponible, en vez de re-parsear PATRON_CUM a mano: asi reconoce
+    tambien el CUM con sufijo ATC, que PATRON_CUM sola no matchea -- bug
+    corregido (2026-09-01), 79 filas quedaban invisibles en H1..H6 pese a
+    ser CUM validos. Cae a PATRON_CUM solo si la columna no existe
+    (DataFrames de prueba que no pasaron por `auditar_coherencia`)."""
+    if "TIPO_CODIGO_INTERNO" in auditoria.columns:
+        return auditoria["TIPO_CODIGO_INTERNO"].isin(_TIPOS_CODIGO_INTERNO_CUM)
+    if "CODIGO_INTERNO" not in auditoria.columns:
+        return pd.Series(False, index=auditoria.index)
+    return auditoria["CODIGO_INTERNO"].fillna("").astype(str).str.strip().str.match(PATRON_CUM)
+
+
 def _tiene_correspondencia(auditoria: pd.DataFrame) -> pd.Series:
     """H1: si el CODIGO_INTERNO de Gemma Net cruzo con INVIMA. No es un
     trio {CAMPO}_GEMANET/_INVIMA/_VALIDACION -- CODIGO_INTERNO es la llave
@@ -130,12 +174,20 @@ def construir_cadena_calidad(
     eso cada `pasa_acumulada` siguiente es subconjunto estricto de la
     anterior, la propiedad de teoria de conjuntos que pidio el negocio.
 
+    El universo de PARTIDA (antes de H1) ya no es "todas las filas": es
+    `_es_cum()` -- solo codigos con formato EXPEDIENTE-CONSECUTIVO. Un
+    codigo que no es CUM nunca puede tener correspondencia con INVIMA (no
+    es una cuestion de calidad de dato, es estructural), asi que ni entra a
+    H1 ni aparece en ninguna tabla de la cadena. Con esto, "Correspondencia
+    con INVIMA" (H1) mide lo que de verdad importa: de los CUMs reales,
+    cuantos cruzaron -- no lo diluye con codigos que jamas iban a cruzar.
+
     `campo_nuevo` faltante en `auditoria` (ej. si se corrio con un subset de
     columnas) se reporta como eslabon vacio en vez de reventar en silencio:
     universo 0, porcentaje_total None, tabla vacia -- degradacion explicita.
     """
     eslabones: list[EslabonCalidad] = []
-    pasa_acumulada = pd.Series(True, index=auditoria.index)
+    pasa_acumulada = _es_cum(auditoria)
     campos_acumulados: tuple[str, ...] = ()
     columnas_trio_acumuladas: tuple[str, ...] = ()
 
@@ -199,7 +251,16 @@ def construir_cadena_calidad(
         # identificadora, se veia como una columna de guiones en la UI.
         columnas_tabla = [c for c in ("CODIGO_INTERNO", "DESCRIPCION") if c in auditoria.columns]
         columnas_tabla += [c for c in columnas_trio_acumuladas if c in auditoria.columns]
-        df_tabla = auditoria[columnas_tabla].copy()
+        # Solo las filas que siguen vivas en ESTE eslabon (`universo_previo`,
+        # el mismo conjunto que ya se usa para calcular `universo` arriba) --
+        # pedido explicito del usuario (2026-09-01): un medicamento que no es
+        # CUM, o que no tiene correspondencia con ninguno de los cuatro
+        # listados de INVIMA, no tiene nada que comparar aca y no debe
+        # aparecer en la tabla. Antes se mostraban las filas del universo
+        # COMPLETO en cada eslabon (bug real: el numero de "universo
+        # evaluado" ya excluia esas filas, pero la tabla de abajo seguia
+        # trayendo las 199.611 -- el numero y lo que se veia no coincidian).
+        df_tabla = auditoria.loc[universo_previo, columnas_tabla].copy()
         df_tabla[columna_estado] = estado_columna
 
         eslabones.append(

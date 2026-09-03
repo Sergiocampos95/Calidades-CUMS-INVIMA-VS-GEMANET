@@ -1,6 +1,11 @@
 import pandas as pd
 
-from gemma_cum_loader.auditoria.calidades import calidades_auditoria
+from gemma_cum_loader.auditoria.calidades import (
+    _consultas_verificacion_gemanet,
+    calidades_auditoria,
+    filtrar_por_seccion,
+    secciones_de_diferencia,
+)
 from gemma_cum_loader.auditoria.coherencia_invima import EstadoCoherencia
 
 
@@ -10,6 +15,13 @@ def _fila(codigo_interno, **overrides):
         "DESCRIPCION": "ACETAMINOFEN 500MG TABLETA",
         "ACTIVO": "SI",
         "ESTADO_COHERENCIA": EstadoCoherencia.CORRECTO.value,
+        # Veredicto de vigencia real de INVIMA ("Activo"/"Inactivo"),
+        # independiente del listado. La calidad "Vigencia confirmada" y otras
+        # se definen usando ESTADO_CUM_INVIMA, no ESTADO_LISTADO_INVIMA.
+        "ESTADO_CUM_INVIMA": "Activo",
+        # Metadato de ubicacion: en cual archivo/listado aparece el registro.
+        "ESTADO_LISTADO_INVIMA": "vigente",
+        "VIGENCIA_NO_CONFIRMABLE": "",
         "CODIGO_DUPLICADO_EN_REPORTE": False,
         "FORMATO_CODIGO_INTERNO_INVALIDO": "",
         "CAMPOS_CON_DIFERENCIA": "",
@@ -20,52 +32,137 @@ def _fila(codigo_interno, **overrides):
     return base
 
 
-def test_devuelve_las_10_calidades_en_orden():
+def test_devuelve_las_6_calidades_en_orden():
     auditoria = pd.DataFrame([_fila("500-1")])
     calidades = calidades_auditoria(auditoria)
-    assert len(calidades) == 10
-    assert calidades[0].nombre == "No se pudo encontrar en INVIMA"
-    assert calidades[-1].nombre == "Activos aquí sin vigencia en INVIMA"
+    # Rediseño 2026-09-02: ahora son 6 calidades (no 7). La tarjeta de
+    # "Inactivo en Gemma Net pero vigente en INVIMA" se integro dentro de
+    # "Diferencia de estado o campos" (tarjeta 6). El veredicto de vigencia
+    # ahora es ESTADO_CUM_INVIMA (el campo real de INVIMA), no
+    # ESTADO_LISTADO_INVIMA (que es solo ubicacion).
+    assert len(calidades) == 6
+    assert calidades[0].nombre == "Vigencia confirmada"
+    assert calidades[-1].nombre == "Diferencia de estado o campos"
 
 
-def test_codigo_legado_cae_en_no_se_pudo_encontrar():
-    """Códigos legados (no EXPEDIENTE-CONSECUTIVO) caen en la calidad
-    'No se pudo encontrar en INVIMA' junto con códigos con formato correcto
-    pero también no encontrados. Se distinguen por TIPO_SIN_CORRESPONDENCIA."""
+def _conteo_por_nombre(auditoria):
+    return {c.nombre: c.medicamentos for c in calidades_auditoria(auditoria)}
+
+
+def test_vencido_en_el_listado_pero_con_estado_cum_activo_es_vigencia_confirmada():
+    """El caso testigo del usuario (2026-09-02): "medicamento activo pero
+    aparece en el listado de vencidos, pero el estado cum esta activo en
+    INVIMA; esos casos serian correctas su estado activo asi esten en la
+    lista de vencidos".
+
+    Es la gracia de lotes: INVIMA deja el CUM activo mientras se agotan las
+    existencias, y se puede seguir autorizando hasta que lo desactive. El
+    listado es solo la ubicacion del Excel donde buscarlo, NO el veredicto.
+    Son 533 filas reales en el snapshot de produccion."""
+    auditoria = pd.DataFrame(
+        [_fila("20111111-1", ESTADO_CUM_INVIMA="Activo", ESTADO_LISTADO_INVIMA="vencido")]
+    )
+    conteo = _conteo_por_nombre(auditoria)
+    assert conteo["Vigencia confirmada"] == 1
+    assert conteo["Registro vencido en INVIMA"] == 0
+
+
+def test_registro_vencido_exige_estado_cum_inactivo_ademas_del_listado():
+    """Definicion literal del usuario (2026-09-02): "son los que estan
+    activos en gemma net, estado cum INACTIVO en invima, y que pertenecen a
+    la lista de vencidos". Las tres condiciones, no dos: sin
+    ESTADO_CUM=='Inactivo' la tarjeta se llevaba tambien los de la gracia de
+    lotes, que no son un hallazgo."""
+    auditoria = pd.DataFrame(
+        [_fila("20222222-1", ESTADO_CUM_INVIMA="Inactivo", ESTADO_LISTADO_INVIMA="vencido")]
+    )
+    conteo = _conteo_por_nombre(auditoria)
+    assert conteo["Registro vencido en INVIMA"] == 1
+    assert conteo["Vigencia confirmada"] == 0
+
+
+def test_calidades_excluyen_no_cums_y_inactivos_salvo_la_excepcion():
+    """La auditoria del negocio debe mostrar solo CUMs activos y validos
+    contra INVIMA; los legados, no-CUM y activos locales inactivos quedan
+    fuera del listado de calidades accionables -- CON una unica excepcion:
+    un CUM inactivo en Gemma Net pero vigente en INVIMA (ESTADO_CUM_INVIMA=
+    'Activo') es justo el caso de mayor riesgo y debe seguir siendo visible,
+    ahora dentro de la tarjeta 6 'Diferencia de estado o campos'."""
     auditoria = pd.DataFrame([
-        _fila("CODIGO-LEGADO-XYZ", ESTADO_COHERENCIA=EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value),
-        _fila("500-1")
+        _fila("500-1", ESTADO_CUM_INVIMA="Activo"),
+        _fila(
+            "500-2",
+            ACTIVO="NO",
+            ESTADO_CUM_INVIMA="Inactivo",
+            ESTADO_LISTADO_INVIMA="vencido",
+        ),
+        _fila("CODIGO-LEGADO-XYZ", ESTADO_CUM_INVIMA=""),
     ])
     calidades = calidades_auditoria(auditoria)
-    no_encontrados = calidades[0]
-    assert no_encontrados.nombre == "No se pudo encontrar en INVIMA"
-    assert no_encontrados.medicamentos == 1
-    assert no_encontrados.df_tabla["CODIGO_INTERNO"].tolist() == ["CODIGO-LEGADO-XYZ"]
+    vigentes = next(c for c in calidades if c.nombre == "Vigencia confirmada")
+    assert vigentes.medicamentos == 1
+    assert vigentes.df_tabla["CODIGO_INTERNO"].tolist() == ["500-1"]
+    # "500-2" esta inactivo y con ESTADO_CUM_INVIMA='Inactivo' -- NO es la
+    # excepcion (esa solo aplica si ESTADO_CUM_INVIMA == 'Activo'), asi que
+    # sigue invisible en todas las calidades.
+    assert all(c.medicamentos == 0 for c in calidades if c.nombre != "Vigencia confirmada")
 
 
-def test_codigo_duplicado_se_detecta():
+def test_inactivo_en_gemanet_pero_vigente_en_invima_es_la_unica_excepcion_visible():
+    """Un CUM inactivo en Gemma Net que INVIMA SI tiene vigente
+    (ESTADO_CUM_INVIMA='Activo') es el unico caso donde un inactivo debe
+    verse -- ahora dentro de la tarjeta 6 'Diferencia de estado o campos'."""
+    auditoria = pd.DataFrame([
+        _fila("500-1", ESTADO_CUM_INVIMA="Activo"),
+        _fila(
+            "500-2",
+            ACTIVO="NO",
+            ESTADO_CUM_INVIMA="Activo",
+            ESTADO_LISTADO_INVIMA="vigente",
+        ),
+    ])
+    calidades = calidades_auditoria(auditoria)
+    excepcion = next(c for c in calidades if c.nombre == "Diferencia de estado o campos")
+    assert excepcion.medicamentos == 1
+    assert excepcion.df_tabla["CODIGO_INTERNO"].tolist() == ["500-2"]
+    # No debe aparecer duplicado en ninguna otra calidad -- son mutuamente
+    # excluyentes con las de "solo activos".
+    assert all(
+        c.medicamentos == 0
+        for c in calidades
+        if c.nombre not in ("Vigencia confirmada", "Diferencia de estado o campos")
+    )
+    vigentes = next(c for c in calidades if c.nombre == "Vigencia confirmada")
+    assert vigentes.medicamentos == 1
+
+
+def test_codigo_duplicado_ya_no_es_una_calidad():
+    """La deteccion NO se perdio: sigue calculandose en la columna
+    CODIGO_DUPLICADO_EN_REPORTE y se muestra como la dimension "Unicidad" en
+    /auditoria/dimensiones (tarjetas laterales). Dejo de ser una calidad
+    propia porque era la misma cifra repetida dos veces en la misma pantalla
+    -- pedido del usuario, 2026-09-01."""
     auditoria = pd.DataFrame(
         [_fila("500-1", CODIGO_DUPLICADO_EN_REPORTE=True), _fila("500-2")]
     )
-    calidades = calidades_auditoria(auditoria)
-    duplicados = next(c for c in calidades if c.nombre == "Código repetido dentro del reporte")
-    assert duplicados.medicamentos == 1
+    nombres = {c.nombre for c in calidades_auditoria(auditoria)}
+    assert "Código repetido dentro del reporte" not in nombres
+    assert "Código de marca o unidad inexistente" not in nombres
 
 
-def test_activos_sin_vigencia_invima_requiere_activo_y_estado_de_riesgo():
+def test_no_existe_la_calidad_redundante_de_activos_sin_vigencia():
+    """Tras el rediseño 2026-09-02, ya no existe calidad redundante. La
+    tarjeta de 'Inactivo en Gemma Net pero vigente en INVIMA' se integro
+    dentro de 'Diferencia de estado o campos', eliminando duplicados."""
     auditoria = pd.DataFrame(
-        [
-            _fila("500-1", ACTIVO="SI", ESTADO_COHERENCIA=EstadoCoherencia.VENCIDO_EN_INVIMA.value),
-            # Vencido pero INACTIVO -- no cuenta, no hay riesgo de autorizacion.
-            _fila("500-2", ACTIVO="NO", ESTADO_COHERENCIA=EstadoCoherencia.VENCIDO_EN_INVIMA.value),
-            # Activo pero correcto -- no cuenta.
-            _fila("500-3", ACTIVO="SI", ESTADO_COHERENCIA=EstadoCoherencia.CORRECTO.value),
-        ]
+        [_fila("500-1", ACTIVO="SI", ESTADO_CUM_INVIMA="Inactivo", ESTADO_LISTADO_INVIMA="vencido")]
     )
-    calidades = calidades_auditoria(auditoria)
-    riesgo = next(c for c in calidades if c.nombre == "Activos aquí sin vigencia en INVIMA")
-    assert riesgo.medicamentos == 1
-    assert riesgo.df_tabla["CODIGO_INTERNO"].tolist() == ["500-1"]
+    nombres = [c.nombre for c in calidades_auditoria(auditoria)]
+    assert "Activos aquí sin vigencia en INVIMA" not in nombres
+    assert "Inactivo en Gemma Net pero vigente en INVIMA" not in nombres
+    # El medicamento NO se pierde: sigue contado en su calidad especifica.
+    vencidos = next(c for c in calidades_auditoria(auditoria) if c.nombre == "Registro vencido en INVIMA")
+    assert vencidos.medicamentos == 1
 
 
 def test_porcentaje_del_catalogo_es_sobre_el_total_no_sobre_el_subconjunto():
@@ -73,8 +170,10 @@ def test_porcentaje_del_catalogo_es_sobre_el_total_no_sobre_el_subconjunto():
         [_fila("500-1", CODIGO_DUPLICADO_EN_REPORTE=True)] + [_fila(f"500-{i}") for i in range(2, 5)]
     )
     calidades = calidades_auditoria(auditoria)
-    duplicados = next(c for c in calidades if c.nombre == "Código repetido dentro del reporte")
-    assert duplicados.porcentaje_del_catalogo == 25.0  # 1 de 4, no 1 de 1
+    vigentes = next(c for c in calidades if c.nombre == "Vigencia confirmada")
+    # Las 4 filas son "Vigencia confirmada"; el denominador es el universo
+    # auditable (4), no el subconjunto de la calidad.
+    assert vigentes.porcentaje_del_catalogo == 100.0
 
 
 def test_catalogo_vacio_no_revienta_por_division_entre_cero():
@@ -102,9 +201,9 @@ def _calidad(auditoria: pd.DataFrame, nombre: str):
 def test_consulta_de_verificacion_sql_apunta_a_la_tabla_y_columnas_reales():
     """La consulta tiene que poder pegarse tal cual en un cliente SQL contra
     Gemma Net -- mismas columnas que ya usa ingesta/gemanet_sql.py."""
-    auditoria = pd.DataFrame([_fila("500-1", CODIGO_DUPLICADO_EN_REPORTE=True)])
-    duplicados = _calidad(auditoria, "Código repetido dentro del reporte")
-    consulta = duplicados.df_tabla["CONSULTA_VERIFICACION_SQL"].iloc[0]
+    auditoria = pd.DataFrame([_fila("500-1")])
+    vigentes = _calidad(auditoria, "Vigencia confirmada")
+    consulta = vigentes.df_tabla["CONSULTA_VERIFICACION_SQL"].iloc[0]
     assert "administrativo.tb_medicamento" in consulta
     assert "codigo_interno = '500-1'" in consulta
     assert "descripcion" in consulta
@@ -112,29 +211,24 @@ def test_consulta_de_verificacion_sql_apunta_a_la_tabla_y_columnas_reales():
 
 
 def test_consulta_de_verificacion_sql_escapa_comillas_simples():
-    auditoria = pd.DataFrame([_fila("500-1'; DROP TABLE--", CODIGO_DUPLICADO_EN_REPORTE=True)])
-    duplicados = _calidad(auditoria, "Código repetido dentro del reporte")
-    consulta = duplicados.df_tabla["CONSULTA_VERIFICACION_SQL"].iloc[0]
-    assert "500-1''; DROP TABLE--" in consulta
+    """Se prueba sobre el helper y no a traves de una calidad: un codigo con
+    comilla no es un CUM valido, asi que desde 2026-09-01 no cae en ninguna
+    calidad (todas exigen formato EXPEDIENTE-CONSECUTIVO). El escape sigue
+    importando igual -- la consulta se pega tal cual en un cliente SQL ajeno
+    y tiene que ser valida sea cual sea el caracter que traiga el dato."""
+    consultas = _consultas_verificacion_gemanet(pd.Series(["500-1'; DROP TABLE--"]))
+    assert "500-1''; DROP TABLE--" in consultas.iloc[0]
 
 
 def test_consejo_sale_de_naturaleza_hallazgo_y_queda_vacio_sin_hallazgo():
     auditoria = pd.DataFrame(
         [
-            _fila(
-                "500-1",
-                CODIGO_DUPLICADO_EN_REPORTE=True,
-                NATURALEZA_HALLAZGO="Vigencia en riesgo",
-            ),
-            _fila(
-                "500-2",
-                CODIGO_DUPLICADO_EN_REPORTE=True,
-                NATURALEZA_HALLAZGO="",  # sin hallazgo -- sin consejo
-            ),
+            _fila("500-1", NATURALEZA_HALLAZGO="Vigencia en riesgo"),
+            _fila("500-2", NATURALEZA_HALLAZGO=""),  # sin hallazgo -- sin consejo
         ]
     )
-    duplicados = _calidad(auditoria, "Código repetido dentro del reporte")
-    tabla = duplicados.df_tabla.set_index("CODIGO_INTERNO")
+    vigentes = _calidad(auditoria, "Vigencia confirmada")
+    tabla = vigentes.df_tabla.set_index("CODIGO_INTERNO")
     assert "Revisar antes de autorizar" in tabla.loc["500-1", "CONSEJO"]
     assert tabla.loc["500-2", "CONSEJO"] == ""
 
@@ -156,7 +250,7 @@ def test_con_diferencias_muestra_el_trio_gemanet_invima_validacion_por_campo():
         ]
     )
     calidades = calidades_auditoria(auditoria)
-    con_diferencias = next(c for c in calidades if c.nombre == "Con algún campo distinto al de INVIMA")
+    con_diferencias = next(c for c in calidades if c.nombre == "Diferencia de estado o campos")
     assert "DESCRIPCION_GEMANET" in con_diferencias.columnas
     assert "DESCRIPCION_INVIMA" in con_diferencias.columnas
     assert "DESCRIPCION_VALIDACION" in con_diferencias.columnas
@@ -164,3 +258,79 @@ def test_con_diferencias_muestra_el_trio_gemanet_invima_validacion_por_campo():
     assert fila["DESCRIPCION_GEMANET"] == "ACETAMINOFEN 500MG"
     assert fila["DESCRIPCION_INVIMA"] == "ACETAMINOFEN 500 MG"
     assert fila["DESCRIPCION_VALIDACION"] == "difiere"
+
+
+# --- Secciones de diferencia (partir una calidad grande por tipo) ----------
+
+
+def _tabla_con_diferencias():
+    """Cuatro filas que cubren los tres mecanismos de diferencia distintos:
+    campos comparados, fechas contra INVIMA y contradiccion interna."""
+    return pd.DataFrame(
+        [
+            _fila("500-1", CAMPOS_CON_DIFERENCIA="CONCENTRACION, DESCRIPCION"),
+            _fila("500-2", CAMPOS_CON_DIFERENCIA="DESCRIPCION"),
+            _fila(
+                "500-3",
+                COHERENCIA_FECHAS_INVIMA="Falta actualizar FECHA_FIN en Gemma Net: INVIMA reporta...",
+            ),
+            _fila("500-4", INCONSISTENCIA_FECHAS_ACTIVO="ACTIVO=NO sin FECHA_FIN registrada"),
+        ]
+    )
+
+
+def test_secciones_cuentan_por_tipo_de_diferencia_y_omiten_las_vacias():
+    secciones = secciones_de_diferencia(_tabla_con_diferencias())
+    por_clave = {s.clave: s.medicamentos for s in secciones}
+    assert por_clave["campo:DESCRIPCION"] == 2
+    assert por_clave["campo:CONCENTRACION"] == 1
+    assert por_clave["fecha:FECHA_FIN"] == 1
+    # "Fechas que se contradicen" se elimino (2026-09-03): no era pedido.
+    # Un campo sin ninguna diferencia no aparece: la columna lateral se libero
+    # para ganar claridad.
+    assert "campo:MARCA_MEDICAMENTO" not in por_clave
+    assert "interna:fechas" not in por_clave
+
+
+def test_secciones_agrupan_campos_antes_que_fechas():
+    """Orden pedido por el usuario (2026-09-02), el mismo en que enumero los
+    tipos: campos del medicamento, despues fechas, al final la contradiccion
+    interna. Por volumen puro "Fecha fin" (el 97 %) aplastaria arriba y los
+    campos quedarian al fondo, que es justo lo que se queria poder ver."""
+    claves = [s.clave for s in secciones_de_diferencia(_tabla_con_diferencias())]
+    grupos = [c.split(":", 1)[0] for c in claves]
+    assert grupos == sorted(grupos, key=["campo", "fecha", "interna"].index)
+
+
+def test_filtrar_por_seccion_devuelve_exactamente_lo_que_conto_la_tarjeta():
+    """Conteo y filtro salen del mismo registro: si discreparan, la tarjeta
+    diria un numero y la tabla mostraria otro."""
+    tabla = _tabla_con_diferencias()
+    for seccion in secciones_de_diferencia(tabla):
+        assert len(filtrar_por_seccion(tabla, seccion.clave)) == seccion.medicamentos
+
+
+def test_seccion_de_campo_no_matchea_por_substring():
+    """CAMPOS_CON_DIFERENCIA es una lista separada por comas: buscar el campo
+    como substring haria que un campo prefijo de otro se lleve filas ajenas."""
+    tabla = pd.DataFrame([_fila("500-1", CAMPOS_CON_DIFERENCIA="DESCRIPCION_COMERCIAL")])
+    assert len(filtrar_por_seccion(tabla, "campo:DESCRIPCION")) == 0
+
+
+def test_descripcion_se_marca_como_efecto_de_principio_activo():
+    """Sin esta marca "Descripcion" parece el problema mas grande cuando en
+    buena parte es la consecuencia de que el principio activo este mal."""
+    secciones = {s.clave: s for s in secciones_de_diferencia(_tabla_con_diferencias())}
+    assert secciones["campo:DESCRIPCION"].derivado_de == ("PRINCIPIO_ACTIVO", "UNIDAD_MEDIDA")
+    assert secciones["campo:CONCENTRACION"].derivado_de == ()
+
+
+def test_calidad_sin_diferencias_no_tiene_secciones():
+    assert secciones_de_diferencia(pd.DataFrame([_fila("500-1")])) == []
+
+
+def test_seccion_desconocida_devuelve_la_tabla_entera():
+    """Mejor mostrar de mas que fingir "no hay hallazgos" (que es como se lee
+    una tabla vacia) por una clave vieja en un enlace."""
+    tabla = _tabla_con_diferencias()
+    assert len(filtrar_por_seccion(tabla, "campo:INVENTADO")) == len(tabla)

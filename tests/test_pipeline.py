@@ -60,11 +60,16 @@ def _crear_invima_xlsx(tmp_path, filas):
     return ruta
 
 
-def _crear_gemanet_export(tmp_path, codigos_existentes):
+def _crear_gemanet_export(tmp_path, codigos_existentes, activo=None):
+    # activo=None preserva el comportamiento historico (sin columna ACTIVO)
+    # para no afectar los demas usos de este fixture -- solo los llamadores
+    # que necesitan un codigo auditable (ver filtrar_universo_auditable en
+    # auditoria/coherencia_invima.py) pasan un valor explicito.
+    datos = {"Código Interno": codigos_existentes, "Descripción": ["X"] * len(codigos_existentes)}
+    if activo is not None:
+        datos["Activo"] = [activo] * len(codigos_existentes)
     ruta = tmp_path / "gemanet.xlsx"
-    pd.DataFrame(
-        {"Código Interno": codigos_existentes, "Descripción": ["X"] * len(codigos_existentes)}
-    ).to_excel(ruta, index=False)
+    pd.DataFrame(datos).to_excel(ruta, index=False)
     return ruta
 
 
@@ -330,7 +335,11 @@ def test_auditar_coherencia_gemanet_pasa_otros_estados_y_renovacion_hasta_el_res
     # confirma que los 2 parametros nuevos SI llegan hasta el resultado final,
     # no vuelve a probar la logica de prioridad/deteccion en si
     ruta_invima = _crear_invima_xlsx(tmp_path, [_fila_invima(500, 1)])
-    ruta_gemanet = _crear_gemanet_export(tmp_path, ["999-9"])
+    # activo="SI" -- filtrar_universo_auditable() exige ACTIVO='SI' (o vigente
+    # en INVIMA) para dejar una fila en el resultado final; sin esto el codigo
+    # de prueba quedaria fuera del universo auditable, sin relacion con lo
+    # que este test realmente verifica.
+    ruta_gemanet = _crear_gemanet_export(tmp_path, ["999-9"], activo="SI")
     ruta_catalogo_unidad = _crear_catalogo_csv(tmp_path, "unidad.csv", [(10, "MG - MILIGRAMO")])
     ruta_catalogo_marca = _crear_catalogo_csv(tmp_path, "marca.csv", [(200, "ACME SAS")])
 

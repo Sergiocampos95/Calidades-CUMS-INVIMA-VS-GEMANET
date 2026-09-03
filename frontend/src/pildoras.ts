@@ -47,6 +47,39 @@ export function etiquetaEstadoCoherencia(valor: string): string {
 
 export const ESTADOS_COHERENCIA = Object.keys(ETIQUETA_ESTADO_COHERENCIA);
 
+// Proyeccion de ESTADO_COHERENCIA a "en cual de los 4 listados de INVIMA
+// aparece este medicamento" (coherencia_invima.py::_estado_listado_invima) --
+// vocabulario chico y cerrado, se muestra al lado de ACTIVO (Gemma Net) para
+// comparar los dos estados de un vistazo.
+const ETIQUETA_ESTADO_LISTADO_INVIMA: Record<string, string> = {
+  vigente: "Vigente",
+  vencido: "Vencido",
+  renovacion: "En trámite de renovación",
+  otros_estados: "Otro estado",
+  // Pedido explicito del usuario (2026-09-01): "sin correspondencia" sonaba
+  // ambiguo (parecia un error de cruce, no un hecho del dato) -- el
+  // medicamento sencillamente no existe en ninguno de los 4 listados.
+  ninguno: "No existe en INVIMA",
+};
+
+const TIPO_POR_ESTADO_LISTADO_INVIMA: Record<string, string> = {
+  vigente: "ok",
+  vencido: "danger",
+  renovacion: "acento",
+  otros_estados: "warn",
+  ninguno: "neutro",
+};
+
+export function pildoraEstadoListadoInvima(valor: unknown): string {
+  const v = String(valor);
+  return pildora(TIPO_POR_ESTADO_LISTADO_INVIMA[v] ?? "neutro", ETIQUETA_ESTADO_LISTADO_INVIMA[v] ?? v);
+}
+
+export function etiquetaEstadoListadoInvima(valor: string): string {
+  return ETIQUETA_ESTADO_LISTADO_INVIMA[valor] ?? valor;
+}
+
+
 // Vocabulario de NOVEDAD_VIGENCIA_INVIMA (auditoria/coherencia_invima.py,
 // dimension 10) -- mismas etiquetas que _ETIQUETA_VALOR_INTERNO en
 // app_streamlit.py, para que decir "vigente o no" no invente un texto nuevo.
