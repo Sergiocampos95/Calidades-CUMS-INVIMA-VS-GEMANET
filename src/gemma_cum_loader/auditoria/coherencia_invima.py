@@ -1332,10 +1332,12 @@ def _aplicar_dataset_auxiliar(
     detalle: pd.Series,
     fechas_invima: dict[str, pd.Series],
     estado_cum_invima: pd.Series,
+    listado_invima: pd.Series,
     gemanet_codigos: pd.Series,
     df_auxiliar: pd.DataFrame | None,
     estado_valor: str,
-) -> tuple[pd.Series, pd.Series, dict[str, pd.Series], pd.Series]:
+    listado_valor: str,
+) -> tuple[pd.Series, pd.Series, dict[str, pd.Series], pd.Series, pd.Series]:
     """Marca con `estado_valor` los codigos AUN sin resolver (estado sigue
     en SIN_CORRESPONDENCIA_INVIMA) que SI aparecen en `df_auxiliar`, y deja
     en `detalle` el ESTADO_REGISTRO real reportado por INVIMA para ese
@@ -1354,9 +1356,19 @@ def _aplicar_dataset_auxiliar(
 
     `estado_cum_invima` igual: se completa -- nunca se pisa -- con el
     ESTADO_CUM real de `df_auxiliar` en las filas que este dataset
-    resuelve y que todavia estan vacias."""
+    resuelve y que todavia estan vacias.
+
+    `listado_invima` recibe `listado_valor`: el ARCHIVO de INVIMA del que
+    salio realmente la fila. Es un dato distinto del veredicto: sirve para
+    ir a buscar el registro a mano en los Excel de INVIMA (pedido del
+    usuario, 2026-09-02: "definir a que listado pertenece solo seria para
+    ayudarnos a ubicar el archivo de forma manual"). Por eso NO se deriva de
+    `estado_valor`: `otros_estados_como_renovacion` tiene estado
+    'en_tramite_renovacion' pero vive en el archivo de Otros Estados, y
+    decirle al usuario que busque en Renovacion es mandarlo al Excel
+    equivocado."""
     if df_auxiliar is None or df_auxiliar.empty:
-        return estado, detalle, fechas_invima, estado_cum_invima
+        return estado, detalle, fechas_invima, estado_cum_invima, listado_invima
     auxiliar = df_auxiliar.dropna(subset=["CODIGO_INTERNO"]).drop_duplicates(
         subset="CODIGO_INTERNO", keep="first"
     )
@@ -1390,7 +1402,12 @@ def _aplicar_dataset_auxiliar(
         valores_estado_cum = gemanet_codigos.map(auxiliar_indexado["ESTADO_CUM"].astype(str).str.strip())
         estado_cum_invima = estado_cum_invima.where(~(coincide & aun_vacio), valores_estado_cum)
 
-    return estado, detalle, fechas_invima, estado_cum_invima
+    # Mismo criterio de "completar, nunca pisar" que ESTADO_CUM: la primera
+    # pasada que resuelve una fila es la que fija su archivo de origen.
+    listado_aun_vacio = listado_invima.fillna("").astype(str).str.strip().eq("")
+    listado_invima = listado_invima.where(~(coincide & listado_aun_vacio), listado_valor)
+
+    return estado, detalle, fechas_invima, estado_cum_invima, listado_invima
 
 
 # Valor real de ESTADO_REGISTRO dentro de Otros Estados que en realidad
@@ -1598,24 +1615,13 @@ def _coincide_con_alguna_sigla(
 # listado hoy en algun dataset oficial de INVIMA, y en cual" -- pedido para
 # poder filtrar el universo auditable (ver filtrar_universo_auditable) sin
 # que cada consumidor tenga que conocer los 8 valores de EstadoCoherencia.
-_MAPA_ESTADO_LISTADO_INVIMA = {
-    EstadoCoherencia.CORRECTO.value: "vigente",
-    EstadoCoherencia.CON_DIFERENCIAS.value: "vigente",
-    EstadoCoherencia.VENCIDO_EN_INVIMA.value: "vencido",
-    EstadoCoherencia.EN_TRAMITE_RENOVACION_INVIMA.value: "renovacion",
-    EstadoCoherencia.ENCONTRADO_EN_OTRO_ESTADO_INVIMA.value: "otros_estados",
-    EstadoCoherencia.VIGENTE_NO_COMERCIALIZADO_INVIMA.value: "otros_estados",
-    EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value: "ninguno",
-    EstadoCoherencia.NO_VALIDA_CONTRA_INVIMA.value: "ninguno",
-}
-
-
-def _estado_listado_invima(estado_coherencia: pd.Series) -> pd.Series:
-    """Vectorizado (map, sin apply): agrupa los 8 valores de ESTADO_COHERENCIA
-    en el listado de INVIMA donde aparecen hoy -- ver _MAPA_ESTADO_LISTADO_
-    INVIMA. Los 8 valores del enum estan cubiertos; no hace falta un
-    fallback silencioso."""
-    return estado_coherencia.map(_MAPA_ESTADO_LISTADO_INVIMA)
+# Los cuatro archivos de INVIMA, con el nombre exacto que ve el usuario en
+# ESTADO_LISTADO_INVIMA, mas el centinela de "no esta en ninguno".
+_LISTADO_VIGENTES = "vigente"
+_LISTADO_VENCIDOS = "vencido"
+_LISTADO_RENOVACION = "renovacion"
+_LISTADO_OTROS_ESTADOS = "otros_estados"
+_LISTADO_NINGUNO = "ninguno"
 
 
 def auditar_coherencia(
@@ -1912,14 +1918,32 @@ def auditar_coherencia(
     # prioridad y patrón que las fechas).
     estado_cum_invima = _columna_o_vacia(combinado, "ESTADO_CUM_INVIMA")
 
+    # El ARCHIVO de INVIMA donde vive realmente el registro. El merge base de
+    # esta funcion es contra el dataset de VIGENTES, asi que toda fila que
+    # haya tenido correspondencia aqui salio de ese archivo; las demas las
+    # completan las pasadas auxiliares de mas abajo, cada una con su nombre.
+    #
+    # Antes esta columna NO existia y ESTADO_LISTADO_INVIMA se derivaba de
+    # ESTADO_COHERENCIA con un mapa (correcto->"vigente",
+    # con_diferencias->"vigente", ...). Eso NO es el archivo de origen sino
+    # una traduccion del veredicto, y mandaba al usuario al Excel equivocado:
+    # 459 codigos declaraban un listado en el que no estan (medido contra
+    # invima_listados, 2026-09-02). Cada CODIGO_INTERNO aparece en
+    # exactamente UN listado (162.730 de 162.730 verificados), asi que el
+    # dato es unico y no hay que elegir entre varios.
+    listado_invima = pd.Series("", index=combinado.index).where(
+        ~tiene_correspondencia, _LISTADO_VIGENTES
+    )
+
     # Vencidos usaba una asignacion manual de `estado` que nunca pasaba por
     # _aplicar_dataset_auxiliar -- las 3 fechas de INVIMA quedaban NaT para
     # el 100% de los codigos "vencido_en_invima" aunque el dataset de
     # Vencidos SI trae fechaactivo/fechainactivo/fechavencimiento (mismas 29
     # columnas que Vigentes). Caso real diagnosticado: 20102710-2 (2026-09-01).
-    estado, estado_invima_detalle, fechas_invima, estado_cum_invima = _aplicar_dataset_auxiliar(
-        estado, estado_invima_detalle, fechas_invima, estado_cum_invima, gemanet["_CLAVE_CRUCE_INVIMA"],
-        df_invima_vencidos, EstadoCoherencia.VENCIDO_EN_INVIMA.value,
+    estado, estado_invima_detalle, fechas_invima, estado_cum_invima, listado_invima = _aplicar_dataset_auxiliar(
+        estado, estado_invima_detalle, fechas_invima, estado_cum_invima, listado_invima,
+        gemanet["_CLAVE_CRUCE_INVIMA"],
+        df_invima_vencidos, EstadoCoherencia.VENCIDO_EN_INVIMA.value, _LISTADO_VENCIDOS,
     )
 
     # Otros Estados y Tramite de Renovacion solo se evaluan sobre lo que
@@ -1937,24 +1961,42 @@ def auditar_coherencia(
     otros_estados_resto, otros_estados_vigentes = _separar_vigentes_de_otros_estados(
         otros_estados_resto
     )
-    df_renovacion_combinado = pd.concat(
-        [d for d in [df_invima_renovacion, otros_estados_como_renovacion] if d is not None and not d.empty],
-        ignore_index=True,
-    ) if any(d is not None and not d.empty for d in [df_invima_renovacion, otros_estados_como_renovacion]) else None
 
     # Los vigentes van PRIMERO: si un codigo aparece tanto aqui como en el resto
     # de Otros Estados, la lectura correcta es la que dice que sigue vigente.
-    estado, estado_invima_detalle, fechas_invima, estado_cum_invima = _aplicar_dataset_auxiliar(
-        estado, estado_invima_detalle, fechas_invima, estado_cum_invima, gemanet["_CLAVE_CRUCE_INVIMA"],
+    # Las dos pasadas de Otros Estados llevan _LISTADO_OTROS_ESTADOS aunque su
+    # ESTADO_COHERENCIA diga otra cosa: salieron de ESE archivo, y el listado
+    # existe para poder ir a buscarlas ahi.
+    estado, estado_invima_detalle, fechas_invima, estado_cum_invima, listado_invima = _aplicar_dataset_auxiliar(
+        estado, estado_invima_detalle, fechas_invima, estado_cum_invima, listado_invima,
+        gemanet["_CLAVE_CRUCE_INVIMA"],
         otros_estados_vigentes, EstadoCoherencia.VIGENTE_NO_COMERCIALIZADO_INVIMA.value,
+        _LISTADO_OTROS_ESTADOS,
     )
-    estado, estado_invima_detalle, fechas_invima, estado_cum_invima = _aplicar_dataset_auxiliar(
-        estado, estado_invima_detalle, fechas_invima, estado_cum_invima, gemanet["_CLAVE_CRUCE_INVIMA"],
+    estado, estado_invima_detalle, fechas_invima, estado_cum_invima, listado_invima = _aplicar_dataset_auxiliar(
+        estado, estado_invima_detalle, fechas_invima, estado_cum_invima, listado_invima,
+        gemanet["_CLAVE_CRUCE_INVIMA"],
         otros_estados_resto, EstadoCoherencia.ENCONTRADO_EN_OTRO_ESTADO_INVIMA.value,
+        _LISTADO_OTROS_ESTADOS,
     )
-    estado, estado_invima_detalle, fechas_invima, estado_cum_invima = _aplicar_dataset_auxiliar(
-        estado, estado_invima_detalle, fechas_invima, estado_cum_invima, gemanet["_CLAVE_CRUCE_INVIMA"],
-        df_renovacion_combinado, EstadoCoherencia.EN_TRAMITE_RENOVACION_INVIMA.value,
+    # Renovacion son DOS origenes con el MISMO veredicto pero distinto archivo:
+    # el dataset dedicado de Renovacion, y el subset de Otros Estados que en su
+    # propio texto dice "En Tramite Renov". Se aplican en dos pasadas -- mismo
+    # `estado_valor`, distinto `listado_valor` -- en vez de concatenarlos:
+    # asi el veredicto queda igual para ambos y cada uno conserva el Excel
+    # donde de verdad esta. Eran 459 codigos que declaraban "renovacion"
+    # viviendo en el archivo de Otros Estados (medido 2026-09-02).
+    estado, estado_invima_detalle, fechas_invima, estado_cum_invima, listado_invima = _aplicar_dataset_auxiliar(
+        estado, estado_invima_detalle, fechas_invima, estado_cum_invima, listado_invima,
+        gemanet["_CLAVE_CRUCE_INVIMA"],
+        df_invima_renovacion, EstadoCoherencia.EN_TRAMITE_RENOVACION_INVIMA.value,
+        _LISTADO_RENOVACION,
+    )
+    estado, estado_invima_detalle, fechas_invima, estado_cum_invima, listado_invima = _aplicar_dataset_auxiliar(
+        estado, estado_invima_detalle, fechas_invima, estado_cum_invima, listado_invima,
+        gemanet["_CLAVE_CRUCE_INVIMA"],
+        otros_estados_como_renovacion, EstadoCoherencia.EN_TRAMITE_RENOVACION_INVIMA.value,
+        _LISTADO_OTROS_ESTADOS,
     )
 
     # Medicamentos ancestrales y plantas medicinales: creacion propia de la entidad,
@@ -2032,7 +2074,9 @@ def auditar_coherencia(
     # ESTADO_COHERENCIA a proposito: es la misma pregunta, resumida.
     # METADATO DE UBICACION, NO veredicto de vigencia: es el archivo donde se
     # encontro el registro. Para vigencia usa ESTADO_CUM_INVIMA (ver abajo).
-    resultado["ESTADO_LISTADO_INVIMA"] = _estado_listado_invima(estado).values
+    resultado["ESTADO_LISTADO_INVIMA"] = (
+        listado_invima.replace("", _LISTADO_NINGUNO).values
+    )
     # El veredicto de vigencia real de INVIMA ("Activo"/"Inactivo"), independiente
     # del listado donde aparece el registro. Este es el campo correcto para
     # determinar si un medicamento sigue vigente en INVIMA.
@@ -2128,7 +2172,7 @@ def auditar_coherencia(
     # Vigentes, y el punto es que las fechas ahora tambien llegan desde
     # Vencidos/Otros Estados/Renovacion (caso real 20102710-2, que vive solo
     # en Vencidos y antes no tenia ninguna fecha de INVIMA con que contrastar).
-    invima_sabe_del_codigo = _estado_listado_invima(estado).ne("ninguno")
+    invima_sabe_del_codigo = listado_invima.ne("")
     resultado["COHERENCIA_FECHAS_INVIMA"] = _comparar_fechas_con_invima(
         combinado, fechas_invima, invima_sabe_del_codigo
     ).values

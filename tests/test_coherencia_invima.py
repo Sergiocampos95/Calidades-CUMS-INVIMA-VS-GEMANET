@@ -1,5 +1,4 @@
 import pandas as pd
-import pytest
 
 from gemma_cum_loader.auditoria.coherencia_invima import (
     _CAMPOS_COMPLETITUD_REPORTE,
@@ -9,7 +8,6 @@ from gemma_cum_loader.auditoria.coherencia_invima import (
     NATURALEZA_DESACTUALIZADO,
     NATURALEZA_RESIDUAL_MIGRACION,
     EstadoCoherencia,
-    _estado_listado_invima,
     auditar_coherencia,
     filtrar_universo_auditable,
 )
@@ -1557,25 +1555,54 @@ def test_vencido_en_invima_via_vencidos_propaga_las_3_fechas_de_invima():
     assert fila["FECHA_VENCIMIENTO_INVIMA"] == pd.Timestamp("2019-12-31")
 
 
-# --- ESTADO_LISTADO_INVIMA: agrupa los 8 valores de EstadoCoherencia ---
+# --- ESTADO_LISTADO_INVIMA: el ARCHIVO de origen, no el veredicto ---
+#
+# Antes esta columna se derivaba de ESTADO_COHERENCIA con un mapa
+# (correcto->"vigente", con_diferencias->"vigente", ...). Eso no es el archivo
+# donde esta el registro sino una traduccion del veredicto, y su unico
+# proposito declarado por el usuario (2026-09-02) es "ayudarnos a ubicar el
+# archivo de forma manual en los excel de INVIMA". Estos tests fijan que diga
+# el archivo REAL.
 
 
-@pytest.mark.parametrize("estado_coherencia", list(EstadoCoherencia))
-def test_estado_listado_invima_cubre_los_8_valores_del_enum_sin_dejar_ninguno_sin_mapear(
-    estado_coherencia,
-):
-    resultado = _estado_listado_invima(pd.Series([estado_coherencia.value]))
-    valor = resultado.iloc[0]
-    assert valor in {"vigente", "vencido", "renovacion", "otros_estados", "ninguno"}
-    assert pd.notna(valor)
+def test_estado_listado_invima_dice_el_archivo_real_no_el_veredicto():
+    """Un codigo que solo existe en Vencidos debe reportar listado 'vencido'.
+
+    Con el mapa viejo, cualquier fila con correspondencia terminaba en
+    "vigente" via CORRECTO/CON_DIFERENCIAS, y el usuario lo buscaba en el
+    Excel de Vigentes sin encontrarlo (casos reales 19931314-1 y
+    20064726-4)."""
+    resultado = _auditar(
+        [_fila_gemanet("700-3")],
+        [_fila_invima("500-1")],  # NO esta en Vigentes
+        vencidos_filas=[_fila_invima("700-3", ESTADO_CUM="Inactivo")],
+    )
+    assert resultado.loc["700-3", "ESTADO_LISTADO_INVIMA"] == "vencido"
 
 
-def test_estado_listado_invima_no_deja_ningun_valor_sin_mapear_para_toda_la_serie():
-    """Los 8 valores a la vez, en una sola serie: ningun NaN cuela por el map."""
-    serie = pd.Series([estado.value for estado in EstadoCoherencia])
-    resultado = _estado_listado_invima(serie)
-    assert not resultado.isna().any()
-    assert len(resultado) == 8
+def test_listado_de_los_que_estan_en_otros_estados_pero_dicen_tramite_de_renovacion():
+    """Su VEREDICTO es renovacion, pero su ARCHIVO es Otros Estados.
+
+    Son dos datos distintos y hay que conservar los dos: el estado dice como
+    tratarlo, el listado dice donde buscarlo. Mandarlo al Excel de Renovacion
+    es mandarlo al archivo equivocado -- eran 459 codigos (medido contra
+    invima_listados, 2026-09-02)."""
+    resultado = _auditar(
+        [_fila_gemanet("700-3")],
+        [_fila_invima("500-1")],
+        otros_estados_filas=[
+            _fila_invima("700-3", ESTADO_REGISTRO="En tramite renov", ESTADO_CUM="Activo")
+        ],
+    )
+    assert resultado.loc["700-3", "ESTADO_COHERENCIA"] == (
+        EstadoCoherencia.EN_TRAMITE_RENOVACION_INVIMA.value
+    )
+    assert resultado.loc["700-3", "ESTADO_LISTADO_INVIMA"] == "otros_estados"
+
+
+def test_sin_correspondencia_en_ningun_dataset_reporta_ninguno():
+    resultado = _auditar([_fila_gemanet("700-3")], [_fila_invima("500-1")])
+    assert resultado.loc["700-3", "ESTADO_LISTADO_INVIMA"] == "ninguno"
 
 
 # --- filtrar_universo_auditable(): los 3 casos limite documentados en su docstring ---
