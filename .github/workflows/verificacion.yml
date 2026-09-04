@@ -1,0 +1,69 @@
+# Verificacion continua: las mismas tres comprobaciones que el hook pre-push
+# local (scripts/pre-push), pero del lado del servidor.
+#
+# Por que las dos cosas: el hook es local y vive en .git/hooks, que no se
+# versiona -- un clon nuevo no lo tiene hasta correr scripts/instalar-hooks.ps1,
+# y siempre se puede saltar con --no-verify. Esto cierra ese hueco y deja
+# constancia del verde/rojo en cada push y en cada PR.
+#
+# NUNCA toca datos reales: la suite no golpea Socrata ni Postgres (los
+# clientes se inyectan, ver la seccion "Pruebas" del CLAUDE.md) y `data/` no
+# esta en el repositorio.
+
+name: Verificacion
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  backend:
+    name: pytest + ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar el paquete y sus extras de desarrollo
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pip install ruff
+
+      # PYTHONPATH para que `worker` y `backend` (que estan en la raiz, fuera
+      # de src/) se importen igual que en local.
+      - name: pytest
+        run: pytest -q
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+
+      - name: ruff
+        run: ruff check src/ tests/
+
+  frontend:
+    name: tsc
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # `npm ci` exige package-lock.json; si aun no existe se cae a `npm
+      # install` en vez de romper el job por algo que no es un defecto del
+      # codigo.
+      - name: Instalar dependencias del frontend
+        working-directory: frontend
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+      - name: tsc --noEmit
+        working-directory: frontend
+        run: npx tsc --noEmit -p tsconfig.json
