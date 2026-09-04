@@ -105,6 +105,21 @@ Reglas del proyecto en juego:
 - (paso 3) La degradacion ante columna ausente esta en DOS capas y ninguna
   rompe: `_definiciones` (calidades.py) ya la excluye del `df_tabla` antes de
   llegar al router, y `_con_columnas_de_seccion` la filtra otra vez.
+- **OPTIMIZACION (fuera de los pasos, 2026-09-04):** se perfilo de donde
+  salian los 0,65 s por peticion. `leer_tabla` ya cacheada: 0 ms;
+  `filtrar_por_seccion`: 34 ms; **`calidades_auditoria`: 666 ms**. O sea, el
+  100 % del coste era rehacer las 6 mascaras y las columnas derivadas sobre
+  199.611 filas para devolver 1.000, en CADA request (tabla, valores,
+  secciones y descarga). Se cacheo `_calidades()` por snapshot, mismo patron
+  que `_CACHE_TABLAS`. **Medido: 1.177 ms la primera peticion, 54-117 ms las
+  siguientes (~10x).** Cubierto por
+  `test_un_snapshot_nuevo_invalida_las_calidades_cacheadas`, verificado por
+  mutacion: una cache que no se invalida serviria cifras viejas tras un
+  refresco, que es el fallo que ya costo una sesion entera aca.
+  **Consecuencia para los pasos 6 y 7:** la cache del NAVEGADOR ya no es
+  critica para el rendimiento; sigue teniendo sentido para no re-pedir al
+  volver a la vista (pedido explicito del usuario), pero el cuello real ya
+  esta resuelto en el backend y beneficia a TODAS las vistas, no solo a esta.
 - **Cache de paginas en memoria, y sobrevive a salir y volver a la vista**
   (pedido explicito: "cargo una tabla, me devuelvo, vuelvo a entrar y de
   nuevo la carga"). Se descarta al cambiar filtro/seccion/busqueda **y al

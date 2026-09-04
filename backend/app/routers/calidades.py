@@ -37,7 +37,7 @@ from gemma_cum_loader.auditoria.coherencia_invima import (
     ACCION_POR_NATURALEZA,
     filtrar_universo_auditable,
 )
-from worker.almacen_snapshots import leer_tabla
+from worker.almacen_snapshots import leer_tabla, snapshot_actual
 
 router = APIRouter(prefix="/auditoria", tags=["calidad del catalogo"])
 
@@ -82,10 +82,45 @@ def _con_estado_listado_invima(calidad: Calidad, auditoria: pd.DataFrame) -> Cal
     return replace(calidad, columnas=tuple(columnas), df_tabla=df_tabla)
 
 
+# Cache de las 6 calidades ya calculadas, por snapshot. Mismo patron y misma
+# razon que `_CACHE_TABLAS` en worker/almacen_snapshots.py: alli el cuello era
+# releer el Parquet en cada request, aca es RECALCULARLO.
+#
+# Medido el 2026-09-04 sobre el snapshot real (199.611 filas): `leer_tabla` ya
+# cacheada tarda 0 ms, `filtrar_por_seccion` 34 ms, y `calidades_auditoria`
+# **666 ms** -- o sea, TODO el coste de una peticion era rehacer las 6 mascaras
+# y las columnas derivadas sobre 200.000 filas para devolver 1.000. Se pagaba
+# en cada request de tabla, de valores de columna, de secciones y de descarga.
+#
+# Cachear es seguro por la misma razon que alli: los Parquet de un snapshot son
+# inmutables, asi que para un `snapshot.nombre` dado el resultado no cambia. Al
+# llegar un snapshot nuevo la marca no calza y la entrada se reemplaza sola --
+# no crece sin limite (una entrada por carpeta).
+#
+# Los `Calidad` que devuelve quedan COMPARTIDOS entre requests: sus `df_tabla`
+# NO deben mutarse in place. Los llamadores actuales solo filtran (que crea un
+# DataFrame nuevo) o copian antes de tocar.
+_CACHE_CALIDADES: dict[str, tuple[str, list[Calidad]]] = {}
+
+
 def _calidades(carpeta: Path) -> list[Calidad]:
     auditoria = _tabla_auditoria(carpeta)
-    cals = calidades_auditoria(auditoria)
-    return [_con_estado_listado_invima(c, auditoria) for c in cals]
+    snapshot = snapshot_actual(carpeta)
+    # Sin snapshot no hay nombre con el que versionar la entrada: se calcula
+    # sin cachear en vez de arriesgar servir un resultado que no se puede
+    # invalidar. Con `_tabla_auditoria` habiendo respondido, este caso no
+    # deberia darse; es una guarda, no un camino esperado.
+    if snapshot is None:
+        return [_con_estado_listado_invima(c, auditoria) for c in calidades_auditoria(auditoria)]
+
+    clave = str(carpeta)
+    en_cache = _CACHE_CALIDADES.get(clave)
+    if en_cache is not None and en_cache[0] == snapshot.nombre:
+        return en_cache[1]
+
+    cals = [_con_estado_listado_invima(c, auditoria) for c in calidades_auditoria(auditoria)]
+    _CACHE_CALIDADES[clave] = (snapshot.nombre, cals)
+    return cals
 
 
 @router.get("/calidades", response_model=list[CalidadResumen])

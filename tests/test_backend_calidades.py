@@ -428,3 +428,35 @@ def test_columna_de_seccion_ausente_en_el_dataframe_se_omite_sin_romper(tmp_path
         assert "FECHA_ACTIVO_INVIMA" not in filas[0]
     finally:
         app.dependency_overrides.clear()
+
+
+def test_un_snapshot_nuevo_invalida_las_calidades_cacheadas(tmp_path):
+    """Las 6 calidades se cachean por snapshot porque recalcularlas cuesta
+    666 ms sobre las 199.611 filas reales (medido 2026-09-04) y se pagaban en
+    CADA request. Pero una cache que no se invalida es peor que no tenerla:
+    serviria las cifras del snapshot viejo despues de un refresco, y "un 0 se
+    lee como no hay hallazgos cuando en realidad el snapshot es viejo" es
+    exactamente el fallo que ya costo una sesion entera en este proyecto.
+
+    Se comprueba que al escribir un snapshot NUEVO en la misma carpeta las
+    cifras cambian, sin reiniciar el proceso."""
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        escribir_snapshot({"auditoria": _auditoria_muestra()}, carpeta=carpeta)
+        primera = cliente.get("/auditoria/calidades")
+        assert primera.status_code == 200
+        antes = {c["nombre"]: c["medicamentos"] for c in primera.json()}
+
+        # Mismo esquema, la mitad de las filas: si la cache no se invalidara,
+        # la respuesta seguiria contando las de arriba.
+        escribir_snapshot({"auditoria": _auditoria_muestra().head(1)}, carpeta=carpeta)
+        segunda = cliente.get("/auditoria/calidades")
+        assert segunda.status_code == 200
+        despues = {c["nombre"]: c["medicamentos"] for c in segunda.json()}
+
+        assert antes != despues, (
+            "las cifras no cambiaron tras un snapshot nuevo: la cache de "
+            "_calidades no se esta invalidando"
+        )
+    finally:
+        app.dependency_overrides.clear()
