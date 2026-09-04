@@ -83,6 +83,14 @@ Reglas del proyecto en juego:
   **Consecuencia para el paso 6: la cache importa mas de lo previsto**, porque
   esos 0,65 s son un coste fijo por pagina que solo se evita no volviendo a
   pedirla.
+- (paso 3) 9 pruebas nuevas, verificadas POR MUTACION: se rompio
+  `columnas_de_seccion` a proposito (que devolviera el trio de todos los
+  campos, el bug que el paso 1 vino a arreglar) y fallaron las dos que tenian
+  que fallar -- la unitaria y la del endpoint. Una prueba que pasa no sirve si
+  no cae cuando el bug vuelve.
+- (paso 3) La degradacion ante columna ausente esta en DOS capas y ninguna
+  rompe: `_definiciones` (calidades.py) ya la excluye del `df_tabla` antes de
+  llegar al router, y `_con_columnas_de_seccion` la filtra otra vez.
 - **Cache de paginas en memoria, y sobrevive a salir y volver a la vista**
   (pedido explicito: "cargo una tabla, me devuelvo, vuelvo a entrar y de
   nuevo la carga"). Se descarta al cambiar filtro/seccion/busqueda **y al
@@ -134,7 +142,7 @@ pagina) y por si solo ya agiliza la app. Va primero.
       llega `seccion`, recortar las columnas con lo del paso 1. Degradar
       explicito: si una columna no esta en el DataFrame se omite y se anota,
       nunca se rompe la respuesta.
-- [ ] 3. (claude/pruebas) `tests/test_calidades.py`,
+- [x] 3. (claude/pruebas) `tests/test_calidades.py`,
       `tests/test_backend_calidades.py` — que la seccion de un campo trae su
       trio y NO los de los otros campos; que sin seccion las columnas no
       cambian (no romper las 6 tarjetas).

@@ -295,3 +295,136 @@ def test_secciones_de_una_calidad_inexistente_dan_404(tmp_path):
         assert cliente.get("/auditoria/calidades/Inventada/secciones").status_code == 404
     finally:
         app.dependency_overrides.clear()
+
+
+# --- Recorte de columnas por seccion (paso 2 de columnas_de_seccion) -------
+
+
+def _auditoria_con_trio_de_campos():
+    """Igual que `_auditoria_con_diferencias()`, mas el trio GEMANET/INVIMA/
+    VALIDACION de dos campos comparados (CONCENTRACION y DESCRIPCION), para
+    poder comprobar que la seccion de UN campo trae solo SU trio y no el del
+    otro -- antes de este recorte viajaban los 7 trios completos (38
+    columnas) aunque solo 8 fueran utiles para leer una seccion puntual."""
+    df = _auditoria_con_diferencias()
+    df["CONCENTRACION_GEMANET"] = ["500 mg", "", "", ""]
+    df["CONCENTRACION_INVIMA"] = ["50 mg", "", "", ""]
+    df["CONCENTRACION_VALIDACION"] = ["difiere", "", "", ""]
+    df["DESCRIPCION_GEMANET"] = ["ACETAMINOFEN 500MG", "", "", "ACETAMINOFEN 500MG"]
+    df["DESCRIPCION_INVIMA"] = ["ACETAMINOFEN 500 MG", "", "", "ACETAMINOFEN 500 MG"]
+    df["DESCRIPCION_VALIDACION"] = ["difiere", "", "", "difiere"]
+    return df
+
+
+def test_seccion_de_campo_trae_solo_su_trio_y_no_el_de_otros_campos_comparados(tmp_path):
+    """(paso 2) El endpoint de la TABLA recorta a las 8 columnas de la
+    seccion -- sin esta prueba, un cambio futuro podria volver a mandar el
+    trio de DESCRIPCION (u otro campo) junto al de CONCENTRACION sin que
+    ningun test lo note."""
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        escribir_snapshot({"auditoria": _auditoria_con_trio_de_campos()}, carpeta=carpeta)
+        r = cliente.get(
+            "/auditoria/calidades/Diferencia de estado o campos",
+            params={"seccion": "campo:CONCENTRACION"},
+        )
+        assert r.status_code == 200
+        filas = r.json()["filas"]
+        assert len(filas) == 1
+        assert set(filas[0]) == {
+            "CODIGO_INTERNO",
+            "DESCRIPCION",
+            "CONCENTRACION_GEMANET",
+            "CONCENTRACION_INVIMA",
+            "CONCENTRACION_VALIDACION",
+            "ACTIVO",
+            "ESTADO_CUM_INVIMA",
+            "ESTADO_INVIMA",
+        }
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_sin_seccion_las_columnas_de_la_tabla_no_cambian(tmp_path):
+    """Hay 6 tarjetas y pruebas existentes (ver
+    test_todas_las_calidades_incluyen_el_estado_de_invima_en_columnas_y_filas)
+    que dependen de ver la tabla SIN recortar cuando no llega `seccion` -- si
+    el recorte por seccion se aplicara tambien sin seccion, esas tarjetas
+    perderian columnas que hoy si muestran."""
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        escribir_snapshot({"auditoria": _auditoria_con_trio_de_campos()}, carpeta=carpeta)
+        r = cliente.get("/auditoria/calidades/Diferencia de estado o campos")
+        assert r.status_code == 200
+        filas = r.json()["filas"]
+        assert len(filas) > 0
+        for fila in filas:
+            assert "CONCENTRACION_GEMANET" in fila
+            assert "DESCRIPCION_GEMANET" in fila
+            assert "RESPONSABLE_DISCREPANCIA" in fila
+            assert "ESTADO_INVIMA" in fila
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_valores_de_columna_no_recorta_columnas_aunque_haya_seccion(tmp_path):
+    """(paso 2) El recorte de columnas aplica SOLO al endpoint de la tabla.
+    DESCRIPCION_GEMANET no forma parte de las columnas de la seccion
+    campo:CONCENTRACION (ver columnas_de_seccion), y aun asi debe poder
+    consultarse: `valores` ya recibe la columna puntual que el frontend
+    eligio entre las que la tabla recortada muestra, y recortar tambien aca
+    arriesgaria dejar el filtro sin opciones si las dos listas discreparan."""
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        escribir_snapshot({"auditoria": _auditoria_con_trio_de_campos()}, carpeta=carpeta)
+        r = cliente.get(
+            "/auditoria/calidades/Diferencia de estado o campos/valores",
+            params={"columna": "DESCRIPCION_GEMANET", "seccion": "campo:CONCENTRACION"},
+        )
+        assert r.status_code == 200
+        # Solo "1-1" pasa el filtro de fila de la seccion campo:CONCENTRACION
+        # (es el unico con CONCENTRACION en CAMPOS_CON_DIFERENCIA).
+        assert r.json() == [{"valor": "ACETAMINOFEN 500MG", "conteo": 1}]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def _auditoria_con_fecha_inicio_sin_columna_invima():
+    """Simula un archivo auxiliar opcional que no llego a esta corrida:
+    FECHA_ACTIVO_INVIMA (el lado INVIMA del par fecha:FECHA_INICIO) no se
+    agrega a proposito -- la columna debe omitirse en la respuesta, nunca
+    romperla."""
+    df = _auditoria_con_diferencias()
+    df["FECHA_INICIO"] = ["2020-01-01", "2020-01-01", "2020-01-01", "2019-01-01"]
+    df["COHERENCIA_FECHAS_INVIMA"] = [
+        "",
+        "",
+        "",
+        "Falta actualizar FECHA_INICIO en Gemma Net: INVIMA reporta el 2020-01-01",
+    ]
+    return df
+
+
+def test_columna_de_seccion_ausente_en_el_dataframe_se_omite_sin_romper(tmp_path):
+    """(paso 2) Una columna de la lista que no exista en el DataFrame se
+    OMITE en vez de romper la respuesta con un error -- mismo patron que ya
+    usa `calidades_auditoria()` al armar cada `Calidad`. Sin esta prueba, un
+    snapshot sin alguno de los archivos auxiliares opcionales de INVIMA
+    tumbaria esta pantalla en vez de degradarse explicitamente."""
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        escribir_snapshot(
+            {"auditoria": _auditoria_con_fecha_inicio_sin_columna_invima()}, carpeta=carpeta
+        )
+        r = cliente.get(
+            "/auditoria/calidades/Diferencia de estado o campos",
+            params={"seccion": "fecha:FECHA_INICIO"},
+        )
+        assert r.status_code == 200
+        filas = r.json()["filas"]
+        assert len(filas) == 1
+        assert filas[0]["CODIGO_INTERNO"] == "3-3"
+        assert filas[0]["FECHA_INICIO"] == "2019-01-01"
+        assert "FECHA_ACTIVO_INVIMA" not in filas[0]
+    finally:
+        app.dependency_overrides.clear()

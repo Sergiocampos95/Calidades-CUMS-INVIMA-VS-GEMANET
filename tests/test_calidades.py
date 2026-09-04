@@ -4,6 +4,7 @@ from gemma_cum_loader.auditoria.calidades import (
     _con_columnas_derivadas,
     _consultas_verificacion_gemanet,
     calidades_auditoria,
+    columnas_de_seccion,
     filtrar_por_seccion,
     secciones_de_diferencia,
 )
@@ -370,3 +371,74 @@ def test_estado_invima_conserva_el_detalle_cuando_el_listado_agrupa_varios():
     columna = _con_columnas_derivadas(auditoria)["ESTADO_INVIMA"]
 
     assert list(columna) == ["Otro estado (Cancelado)", "Otro estado (Negado)"]
+
+
+# --- columnas_de_seccion: que columnas viajan por cada seccion (paso 3) -----
+
+
+def test_columnas_de_seccion_de_campo_trae_su_trio_y_no_el_de_otros_campos():
+    """Antes de este recorte, abrir la seccion Concentracion traia los 7
+    trios GEMANET/INVIMA/VALIDACION completos (38 columnas) aunque solo el
+    trio de CONCENTRACION sirviera para leer ese hallazgo puntual. Si un
+    cambio futuro volviera a mezclar el trio de otro campo (p.ej.
+    DESCRIPCION) en esta seccion, esta prueba lo nota."""
+    columnas = columnas_de_seccion("campo:CONCENTRACION")
+    assert columnas == (
+        "CODIGO_INTERNO",
+        "DESCRIPCION",
+        "CONCENTRACION_GEMANET",
+        "CONCENTRACION_INVIMA",
+        "CONCENTRACION_VALIDACION",
+        "ACTIVO",
+        "ESTADO_CUM_INVIMA",
+        "ESTADO_INVIMA",
+    )
+    assert "DESCRIPCION_GEMANET" not in columnas
+    assert "DESCRIPCION_INVIMA" not in columnas
+    assert "DESCRIPCION_VALIDACION" not in columnas
+    assert "PRINCIPIO_ACTIVO_GEMANET" not in columnas
+
+
+def test_columnas_de_seccion_clave_desconocida_o_vacia_devuelve_tupla_vacia():
+    """El paso 2 (backend) interpreta la tupla vacia como "no recortar nada".
+    Si esta funcion inventara una lista de columnas para una clave que no
+    existe, un enlace guardado con una seccion vieja dejaria la tabla sin
+    las columnas que de verdad tiene."""
+    assert columnas_de_seccion("campo:INVENTADO") == ()
+    assert columnas_de_seccion("fecha:INVENTADA") == ()
+    assert columnas_de_seccion("otro_prefijo:ALGO") == ()
+    assert columnas_de_seccion("") == ()
+
+
+def test_columnas_de_seccion_fecha_inicio_trae_el_par_fecha_activo_invima():
+    assert columnas_de_seccion("fecha:FECHA_INICIO") == (
+        "CODIGO_INTERNO",
+        "DESCRIPCION",
+        "FECHA_INICIO",
+        "FECHA_ACTIVO_INVIMA",
+        "COHERENCIA_FECHAS_INVIMA",
+        "ACTIVO",
+        "ESTADO_CUM_INVIMA",
+        "ESTADO_INVIMA",
+    )
+
+
+def test_columnas_de_seccion_fecha_fin_trae_fecha_vencimiento_y_no_fecha_inactivo():
+    """FECHA_FIN se compara contra FECHA_VENCIMIENTO_INVIMA, no contra
+    FECHA_INACTIVO_INVIMA -- es la misma regla de negocio de
+    PARES_FECHAS_GEMANET_INVIMA (coherencia_invima.py) que ya cambio una vez
+    (2026-09-02). Si columnas_de_seccion volviera a leer el par viejo, la
+    seccion "Fecha fin diferencias" mostraria una columna que ya no
+    corresponde a lo que dice el mensaje de COHERENCIA_FECHAS_INVIMA."""
+    columnas = columnas_de_seccion("fecha:FECHA_FIN")
+    assert columnas == (
+        "CODIGO_INTERNO",
+        "DESCRIPCION",
+        "FECHA_FIN",
+        "FECHA_VENCIMIENTO_INVIMA",
+        "COHERENCIA_FECHAS_INVIMA",
+        "ACTIVO",
+        "ESTADO_CUM_INVIMA",
+        "ESTADO_INVIMA",
+    )
+    assert "FECHA_INACTIVO_INVIMA" not in columnas
