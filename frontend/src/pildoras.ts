@@ -110,9 +110,15 @@ export function pildoraNovedadVigencia(valor: unknown): string {
 // que VALIDACION_COINCIDE/DIFIERE/... en coherencia_invima.py, generico para
 // cualquier columna que termine en _VALIDACION (DESCRIPCION_VALIDACION,
 // PRINCIPIO_ACTIVO_VALIDACION, etc.).
+// La CLAVE es el valor que emite el backend (VALIDACION_DIFIERE = "difiere")
+// y no se toca: viaja en las columnas <CAMPO>_VALIDACION del snapshot y en las
+// descargas. Lo que cambia es solo la ETIQUETA que se lee en pantalla
+// ("Diferente" en vez de "Difiere", pedido del usuario 2026-09-04: se entiende
+// de un vistazo sin conjugar un verbo). Traducir aca y no en el backend es lo
+// que permite renombrar sin invalidar los snapshots ya escritos.
 const ETIQUETA_VALIDACION: Record<string, string> = {
   coincide: "Coincide",
-  difiere: "Difiere",
+  difiere: "Diferente",
   "sin comparar": "Sin comparar",
   "sin dato en Gemma Net": "Sin dato en Gemma Net",
 };

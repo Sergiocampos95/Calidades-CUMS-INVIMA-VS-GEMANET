@@ -680,7 +680,7 @@ function crearComparacionEstadosHTML(
         <td>${
           estadoCumInvima === equivalenteGemma
             ? '<span class="pildora pildora--ok">coincide</span>'
-            : '<span class="pildora pildora--danger">difiere</span>'
+            : '<span class="pildora pildora--danger">diferente</span>'
         }</td>
       </tr>`
     : "";
