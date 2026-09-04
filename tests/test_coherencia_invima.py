@@ -146,16 +146,21 @@ def test_marca_sin_informacion_no_se_reporta_como_diferencia_con_invima():
 
     Contarlo como "no coincide con INVIMA" producia 40.044 hallazgos de marca
     en produccion -- el 93 % de todo lo comparable -- para lo que en realidad
-    es UN problema: el campo no se esta diligenciando. La ausencia se sigue
-    viendo, pero en COMPLETITUD, que es su dimension.
+    es UN problema: el campo no se esta diligenciando. Por eso NO entra en
+    CAMPOS_CON_DIFERENCIA: no difiere, falta.
+
+    Lo que si cambio (2026-09-03, decision del usuario sobre 20055212-21): si
+    INVIMA SI reporta la marca, la ausencia baja PORCENTAJE_CALIDAD en vez de
+    salir del denominador. Antes el medicamento quedaba en 100,0% con el campo
+    en blanco, y eso es lo contrario de lo que mide esa columna.
     """
     resultado = _auditar(
         [_fila_gemanet("500-1", MARCA_MEDICAMENTO=1)], [_fila_invima("500-1")]
     ).loc["500-1"]
     assert resultado["MARCA_MEDICAMENTO_VALIDACION"] == "sin dato en Gemma Net"
     assert "MARCA_MEDICAMENTO" not in resultado["CAMPOS_CON_DIFERENCIA"]
-    # y el campo sale del denominador: 6 comparables, 6 coinciden
-    assert resultado["PORCENTAJE_CALIDAD"] == 100.0
+    assert resultado["PORCENTAJE_CALIDAD"] < 100.0
+    assert resultado["ESTADO_COHERENCIA"] == EstadoCoherencia.CON_DIFERENCIAS.value
 
 
 def test_campo_en_menos_999_tampoco_cuenta_como_diferencia():
@@ -164,7 +169,9 @@ def test_campo_en_menos_999_tampoco_cuenta_como_diferencia():
         [_fila_gemanet("500-1", CODIGO_ATC="-999")], [_fila_invima("500-1")]
     ).loc["500-1"]
     assert resultado["CODIGO_ATC_VALIDACION"] == "sin dato en Gemma Net"
-    assert resultado["PORCENTAJE_CALIDAD"] == 100.0
+    # Penaliza porque INVIMA SI trae el ATC -- ver
+    # test_marca_sin_informacion_no_se_reporta_como_diferencia_con_invima.
+    assert resultado["PORCENTAJE_CALIDAD"] < 100.0
 
 
 def test_unidad_coincide_con_cualquiera_de_las_siglas_del_codigo():
@@ -1830,9 +1837,16 @@ def test_el_aviso_de_vencido_recuerda_verificar_la_renovacion():
     )
     aviso = resultado.loc["55-1", "VIGENCIA_NO_CONFIRMABLE"].lower()
     assert "confirmarla en invima" in aviso
-    # El ESTADO_COHERENCIA sigue siendo "correcto": los CAMPOS si coinciden.
-    # Lo que cambia es que ya no cuenta como "vigente y correcto".
-    assert resultado.loc["55-1", "ESTADO_COHERENCIA"] == EstadoCoherencia.CORRECTO.value
+    # ESTADO_COHERENCIA es "con_diferencias" aunque los 7 CAMPOS coincidan:
+    # INVIMA publica FECHA VENCIMIENTO y Gemma Net no la tiene, y desde
+    # 2026-09-03 las fechas cuentan como parte de la exactitud.
+    #
+    # Antes este test afirmaba "correcto" aca. Lo cambio el usuario tras
+    # detectar que la consulta puntual de 19914260-3 decia "las fechas no
+    # coinciden" mientras la tabla de hallazgos daba "Correcto / 100%" para el
+    # mismo medicamento -- eran 29.638 filas con el hallazgo escondido.
+    assert resultado.loc["55-1", "ESTADO_COHERENCIA"] == EstadoCoherencia.CON_DIFERENCIAS.value
+    assert "FECHA_FIN" in resultado.loc["55-1", "COHERENCIA_FECHAS_INVIMA"]
 
 
 def test_estado_cum_invima_se_propaga_desde_los_datasets_auxiliares():
@@ -1863,3 +1877,112 @@ def test_estado_cum_invima_de_vigentes_no_lo_pisa_un_dataset_auxiliar():
         vencidos_filas=[_fila_invima("500-1", ESTADO_CUM="Inactivo")],
     )
     assert resultado.loc["500-1", "ESTADO_CUM_INVIMA"] == "Activo"
+
+
+def test_una_fecha_sin_actualizar_no_puede_quedar_como_correcto_al_100():
+    """Regresion del caso 19914260-3 que reporto el usuario (2026-09-03): la
+    consulta puntual decia "las fechas no coinciden con INVIMA" y la tabla de
+    hallazgos, para el MISMO medicamento, decia "Correcto" y "100,0%".
+
+    Las dos vistas leen del mismo snapshot, asi que la contradiccion solo
+    podia venir de que ESTADO_COHERENCIA y PORCENTAJE_CALIDAD ignoraran la
+    dimension de fechas. Eran 29.638 de 31.108 filas "correctas" (el 95%)."""
+    resultado = _auditar(
+        [_fila_gemanet("55-1", ACTIVO="Si")],
+        [_fila_invima("55-1", FECHA_ACTIVO="2006-11-10", FECHA_VENCIMIENTO="2027-06-21")],
+    )
+
+    assert resultado.loc["55-1", "ESTADO_COHERENCIA"] == EstadoCoherencia.CON_DIFERENCIAS.value
+    assert resultado.loc["55-1", "PORCENTAJE_CALIDAD"] < 100
+    assert resultado.loc["55-1", "COHERENCIA_FECHAS_INVIMA"] != ""
+
+
+def test_si_invima_no_trae_la_fecha_el_par_no_penaliza_la_calidad():
+    """El denominador sigue siendo por fila: si INVIMA no publica la fecha no
+    se le puede exigir nada a Gemma Net, asi que ese par no entra en la cuenta
+    -- mismo criterio que un campo que Gemma Net no trae."""
+    resultado = _auditar(
+        [_fila_gemanet("55-1", ACTIVO="Si")],
+        [_fila_invima("55-1", FECHA_ACTIVO="", FECHA_VENCIMIENTO="")],
+    )
+
+    assert resultado.loc["55-1", "PORCENTAJE_CALIDAD"] == 100.0
+    assert resultado.loc["55-1", "ESTADO_COHERENCIA"] == EstadoCoherencia.CORRECTO.value
+
+
+def test_un_hallazgo_de_fecha_recibe_naturaleza_para_poder_priorizarlo():
+    """Sin NATURALEZA_HALLAZGO un medicamento es INVISIBLE en "Priorizar lo
+    que requiere accion": esa vista agrupa por clase de hallazgo, y la clase
+    vacia no se muestra. Eran 28.377 filas (Excel de 2022, 2026-09-03) con la
+    fecha sin actualizar y sin clase asignada.
+
+    Va como "dato desactualizado frente a INVIMA" porque su accion sugerida
+    es justamente la que aplica: actualizar el campo con el dato oficial."""
+    resultado = _auditar(
+        [_fila_gemanet("55-1", ACTIVO="Si")],
+        [_fila_invima("55-1", FECHA_ACTIVO="2006-11-10", FECHA_VENCIMIENTO="2027-06-21")],
+    )
+
+    assert resultado.loc["55-1", "NATURALEZA_HALLAZGO"] == NATURALEZA_DESACTUALIZADO
+    assert resultado.loc["55-1", "ACCION_SUGERIDA"] != ""
+
+
+def test_un_campo_vacio_en_AMBAS_fuentes_no_penaliza_la_calidad():
+    """La otra cara de la regla: si INVIMA tampoco trae el dato, no se le
+    puede exigir a Gemma Net que coincida con nada, y el campo sigue saliendo
+    del denominador. Sin esta mitad, penalizariamos a un medicamento por un
+    campo que nadie tiene."""
+    resultado = _auditar(
+        [_fila_gemanet("500-1", CODIGO_ATC="-999")],
+        [_fila_invima("500-1", ATC="")],
+    ).loc["500-1"]
+
+    assert resultado["CODIGO_ATC_VALIDACION"] == "sin dato en Gemma Net"
+    assert resultado["PORCENTAJE_CALIDAD"] == 100.0
+    assert resultado["ESTADO_COHERENCIA"] == EstadoCoherencia.CORRECTO.value
+
+
+def test_activo_aqui_e_inactivo_en_invima_nunca_queda_como_correcto():
+    """El hallazgo de mayor riesgo del sistema: se puede autorizar un
+    medicamento que INVIMA ya desactivo. Reportado por el usuario sobre
+    20055212-21 (2026-09-03), que salia "Correcto / 100%" en la tabla de
+    hallazgos mientras la consulta puntual lo marcaba como CRITICO."""
+    resultado = _auditar(
+        [_fila_gemanet("500-1", ACTIVO="Si")],
+        [_fila_invima("500-1", ESTADO_CUM="Inactivo")],
+    ).loc["500-1"]
+
+    assert resultado["ESTADO_COHERENCIA"] == EstadoCoherencia.CON_DIFERENCIAS.value
+
+
+def test_un_cum_que_solo_vive_en_vencidos_si_compara_sus_campos():
+    """El merge base es contra VIGENTES, asi que un CUM de otro listado
+    llegaba con los 7 campos comparables en blanco y toda su fila decia "Sin
+    comparar" -- aunque INVIMA SI publica esos datos en el Excel de Vencidos.
+
+    Reportado por el usuario sobre 19908024-5 (2026-09-04): "restaura los
+    demas campos porque se estan marcando vacio y en invima si hay
+    informacion". Eran 84.422 medicamentos (Excel de 2022): 50.039 en
+    Vencidos, 22.916 en Renovacion y 11.467 en Otros Estados."""
+    resultado = _auditar(
+        [_fila_gemanet("55-1", PRINCIPIO_ACTIVO="BUDESONIDA")],
+        [_fila_invima("900-9")],  # Vigentes no lo tiene
+        vencidos_filas=[
+            _fila_invima("55-1", PRINCIPIO_ACTIVO="BUDESONIDA", ESTADO_REGISTRO="Vencido")
+        ],
+    ).loc["55-1"]
+
+    assert resultado["PRINCIPIO_ACTIVO_INVIMA"] == "BUDESONIDA"
+    assert resultado["PRINCIPIO_ACTIVO_VALIDACION"] == "coincide"
+
+
+def test_el_dato_de_vigentes_no_lo_pisa_un_listado_auxiliar():
+    """Completa, nunca pisa: si el CUM esta en Vigentes, ese es el dato bueno
+    aunque aparezca ademas en otro listado."""
+    resultado = _auditar(
+        [_fila_gemanet("55-1", PRINCIPIO_ACTIVO="BUDESONIDA")],
+        [_fila_invima("55-1", PRINCIPIO_ACTIVO="BUDESONIDA")],
+        vencidos_filas=[_fila_invima("55-1", PRINCIPIO_ACTIVO="OTRA COSA")],
+    ).loc["55-1"]
+
+    assert resultado["PRINCIPIO_ACTIVO_INVIMA"] == "BUDESONIDA"

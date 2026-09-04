@@ -1327,6 +1327,67 @@ _FECHAS_INVIMA_PROPAGABLES = {
 }
 
 
+def _completar_invima_desde_auxiliares(
+    combinado: pd.DataFrame,
+    columnas_invima: list[str],
+    auxiliares: tuple[pd.DataFrame | None, ...],
+) -> tuple[pd.DataFrame, pd.Series]:
+    """Rellena las columnas `*_INVIMA` de `combinado` con los datos de
+    Vencidos / Otros Estados / Renovacion, para las filas que el merge contra
+    VIGENTES dejo vacias.
+
+    Por que existe (2026-09-04, reportado por el usuario sobre 19908024-5):
+    el merge base es contra Vigentes, asi que un CUM que vive en otro listado
+    llegaba con los 7 campos comparables en blanco y TODA su tabla decia
+    "Sin comparar" -- aunque INVIMA si publica esos datos en su propio Excel.
+    Son 84.422 medicamentos medidos contra los Excel de 2022: 50.039 en
+    Vencidos, 22.916 en Renovacion y 11.467 en Otros Estados. La auditoria de
+    campos solo funcionaba para el listado de Vigentes.
+
+    Completa, NUNCA pisa: una fila que ya trae el dato de Vigentes lo conserva
+    aunque tambien aparezca en un auxiliar. Y el orden de `auxiliares` es el
+    mismo de prioridad que usa `_aplicar_dataset_auxiliar`, para que el valor
+    y el listado que se muestran salgan del mismo sitio.
+
+    Devuelve tambien en que filas se completo algo: `tiene_correspondencia`
+    (el `_merge` del cruce contra Vigentes) sigue significando "esta en
+    Vigentes" y no se toca, pero decidir si hay con que comparar necesita la
+    pregunta mas amplia de "INVIMA conoce este codigo en ALGUN listado".
+    """
+    completado = pd.Series(False, index=combinado.index)
+    claves = combinado["_CLAVE_CRUCE_INVIMA"].astype(str).str.strip()
+    for df_auxiliar in auxiliares:
+        if df_auxiliar is None or df_auxiliar.empty or "CODIGO_INTERNO" not in df_auxiliar.columns:
+            continue
+        auxiliar = (
+            df_auxiliar.dropna(subset=["CODIGO_INTERNO"])
+            .drop_duplicates(subset="CODIGO_INTERNO", keep="first")
+            .copy()
+        )
+        # La descripcion esperada no es una columna cruda de INVIMA: se arma
+        # desde varias suyas, asi que hay que calcularla tambien aca (el
+        # dataset auxiliar trae las mismas 29 columnas que Vigentes).
+        auxiliar["_DESCRIPCION_ESPERADA"] = _descripcion_esperada_invima(auxiliar)
+        auxiliar = auxiliar.set_index(auxiliar["CODIGO_INTERNO"].astype(str).str.strip())
+        esta_en_auxiliar = claves.isin(auxiliar.index)
+        if not esta_en_auxiliar.any():
+            continue
+        for columna in columnas_invima:
+            destino = f"{columna}_INVIMA"
+            if columna == "CODIGO_INTERNO" or columna not in auxiliar.columns:
+                continue
+            if destino not in combinado.columns:
+                continue
+            actual = combinado[destino]
+            # "Vacio" incluye los textos que deja un merge sin match segun el
+            # dtype de la columna: NaN, "" y los "nan"/"NaT" que aparecen al
+            # convertir a str una columna de fecha u objeto.
+            vacia = actual.isna() | actual.astype(str).str.strip().isin(("", "nan", "NaT", "None"))
+            combinado[destino] = actual.where(~(vacia & esta_en_auxiliar), claves.map(auxiliar[columna]))
+        completado |= esta_en_auxiliar
+    return combinado, completado
+
+
 def _aplicar_dataset_auxiliar(
     estado: pd.Series,
     detalle: pd.Series,
@@ -1523,6 +1584,8 @@ def _clasificar_naturaleza_hallazgo(
     inconsistencia_fechas: pd.Series,
     hay_campo_sin_dato: pd.Series,
     fecha_comodin: pd.Series,
+    coherencia_fechas: pd.Series,
+    falta_dato_que_invima_si_trae: pd.Series,
 ) -> pd.Series:
     """Una etiqueta por medicamento, la de la accion mas urgente que pide.
 
@@ -1535,7 +1598,30 @@ def _clasificar_naturaleza_hallazgo(
     for mascara, etiqueta in (
         (hay_campo_sin_dato | (inconsistencia_fechas != ""), NATURALEZA_CARGA_INCOMPLETA),
         ((inconsistencia_fechas != "") & fecha_comodin, NATURALEZA_RESIDUAL_MIGRACION),
-        (campos_con_diferencia != "", NATURALEZA_DESACTUALIZADO),
+        # `coherencia_fechas` entra junto a los campos: una fecha que no
+        # coincide con INVIMA -- o que INVIMA publica y Gemma Net no tiene --
+        # es un dato desactualizado, y el consejo de esta clase ya es
+        # exactamente el que aplica ("actualizar el campo en Gemma Net con el
+        # dato oficial").
+        #
+        # Sin ella, 28.377 medicamentos con hallazgo de fecha quedaban con
+        # NATURALEZA_HALLAZGO vacia y por tanto INVISIBLES en "Priorizar lo
+        # que requiere accion" -- medido contra los Excel de 2022 el
+        # 2026-09-03, el mismo defecto que escondia el hallazgo en
+        # ESTADO_COHERENCIA. Va aca y no mas abajo para que "en renovacion" y
+        # "vigencia en riesgo" le sigan ganando: son mas urgentes.
+        # Un campo que INVIMA reporta y Gemma Net no tiene va aca, NO en
+        # "cargue incompleto": esa clase excluye a proposito los campos
+        # sistemicamente vacios (la marca, sobre todo) porque metia al 83% de
+        # los medicamentos en una sola categoria y dejaba de separar nada.
+        # Aca si cabe, porque hay un dato OFICIAL concreto con el que
+        # rellenarlo y el consejo de esta clase es exactamente ese.
+        (
+            (campos_con_diferencia != "")
+            | (coherencia_fechas != "")
+            | falta_dato_que_invima_si_trae,
+            NATURALEZA_DESACTUALIZADO,
+        ),
         (estado == EstadoCoherencia.EN_TRAMITE_RENOVACION_INVIMA.value, NATURALEZA_EN_RENOVACION),
         (
             estado.isin(
@@ -1759,6 +1845,10 @@ def auditar_coherencia(
         "UNIDAD_MEDIDA",
         "_DESCRIPCION_ESPERADA",
         "ESTADO_CUM",
+        # Se trae para poder mostrar el ESTADO_REGISTRO tambien en las filas
+        # que SI estan en Vigentes -- ver el arranque de
+        # `estado_invima_detalle` mas abajo.
+        "ESTADO_REGISTRO",
         "FECHA_ACTIVO",
         "FECHA_INACTIVO",
         "FECHA_VENCIMIENTO",
@@ -1770,6 +1860,21 @@ def auditar_coherencia(
 
     combinado = gemanet.merge(invima_reducido, on="_CLAVE_CRUCE_INVIMA", how="left", indicator=True)
     tiene_correspondencia = combinado["_merge"] == "both"
+
+    # Los datos de INVIMA para los CUM que NO estan en Vigentes se traen de su
+    # propio listado, antes de comparar nada -- si no, sus 7 campos quedan en
+    # blanco y toda la fila sale "Sin comparar". Mismo orden de prioridad que
+    # la cascada de `_aplicar_dataset_auxiliar` de mas abajo.
+    combinado, completado_desde_auxiliar = _completar_invima_desde_auxiliares(
+        combinado,
+        columnas_invima,
+        (df_invima_vencidos, df_invima_otros_estados, df_invima_renovacion),
+    )
+    # "INVIMA conoce este codigo en ALGUN listado", que es la pregunta que
+    # corresponde para decidir si hay con que comparar. Distinta de
+    # `tiene_correspondencia`, que sigue significando "esta en Vigentes" y es
+    # la que gobierna ESTADO_COHERENCIA y el listado de origen.
+    invima_tiene_datos = tiene_correspondencia | completado_desde_auxiliar
 
     # Los pares (valor local, valor INVIMA) ya normalizados, UNA sola vez: de
     # aqui salen tanto el veredicto binario como el % de similitud. Derivarlos
@@ -1880,7 +1985,7 @@ def auditar_coherencia(
     }
 
     campos_con_diferencia = _columnas_marcadas(matriz_diferencias, ", ")
-    campos_con_diferencia = campos_con_diferencia.where(tiene_correspondencia, "")
+    campos_con_diferencia = campos_con_diferencia.where(invima_tiene_datos, "")
 
     # % de calidad: de los campos que SI se pudieron comparar contra INVIMA,
     # cuantos coinciden -- pedido explicito del usuario: aunque un
@@ -1889,20 +1994,52 @@ def auditar_coherencia(
     # no solo "correcto"/"con_diferencias" en blanco y negro. NaN (no 0% ni
     # 100%) cuando no hay correspondencia -- no hay nada que comparar, no es
     # lo mismo que "0% de calidad".
-    # El denominador es por fila, no fijo: un campo que Gemma Net no trae no
-    # entra en la cuenta -- no se le puede exigir que coincida con INVIMA.
-    campos_comparables_fila = len(matriz_diferencias.columns) - matriz_sin_dato.sum(axis=1)
-    campos_ok = campos_comparables_fila - matriz_diferencias.sum(axis=1)
+    # El denominador es por fila, no fijo: un campo que NINGUNA de las dos
+    # fuentes trae no entra en la cuenta -- no se le puede exigir a Gemma Net
+    # que coincida con un dato que INVIMA tampoco tiene.
+    #
+    # Pero si INVIMA SI lo reporta y Gemma Net no, eso cuenta y cuenta como
+    # fallo (decision del usuario, 2026-09-03, sobre la marca de 20055212-21:
+    # "sin marca en gemma net, pero invima si tiene, entonces correcto no
+    # esta"). Antes se sacaba del denominador y el medicamento quedaba en
+    # 100,0% con el campo en blanco, que es justo lo contrario de lo que mide
+    # esta columna.
+    matriz_oficial_presente = pd.DataFrame(
+        {campo: crudos_invima[campo].astype(str).str.strip().ne("") for campo in matriz_sin_dato.columns},
+        index=combinado.index,
+    )
+    sin_dato_en_ambos = matriz_sin_dato & ~matriz_oficial_presente
+    sin_dato_solo_local = matriz_sin_dato & matriz_oficial_presente
+    campos_comparables_fila = len(matriz_diferencias.columns) - sin_dato_en_ambos.sum(axis=1)
+    campos_ok = (
+        campos_comparables_fila
+        - matriz_diferencias.sum(axis=1)
+        - sin_dato_solo_local.sum(axis=1)
+    )
     porcentaje_calidad = (campos_ok / campos_comparables_fila * 100).round(1)
     porcentaje_calidad = porcentaje_calidad.where(
-        tiene_correspondencia & (campos_comparables_fila > 0)
+        invima_tiene_datos & (campos_comparables_fila > 0)
     )
 
     estado = pd.Series(EstadoCoherencia.CORRECTO.value, index=combinado.index)
     estado = estado.where(campos_con_diferencia == "", EstadoCoherencia.CON_DIFERENCIAS.value)
     estado = estado.where(tiene_correspondencia, EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value)
 
-    estado_invima_detalle = pd.Series("", index=combinado.index)
+    # Arranca con el ESTADO_REGISTRO que trae el merge contra VIGENTES, no
+    # vacio: pedido explicito del usuario (2026-09-03) -- "estado registro de
+    # invima debe reflejar el estado de registro de invima, que por ende
+    # mostrara lo mismo que la ubicacion del medicamento, o sea mostrara
+    # cierta redundancia pero bueno fue lo que se pidio".
+    #
+    # Antes solo lo llenaban los 3 datasets auxiliares, asi que las 43.312
+    # filas del listado de Vigentes mostraban la columna en blanco ("—" en
+    # pantalla) y no habia forma de leer el estado oficial sin salir de la
+    # tabla. Las filas sin correspondencia en Vigentes quedan vacias aca y las
+    # completa `_aplicar_dataset_auxiliar` con el detalle de su propio dataset,
+    # igual que antes -- ese paso COMPLETA vacios y nunca pisa, asi que una
+    # fila que si esta en Vigentes conserva "Vigente", que es justo la
+    # redundancia pedida.
+    estado_invima_detalle = _columna_o_vacia(combinado, "ESTADO_REGISTRO_INVIMA").str.strip()
     # Fecha ya resuelta por el merge contra Vigentes (NaT si esta fila no tuvo
     # correspondencia ahi) -- ver _FECHAS_INVIMA_PROPAGABLES y el docstring de
     # _aplicar_dataset_auxiliar: se completa, nunca se pisa, con la fecha
@@ -2068,6 +2205,86 @@ def auditar_coherencia(
     # poder cruzar contra INVIMA. Informativo -- CODIGO_INTERNO arriba sigue
     # siendo el codigo real de Gemma Net, nunca se reescribe.
     resultado["CUM_RECONSTRUIDO"] = clave_cruce_invima.where(es_cum_con_sufijo_atc, "").values
+
+    # Las FECHAS cuentan como parte de la exactitud, igual que los 7 campos
+    # comparados. Se calculan aca -- antes de fijar ESTADO_COHERENCIA y
+    # PORCENTAJE_CALIDAD -- y no mas abajo, porque si no los dos veredictos
+    # salen ciegos a ellas.
+    #
+    # Bug que corrige (detectado por el usuario el 2026-09-03 sobre
+    # 19914260-3): la consulta puntual decia "Con diferencias frente a INVIMA
+    # -- las fechas no coinciden" y la tabla de hallazgos, para ESE MISMO
+    # medicamento, decia "Correcto" y "100,0%". Medido contra los Excel de
+    # 2022: 29.638 de las 31.108 filas "correctas" (el 95%) tenian un hallazgo
+    # de fecha escondido asi. Las dos vistas leen del mismo snapshot, asi que
+    # la contradiccion solo podia venir de que el estado ignoraba esta
+    # dimension.
+    coherencia_fechas = _comparar_fechas_con_invima(
+        combinado, fechas_invima, listado_invima.ne("")
+    )
+    hallazgo_de_fecha = coherencia_fechas.ne("") | inconsistencia_fechas.ne("")
+
+    # Un campo que Gemma Net no trae PERO INVIMA si reporta tampoco puede
+    # quedar como "correcto": no "difiere" (no hay nada que comparar, ver
+    # VALIDACION_SIN_DATO_LOCAL) pero si hay algo que hacer -- diligenciarlo
+    # con el dato oficial. Decision del usuario (2026-09-03) sobre el caso
+    # 20055212-21: "vemos un dato faltante que es sin marca en gemma net,
+    # pero invima si tiene, entonces correcto no esta".
+    # La condicion `oficial_presente` es la que evita castigar un campo que
+    # NINGUNA de las dos fuentes trae.
+    falta_dato_que_invima_si_trae = pd.Series(False, index=combinado.index)
+    for campo in CAMPOS_COMPARADOS_COHERENCIA:
+        oficial_presente = crudos_invima[campo].astype(str).str.strip().ne("")
+        falta_dato_que_invima_si_trae |= matriz_sin_dato[campo] & oficial_presente
+
+    # Y tampoco puede quedar "correcto" un CUM cuya VIGENCIA no coincide con
+    # la de INVIMA, en cualquiera de las dos direcciones. Es el hallazgo de
+    # mayor riesgo del sistema y hasta ahora no tocaba ESTADO_COHERENCIA: la
+    # consulta puntual de 20055212-21 gritaba "CRITICO -- activo sin vigencia"
+    # mientras la tabla de hallazgos lo listaba como "Correcto / 100%".
+    activo_local = _columna_o_vacia(combinado, "ACTIVO").str.strip().str.upper().eq("SI")
+    cum_activo_invima = estado_cum_invima.astype(str).str.strip().eq("Activo")
+    cum_inactivo_invima = estado_cum_invima.astype(str).str.strip().eq("Inactivo")
+    discrepancia_vigencia = (activo_local & cum_inactivo_invima) | (
+        ~activo_local & cum_activo_invima
+    )
+
+    # Solo degrada CORRECTO: un SIN_CORRESPONDENCIA_INVIMA o un
+    # NO_VALIDA_CONTRA_INVIMA no se convierte en "con diferencias" por una
+    # fecha -- ahi no hay contra que comparar y el estado ya dice algo mas
+    # especifico.
+    estado = estado.mask(
+        estado.eq(EstadoCoherencia.CORRECTO.value)
+        & (hallazgo_de_fecha | falta_dato_que_invima_si_trae | discrepancia_vigencia),
+        EstadoCoherencia.CON_DIFERENCIAS.value,
+    )
+
+    # Las 2 fechas entran al mismo promedio que los demas campos, con el MISMO
+    # criterio de denominador por fila: una fecha solo cuenta cuando de verdad
+    # se pudo contrastar, es decir cuando INVIMA trae una fecha real. Si INVIMA
+    # no la tiene no se le puede exigir nada a Gemma Net y el par no entra en
+    # la cuenta -- igual que un campo que Gemma Net no trae.
+    #
+    # Que Gemma Net tenga la fecha en blanco o en comodin (2999-12-31) SI
+    # cuenta, y cuenta como fallo: es exactamente el caso 19914260-3 que
+    # reporto el usuario, donde INVIMA publica FECHA VENCIMIENTO y Gemma Net
+    # no la tiene. Dejarlo fuera del denominador lo devolveria a 100,0%.
+    fechas_comparables = pd.Series(0, index=combinado.index)
+    fechas_con_diferencia = pd.Series(0, index=combinado.index)
+    for columna_local, (columna_invima, _etiqueta) in _PARES_FECHAS_GEMANET_INVIMA.items():
+        local = _columna_fecha(combinado, columna_local)
+        oficial = fechas_invima[columna_invima]
+        comparable = listado_invima.ne("") & _es_fecha_real(oficial)
+        difiere = comparable & (~_es_fecha_real(local) | local.ne(oficial))
+        fechas_comparables += comparable.astype(int)
+        fechas_con_diferencia += difiere.astype(int)
+    total_comparables = campos_comparables_fila + fechas_comparables
+    total_ok = campos_ok + (fechas_comparables - fechas_con_diferencia)
+    porcentaje_calidad = (total_ok / total_comparables * 100).round(1)
+    porcentaje_calidad = porcentaje_calidad.where(
+        invima_tiene_datos & (total_comparables > 0)
+    )
+
     resultado["ESTADO_COHERENCIA"] = estado.values
     # Los 8 valores de ESTADO_COHERENCIA agrupados por "en que listado oficial
     # de INVIMA aparece hoy" -- ver _estado_listado_invima. Cerca de
@@ -2109,11 +2326,11 @@ def auditar_coherencia(
         # con INVIMA no hay nada contra que validar, igual que
         # PORCENTAJE_CALIDAD queda vacio en vez de 0.
         veredicto = pd.Series(VALIDACION_SIN_COMPARAR, index=combinado.index, dtype="object")
-        veredicto[tiene_correspondencia & ~matriz_diferencias[campo]] = VALIDACION_COINCIDE
-        veredicto[tiene_correspondencia & matriz_diferencias[campo]] = VALIDACION_DIFIERE
+        veredicto[invima_tiene_datos & ~matriz_diferencias[campo]] = VALIDACION_COINCIDE
+        veredicto[invima_tiene_datos & matriz_diferencias[campo]] = VALIDACION_DIFIERE
         # Al final: pisa a "coincide", porque un campo sin dato quedo fuera de
         # las diferencias y si no seria indistinguible de uno que si calza.
-        veredicto[tiene_correspondencia & matriz_sin_dato[campo]] = VALIDACION_SIN_DATO_LOCAL
+        veredicto[invima_tiene_datos & matriz_sin_dato[campo]] = VALIDACION_SIN_DATO_LOCAL
         resultado[f"{campo}{SUFIJO_VALIDACION}"] = veredicto.values
 
     # Aviso TEMPRANO de vencimiento. Todo lo demas mira hacia atras ("esto ya
@@ -2172,10 +2389,10 @@ def auditar_coherencia(
     # Vigentes, y el punto es que las fechas ahora tambien llegan desde
     # Vencidos/Otros Estados/Renovacion (caso real 20102710-2, que vive solo
     # en Vencidos y antes no tenia ninguna fecha de INVIMA con que contrastar).
-    invima_sabe_del_codigo = listado_invima.ne("")
-    resultado["COHERENCIA_FECHAS_INVIMA"] = _comparar_fechas_con_invima(
-        combinado, fechas_invima, invima_sabe_del_codigo
-    ).values
+    # Ya calculada arriba, junto a ESTADO_COHERENCIA: los dos veredictos tienen
+    # que salir de la MISMA comparacion de fechas, no de dos llamadas que
+    # podrian divergir.
+    resultado["COHERENCIA_FECHAS_INVIMA"] = coherencia_fechas.values
 
     novedad_vigencia, detalle_vigencia = _contrastar_vigencia_invima(
         combinado,
@@ -2223,6 +2440,8 @@ def auditar_coherencia(
         inconsistencia_fechas,
         hay_campo_sin_dato,
         pd.Series(fecha_comodin.values, index=estado.index),
+        coherencia_fechas,
+        falta_dato_que_invima_si_trae,
     )
     resultado["NATURALEZA_HALLAZGO"] = naturaleza.values
     resultado["ACCION_SUGERIDA"] = naturaleza.map(ACCION_POR_NATURALEZA).fillna("").values

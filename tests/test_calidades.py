@@ -49,30 +49,33 @@ def _conteo_por_nombre(auditoria):
     return {c.nombre: c.medicamentos for c in calidades_auditoria(auditoria)}
 
 
-def test_vencido_en_el_listado_pero_con_estado_cum_activo_es_vigencia_confirmada():
-    """El caso testigo del usuario (2026-09-02): "medicamento activo pero
-    aparece en el listado de vencidos, pero el estado cum esta activo en
-    INVIMA; esos casos serian correctas su estado activo asi esten en la
-    lista de vencidos".
+def test_gracia_de_lotes_va_en_registro_vencido_no_en_vigencia_confirmada():
+    """La gracia de lotes -- activo en Gemma Net, listado 'vencido', pero
+    ESTADO_CUM todavia 'Activo' en INVIMA -- va en "Registro vencido en
+    INVIMA", nunca en "Vigencia confirmada".
 
-    Es la gracia de lotes: INVIMA deja el CUM activo mientras se agotan las
-    existencias, y se puede seguir autorizando hasta que lo desactive. El
-    listado es solo la ubicacion del Excel donde buscarlo, NO el veredicto.
-    Son 533 filas reales en el snapshot de produccion."""
+    Decision del usuario (2026-09-03): "en este apartado meramente deben de
+    aparecer los que pertenezcan solo al listado de vigentes". El listado es
+    la UBICACION donde alguien encontrara el registro al buscarlo a mano en
+    los Excel de INVIMA, asi que el caso vive con los demas vencidos y se
+    distingue por la columna ESTADO_CUM_INVIMA.
+
+    Antes esta misma fila contaba como vigencia confirmada; al restaurar el
+    filtro de listado en esa tarjeta se habria quedado sin ninguna, que es
+    justo lo que este test impide que vuelva a pasar."""
     auditoria = pd.DataFrame(
         [_fila("20111111-1", ESTADO_CUM_INVIMA="Activo", ESTADO_LISTADO_INVIMA="vencido")]
     )
     conteo = _conteo_por_nombre(auditoria)
-    assert conteo["Vigencia confirmada"] == 1
-    assert conteo["Registro vencido en INVIMA"] == 0
+    assert conteo["Vigencia confirmada"] == 0
+    assert conteo["Registro vencido en INVIMA"] == 1
 
 
-def test_registro_vencido_exige_estado_cum_inactivo_ademas_del_listado():
-    """Definicion literal del usuario (2026-09-02): "son los que estan
-    activos en gemma net, estado cum INACTIVO en invima, y que pertenecen a
-    la lista de vencidos". Las tres condiciones, no dos: sin
-    ESTADO_CUM=='Inactivo' la tarjeta se llevaba tambien los de la gracia de
-    lotes, que no son un hallazgo."""
+def test_registro_vencido_recoge_el_vencido_pleno_del_listado():
+    """El vencido pleno (ESTADO_CUM 'Inactivo' + listado 'vencido') tambien
+    vive en esta tarjeta, junto a la gracia de lotes -- los dos sub-casos
+    conviven y se separan mirando ESTADO_CUM_INVIMA, no partiendo la tarjeta
+    (ver `test_gracia_de_lotes_va_en_registro_vencido_no_en_vigencia_confirmada`)."""
     auditoria = pd.DataFrame(
         [_fila("20222222-1", ESTADO_CUM_INVIMA="Inactivo", ESTADO_LISTADO_INVIMA="vencido")]
     )

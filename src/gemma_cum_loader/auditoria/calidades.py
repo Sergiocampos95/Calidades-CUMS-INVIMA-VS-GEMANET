@@ -243,25 +243,28 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
         (
             "Vigencia confirmada",
             (
-                "CUMs activos en Gemma Net que INVIMA declara vigentes (ESTADO_CUM='Activo'), "
-                "en CUALQUIER listado. El estado de VIGENCIA es correcto; algunos pueden "
-                "requerir actualizar una fecha o algun campo, y eso no les quita la vigencia. "
-                "La columna ESTADO_LISTADO_INVIMA dice en cual Excel de INVIMA buscarlo."
+                "CUMs activos en Gemma Net que INVIMA declara vigentes (ESTADO_CUM='Activo') "
+                "Y que ademas estan en el listado de VIGENTES. El estado de VIGENCIA es "
+                "correcto; algunos pueden requerir actualizar una fecha o algun campo, y eso "
+                "no les quita la vigencia."
             ),
-            # SIN condicion sobre el listado -- pedido explicito del usuario
-            # (2026-09-02): "definir a que listado pertenece SOLO seria para
-            # ayudarnos a ubicar el archivo de forma manual en los excel de
-            # INVIMA". El listado es metadato de UBICACION, no un veredicto.
+            # El listado tiene que ser EXACTAMENTE 'vigente' -- pedido
+            # explicito y repetido del usuario (2026-09-02 y 2026-09-03):
+            # "en este apartado meramente deben de aparecer los que
+            # pertenezcan solo al listado de vigentes".
             #
-            # Exigir listado=='vigente' aca dejaba fuera el caso que el usuario
-            # describio textualmente: "medicamento activo pero aparece en el
-            # listado de vencidos, pero el estado cum esta activo en INVIMA:
-            # esos casos serian correctas su estado activo asi esten en la
-            # lista de vencidos". Son 533 filas medidas contra el snapshot real
-            # (listado=vencido & ESTADO_CUM=Activo), que se seguian
-            # autorizando mientras se agotan los lotes y que quedaban
-            # reportadas como hallazgo cuando no lo son.
-            solo_activos & es_cum & ~formato_codigo_invalido & activo_invima,
+            # Historia, para que no se vuelva a quitar: entre medio esta
+            # mascara estuvo SIN condicion de listado, para que el caso de
+            # "gracia de lotes" (activo aqui, ESTADO_CUM='Activo', pero
+            # listado='vencido') contara como vigencia confirmada. Eso metia
+            # en esta tarjeta 16.479 registros en tramite de renovacion, 10
+            # vencidos y 2 en abandono -- medido contra los Excel de 2022 el
+            # 2026-09-03, cuando el usuario lo detecto en pantalla. El caso de
+            # gracia de lotes NO se pierde: vive en la tarjeta "Registro
+            # vencido en INVIMA", que es donde alguien lo encontrara si lo
+            # busca a mano en los Excel de INVIMA, con ESTADO_CUM_INVIMA
+            # visible para distinguirlo del vencido pleno.
+            solo_activos & es_cum & ~formato_codigo_invalido & activo_invima & listado.eq("vigente"),
             [
                 *base, "FECHA_VENCIMIENTO_INVIMA",
                 "CAMPOS_CON_DIFERENCIA", "COHERENCIA_FECHAS_INVIMA", "CONSULTA_VERIFICACION_SQL",
@@ -270,20 +273,26 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
         (
             "Registro vencido en INVIMA",
             (
-                "CUMs activos en Gemma Net cuyo ESTADO_CUM en INVIMA es 'Inactivo' y que "
-                "ademas estan en el listado de Vencidos. Aca INVIMA ya desactivo el CUM: "
-                "no queda gracia de lotes, hay que inactivarlo en Gemma Net."
+                "CUMs activos en Gemma Net que estan en el listado de VENCIDOS de INVIMA. "
+                "Mira la columna ESTADO_CUM_INVIMA para saber cual de los dos casos es: "
+                "'Inactivo' es vencido pleno (hay que inactivarlo en Gemma Net); 'Activo' "
+                "es gracia de lotes -- INVIMA lo deja autorizado mientras se agotan las "
+                "existencias, y pasara a vencido pleno cuando cambie el estado."
             ),
-            # Las TRES condiciones, tal como las definio el usuario (2026-09-02):
-            # "son los que estan activos en gemma net, estado cum INACTIVO en
-            # invima, y que pertenecen a la lista de vencidos".
+            # SOLO el listado, sin condicion sobre ESTADO_CUM -- decision del
+            # usuario (2026-09-03), la misma del plan aprobado: el listado es
+            # la UBICACION real donde alguien encontrara el registro si lo
+            # busca a mano en los Excel de INVIMA, asi que los dos sub-casos
+            # tienen que convivir aca y distinguirse por ESTADO_CUM_INVIMA.
             #
-            # Faltaba `inactivo_invima`: sin ella la tarjeta se llevaba tambien
-            # los 533 con ESTADO_CUM='Activo' en el listado de vencidos, que
-            # son justamente los de la gracia de lotes -- se pueden seguir
-            # autorizando hasta que INVIMA desactive el CUM, asi que no son un
-            # hallazgo. Esos ahora quedan en "Vigencia confirmada".
-            solo_activos & es_cum & inactivo_invima & listado.eq("vencido"),
+            # Historia, para que no se vuelva a partir en dos: hubo una version
+            # que exigia ademas `inactivo_invima`, dejando la gracia de lotes
+            # en "Vigencia confirmada". Al restaurar el filtro de listado en esa
+            # tarjeta (que debe traer SOLO listado=='vigente'), esos casos se
+            # quedaban SIN NINGUNA tarjeta salvo que tuvieran ademas algun campo
+            # distinto -- un agujero silencioso. Medido con los Excel de 2022:
+            # 10 filas; con el catalogo en vivo del 2026-09-03: 2.
+            solo_activos & es_cum & listado.eq("vencido"),
             [
                 *base, "FECHA_VENCIMIENTO_INVIMA", "CONSULTA_VERIFICACION_SQL",
             ],
