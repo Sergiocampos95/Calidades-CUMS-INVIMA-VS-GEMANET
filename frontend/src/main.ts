@@ -58,15 +58,39 @@ const SECCIONES: Seccion[] = [
 let seccionActual = SECCIONES[0];
 let subActual = seccionActual.sub[0];
 
+// Pila de pestañas visitadas, para el boton "← Volver" de la topbar. Se
+// guarda la posicion ANTES de cada salto, asi que volver siempre deshace el
+// ultimo movimiento. Importa sobre todo con "Ver diferencias" y el buscador
+// de INVIMA, que sacan al usuario de su pestaña de un salto: sin esto habia
+// que reconstruir a mano por donde se venia.
+const historial: { seccion: string; sub: string }[] = [];
+const LIMITE_HISTORIAL = 50;
+
+function recordarPosicion(): void {
+  historial.push({ seccion: seccionActual.id, sub: subActual.id });
+  if (historial.length > LIMITE_HISTORIAL) historial.shift();
+}
+
 /** Navegacion programatica -- para que una vista (ej. "Ver diferencias" en
  * la calidad de auditoria) pueda llevar al usuario a otra seccion sin pasar
  * por el clic del rail. `subId` opcional cae a la primera sub-vista. */
-function navegarA(seccionId: string, subId?: string): void {
+function navegarA(seccionId: string, subId?: string, recordar = true): void {
   const seccion = SECCIONES.find((s) => s.id === seccionId);
   if (!seccion) return;
+  const destinoSub = (subId && seccion.sub.find((s) => s.id === subId)) || seccion.sub[0];
+  // Ir a donde ya estas no es un movimiento: apilarlo obligaria a pulsar
+  // "Volver" dos veces para retroceder una.
+  if (seccion.id === seccionActual.id && destinoSub.id === subActual.id) return;
+  if (recordar) recordarPosicion();
   seccionActual = seccion;
-  subActual = (subId && seccion.sub.find((s) => s.id === subId)) || seccion.sub[0];
+  subActual = destinoSub;
   render();
+}
+
+function volver(): void {
+  const previa = historial.pop();
+  if (!previa) return;
+  navegarA(previa.seccion, previa.sub, false);
 }
 
 // Evento global en vez de que las vistas importen navegarA de main.ts
@@ -95,11 +119,7 @@ function pintarRail(): void {
     .join("");
   nav.querySelectorAll<HTMLButtonElement>("[data-seccion]").forEach((b) =>
     b.addEventListener("click", () => {
-      const seccion = SECCIONES.find((s) => s.id === b.dataset.seccion);
-      if (!seccion) return;
-      seccionActual = seccion;
-      subActual = seccion.sub[0];
-      render();
+      if (b.dataset.seccion) navegarA(b.dataset.seccion);
     }),
   );
 }
@@ -118,16 +138,16 @@ function pintarSubnav(): void {
     .join("");
   subnav.querySelectorAll<HTMLButtonElement>("[data-sub]").forEach((b) =>
     b.addEventListener("click", () => {
-      const sub = seccionActual.sub.find((s) => s.id === b.dataset.sub);
-      if (sub) {
-        subActual = sub;
-        render();
-      }
+      if (b.dataset.sub) navegarA(seccionActual.id, b.dataset.sub);
     }),
   );
 }
 
 function render(): void {
+  const botonVolver = document.getElementById("boton-volver");
+  // Se esconde en vez de deshabilitarse: un boton apagado en la topbar de
+  // arranque solo agrega ruido, no informa de nada.
+  if (botonVolver) botonVolver.classList.toggle("oculto", historial.length === 0);
   document.getElementById("miga-ruta")!.textContent = seccionActual.grupo;
   document.getElementById("miga-titulo")!.textContent = seccionActual.sub.length > 1 ? subActual.etiqueta : seccionActual.etiqueta;
   pintarRail();
@@ -154,6 +174,18 @@ function inicializarRefrescoManual(): void {
     if (exito) render(); // re-pinta la vista actual con los datos ya frescos
   });
 }
+
+document.getElementById("boton-volver")?.addEventListener("click", volver);
+
+// Alt+← es el atajo que ya usa el navegador para "atras"; aqui la app no
+// toca el historial del navegador (es una sola pagina), asi que se replica
+// para que el gesto de siempre funcione igual.
+window.addEventListener("keydown", (e) => {
+  if (e.altKey && e.key === "ArrowLeft") {
+    e.preventDefault();
+    volver();
+  }
+});
 
 document.getElementById("toggle-tema")?.addEventListener("click", () => {
   const raiz = document.documentElement;

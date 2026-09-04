@@ -350,6 +350,15 @@ button, select, input { font-family: inherit; }
 }
 .consulta-invima__bloque-titulo--gemma { border-bottom-color: var(--accent-2); }
 
+/* Donde buscar el registro en los Excel de INVIMA. Va FUERA de la tabla de
+   comparacion a proposito: es un dato informativo, no un par que se contraste
+   contra Gemma Net (que no guarda el listado). */
+.consulta-invima__ubicacion {
+  margin: 0 0 10px; padding: 8px 12px; font-size: 0.85rem;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radio-md); color: var(--text-muted);
+}
+.consulta-invima__ubicacion strong { color: var(--text); }
 .consulta-invima__envoltorio { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radio-md); }
 .consulta-invima__tabla { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
 .consulta-invima__tabla th {

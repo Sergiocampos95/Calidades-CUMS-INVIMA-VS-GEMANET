@@ -1,3 +1,4 @@
+import { fechaLegible } from "../fechas";
 import { etiquetaEstadoListadoInvima, pildoraValidacion } from "../pildoras";
 
 // Los 7 campos que la auditoria compara lado a lado, en el orden en que se
@@ -67,13 +68,47 @@ export async function montarConsultarInvima(contenedor: HTMLElement): Promise<vo
         placeholder="Ej: 3521-1 o 3521-1, 224715-1, 42938-5"
       />
       <button id="btn-consultar" class="btn btn--primario">Consultar</button>
+      <button id="btn-en-vivo" class="btn" title="Pregunta a los 4 listados de INVIMA ahora mismo, sin pasar por el último refresco">Verificar en INVIMA ahora</button>
     </div>
+    <div id="resultado-en-vivo"></div>
     <div id="resultado-consulta"></div>
   `;
 
   const input = contenedor.querySelector("#codigo-input") as HTMLInputElement;
   const btnConsultar = contenedor.querySelector("#btn-consultar") as HTMLButtonElement;
+  const btnEnVivo = contenedor.querySelector("#btn-en-vivo") as HTMLButtonElement;
   const divResultado = contenedor.querySelector("#resultado-consulta") as HTMLDivElement;
+  const divEnVivo = contenedor.querySelector("#resultado-en-vivo") as HTMLDivElement;
+
+  // Va bajo accion explicita del usuario y NUNCA automatico al consultar:
+  // son 4 llamadas de red por codigo contra Socrata, y la vista tiene que
+  // seguir sirviendo sin conexion. Mismo criterio que la regla 4 del
+  // proyecto para `explicar_fila`.
+  btnEnVivo.addEventListener("click", async () => {
+    const codigo = input.value.trim();
+    if (!codigo) {
+      divEnVivo.innerHTML =
+        '<p class="consulta-invima__mensaje consulta-invima__mensaje--advertencia">⚠ Escribe un código para verificar</p>';
+      return;
+    }
+    btnEnVivo.disabled = true;
+    btnEnVivo.textContent = "Preguntando a INVIMA...";
+    divEnVivo.innerHTML =
+      '<p class="consulta-invima__mensaje consulta-invima__mensaje--espera">⏳ Consultando los 4 listados de INVIMA en vivo...</p>';
+    try {
+      const baseUrl = `${window.location.protocol}//${window.location.hostname}:8000`;
+      const resp = await fetch(
+        `${baseUrl}/consulta-detalle/invima-en-vivo?codigo=${encodeURIComponent(codigo)}`,
+      );
+      const datos = await resp.json();
+      divEnVivo.innerHTML = renderEnVivo(datos.resultados ?? [], datos.error ?? "");
+    } catch (e) {
+      divEnVivo.innerHTML = `<p class="consulta-invima__mensaje consulta-invima__mensaje--error">No se pudo consultar INVIMA en vivo: ${escaparHTML(String(e))}</p>`;
+    } finally {
+      btnEnVivo.disabled = false;
+      btnEnVivo.textContent = "Verificar en INVIMA ahora";
+    }
+  });
 
   // NO se agrega aca un explorador general del universo de INVIMA con
   // TablaFiltrable: pedido explicito del usuario (2026-09-01), es
@@ -321,15 +356,54 @@ function diagnosticoDeVigencia(invima: Record<string, unknown>[], gemmaNet: Reco
     const estadoInvimaDetalle = String(fila["ESTADO_INVIMA_DETALLE"] || "");
     const camposConDiferencia = String(fila["CAMPOS_CON_DIFERENCIA"] || "");
 
+    // Un "correcto" solo puede anunciarse como tal si NADA lo contradice.
+    // Bug real que corrige (20055212-21, reportado por el usuario el
+    // 2026-09-03): la tarjeta salia verde con "✓ Correcto" y, dentro, su
+    // propio mensaje decia "INVIMA tiene el CUM como Inactivo. Riesgo alto:
+    // se puede autorizar un medicamento que INVIMA ya desactivo". El mensaje
+    // se tomaba de DETALLE_VIGENCIA_INVIMA pero el nivel y el titulo
+    // ignoraban su gravedad.
+    const novedadVigencia = String(fila["NOVEDAD_VIGENCIA_INVIMA"] || "");
+    const vigenciaCoherente = novedadVigencia === "" || novedadVigencia === "coherente";
+    // ESTADO_COHERENCIA se queda en "correcto" cuando un campo esta vacio en
+    // Gemma Net: no "difiere" de INVIMA porque no hay nada que comparar (ver
+    // VALIDACION_SIN_DATO_LOCAL). Pero si INVIMA SI lo trae, hay algo que
+    // hacer -- caso de la marca "SIN INFORMACION" contra "LABORATORIOS MK
+    // S.A.S.": "sin marca en gemma net, pero invima si tiene, entonces
+    // correcto no esta" (usuario, 2026-09-03).
+    const camposSinDatoLocal = CAMPOS_COMPARABLES.filter(
+      (c) => String(fila[`${c.columna}_VALIDACION`] || "") === "sin dato en Gemma Net",
+    ).map((c) => c.etiqueta);
+
     switch (estado) {
-      case "correcto":
+      case "correcto": {
+        if (vigenciaCoherente && camposSinDatoLocal.length === 0) {
+          return {
+            nivel: "ok",
+            titulo: "✓ Correcto",
+            icono: "✅",
+            mensaje: "Todos los campos comparables coinciden con el registro vigente de INVIMA.",
+            pasos: ["Sin acciones requeridas", "Monitorear cambios en INVIMA regularmente"],
+          };
+        }
+        const critico = novedadVigencia === "riesgo_activo_sin_vigencia" && activo;
+        const faltantes = camposSinDatoLocal.length
+          ? `Falta diligenciar en Gemma Net: ${camposSinDatoLocal.join(", ")} (INVIMA sí lo reporta).`
+          : "";
         return {
-          nivel: "ok",
-          titulo: "✓ Correcto",
-          icono: "✅",
-          mensaje: detalleVigencia || "Todos los campos comparables coinciden con el registro vigente de INVIMA.",
-          pasos: ["Sin acciones requeridas", "Monitorear cambios en INVIMA regularmente"],
+          nivel: critico ? "critico" : "advertencia",
+          titulo: critico ? "🔴 CRÍTICO — Activo sin vigencia en INVIMA" : "⚠ Requiere revisión",
+          icono: critico ? "🔴" : "⚠",
+          mensaje: [detalleVigencia, faltantes].filter(Boolean).join(" ") ||
+            "Los campos coinciden, pero hay algo que revisar frente a INVIMA.",
+          pasos: [
+            ...(vigenciaCoherente ? [] : ["Verificar la vigencia en INVIMA antes de autorizar"]),
+            ...(camposSinDatoLocal.length
+              ? [`Diligenciar en Gemma Net con el dato oficial: ${camposSinDatoLocal.join(", ")}`]
+              : []),
+          ],
         };
+      }
 
       case "con_diferencias":
         return {
@@ -500,7 +574,7 @@ function mostrarResultado(contenedor: HTMLElement, datos: RespuestaConsultaDetal
           ${diagnostico.pasos.map((paso) => `<li>${escaparHTML(paso)}</li>`).join("")}
         </ol>
       </div>
-      ${crearComparacionEstadosHTML(gemma_net, invima)}
+      ${crearComparacionEstadosHTML(gemma_net)}
     `;
 
     // Ya NO se dibujan las dos tablas horizontales (una por fuente) que iban
@@ -534,13 +608,15 @@ function mostrarResultado(contenedor: HTMLElement, datos: RespuestaConsultaDetal
 // ESTADO_LISTADO_INVIMA/FECHA_ACTIVO_INVIMA/etc pegados (ver backend,
 // consulta_detalle.py) -- si el codigo solo existe en INVIMA ya lo cubre el
 // diagnostico de arriba ("candidato a cargar").
+// Ya no recibe las filas de INVIMA: la unica que usaba era el TITULAR, que se
+// quito por redundante (Gemma Net no lo guarda y la fila "Marca" ya compara
+// contra el mismo dato). Todo lo demas sale de la fila de auditoria, que trae
+// los dos lados en su trio <CAMPO>_GEMANET / _INVIMA / _VALIDACION.
 function crearComparacionEstadosHTML(
   gemmaNet: Record<string, unknown>[] | null,
-  invima: Record<string, unknown>[] = [],
 ): string {
   if (!gemmaNet || gemmaNet.length === 0) return "";
   const fila = gemmaNet[0];
-  const filaInvima: Record<string, unknown> | undefined = invima[0];
 
   // Fechas comodin de Gemma Net: NO son fechas, son "sin dato" (residuo de la
   // migracion a la nube). Mostrarlas como "2999-12-31" al lado de una fecha
@@ -554,7 +630,13 @@ function crearComparacionEstadosHTML(
     const texto = soloFecha(valor);
     if (!texto) return `<span class="celda-muda">—</span>`;
     if (esComodin(valor)) return `<span class="celda-muda" title="Fecha comodín de Gemma Net: significa «sin dato», no una fecha real">sin dato</span>`;
-    return escaparHTML(texto);
+    // Mes con letras para que no se pueda confundir con el dia (INVIMA es
+    // MM/DD/YYYY en origen y Gemma Net YYYY-MM-DD). El ISO exacto queda en el
+    // title, que es el dato con el que alguien buscaria en la fuente.
+    const legible = fechaLegible(texto);
+    return legible
+      ? `<span title="${escaparHTML(texto)}">${escaparHTML(legible)}</span>`
+      : escaparHTML(texto);
   };
   const texto = (valor: unknown): string => {
     const t = String(valor ?? "").trim();
@@ -563,7 +645,45 @@ function crearComparacionEstadosHTML(
 
   const estadoInvima = fila["ESTADO_LISTADO_INVIMA"] ? etiquetaEstadoListadoInvima(String(fila["ESTADO_LISTADO_INVIMA"])) : null;
   const estadoInvimaDetalle = fila["ESTADO_INVIMA_DETALLE"] ? String(fila["ESTADO_INVIMA_DETALLE"]) : "";
-  const estadoInvimaTexto = estadoInvima ? `${estadoInvima}${estadoInvimaDetalle ? " (" + estadoInvimaDetalle + ")" : ""}` : null;
+
+  // La TABLA solo lleva pares que de verdad se comparan. El listado y el
+  // estado de registro no lo son -- Gemma Net no guarda ninguno de los dos --
+  // y ademas dicen lo mismo entre si (listado "vencido" <-> registro
+  // "Vencido"), asi que ocupaban dos filas con veredicto "ubicación" y "sin
+  // comparar" que no aportaban nada. Salen a una linea informativa ENCIMA de
+  // la tabla (pedido del usuario, 2026-09-04: "eliminar la redundancia... y
+  // fuera de la tabla debe decir en que listado buscarlo").
+  const dondeBuscarlo = estadoInvima
+    ? `<p class="consulta-invima__ubicacion">
+        📋 En INVIMA búscalo en el listado de <strong>${escaparHTML(estadoInvima)}</strong>${
+          estadoInvimaDetalle && estadoInvimaDetalle !== estadoInvima
+            ? ` — estado del registro: ${escaparHTML(estadoInvimaDetalle)}`
+            : ""
+        }.
+      </p>`
+    : "";
+
+  // ESTADO_CUM es el veredicto de VIGENCIA REAL de INVIMA ("Activo"/
+  // "Inactivo"), independiente del listado donde este el registro. Es la
+  // UNICA fila de estado que queda en la tabla porque es la unica que se
+  // puede contrastar: Gemma Net si tiene su equivalente (ACTIVO). Su
+  // veredicto es el que responde "¿la vigencia es correcta?" y destapa el
+  // caso de mayor riesgo -- activo aqui, ya desactivado en INVIMA.
+  const estadoCumInvima = String(fila["ESTADO_CUM_INVIMA"] ?? "").trim();
+  const activoGemma = String(fila["ACTIVO"] ?? "").trim().toUpperCase() === "SI";
+  const equivalenteGemma = activoGemma ? "Activo" : "Inactivo";
+  const filaEstadoCum = estadoCumInvima
+    ? `<tr>
+        <th scope="row">Estado del registro (cruce de vigencia)</th>
+        <td>${escaparHTML(equivalenteGemma)}</td>
+        <td>${escaparHTML(estadoCumInvima)}</td>
+        <td>${
+          estadoCumInvima === equivalenteGemma
+            ? '<span class="pildora pildora--ok">coincide</span>'
+            : '<span class="pildora pildora--danger">difiere</span>'
+        }</td>
+      </tr>`
+    : "";
 
   // Filas EMPAREJADAS, no dos columnas sueltas -- pedido del usuario
   // (2026-09-01): con dos listas independientes no se veia que campo de un
@@ -580,16 +700,18 @@ function crearComparacionEstadosHTML(
   // INVIMA es MM/DD/YYYY (04/03/2017 = 4 de marzo), Gemma es YYYY-MM-DD
   // (2017-03-04 = 4 de marzo). Esto causa confusión si no se aclara, porque
   // 04/03 vs 03/04 parecen fechas distintas. Pedido del usuario (2026-09-03).
+  // Inicio ARRIBA de fin -- pedido del usuario (2026-09-03), es el orden
+  // natural de lectura de un periodo de vigencia.
   const pares: { etiqueta: string; gemma: unknown; invima: unknown }[] = [
     {
-      etiqueta: "Fecha de fin / vencimiento (Gemma: YYYY-MM-DD, INVIMA: MM/DD/YYYY)",
-      gemma: fila["FECHA_FIN"],
-      invima: fila["FECHA_VENCIMIENTO_INVIMA"],
-    },
-    {
-      etiqueta: "Fecha de inicio / activo (Gemma: YYYY-MM-DD, INVIMA: MM/DD/YYYY)",
+      etiqueta: "Fecha de inicio / activo",
       gemma: fila["FECHA_INICIO"],
       invima: fila["FECHA_ACTIVO_INVIMA"],
+    },
+    {
+      etiqueta: "Fecha de fin / vencimiento",
+      gemma: fila["FECHA_FIN"],
+      invima: fila["FECHA_VENCIMIENTO_INVIMA"],
     },
   ];
 
@@ -650,35 +772,26 @@ function crearComparacionEstadosHTML(
     </tr>`;
   }).join("");
 
-  // TITULAR solo existe del lado de INVIMA (Gemma Net no lo guarda), asi que
-  // se muestra sin par y rotulado como tal -- era la unica columna util que
-  // aportaba la tabla de INVIMA que esta vista reemplaza.
-  const titular = String(filaInvima?.["TITULAR"] ?? "").trim();
-  const filaTitular = titular
-    ? `<tr>
-        <th scope="row">Titular</th>
-        <td><span class="celda-muda" title="Gemma Net no almacena el titular del registro">no aplica</span></td>
-        <td>${escaparHTML(titular)}</td>
-        <td><span class="celda-muda" title="Solo INVIMA reporta este dato">sin comparar</span></td>
-      </tr>`
-    : "";
+  // La fila TITULAR se quito (2026-09-03, pedido del usuario: "mira si en
+  // gemma net hay un equivalente de titular, si no eliminar ese campo porque
+  // no se puede comparar"). Verificado: Gemma Net NO guarda titular -- su
+  // consulta solo trae `m.marca_medicamento` (ver ingesta/gemanet_sql.py) --
+  // y del lado de INVIMA el TITULAR es justamente lo que la auditoria ya
+  // compara como MARCA_MEDICAMENTO (`crudos_invima["MARCA_MEDICAMENTO"] =
+  // TITULAR_INVIMA` en coherencia_invima.py). Asi que la fila repetia el
+  // mismo dato que "Marca" con un "no aplica" al lado, sin aportar nada.
 
   return `
+    ${dondeBuscarlo}
     <div class="consulta-invima__envoltorio">
       <table class="consulta-invima__tabla consulta-invima__pares">
         <thead>
           <tr><th>Campo</th><th>🔧 Gemma Net</th><th>📋 INVIMA</th><th>Veredicto</th></tr>
         </thead>
         <tbody>
-          <tr>
-            <th scope="row">Estado</th>
-            <td>${texto(fila["ESTADO_GEMMA_NET"] ?? fila["ACTIVO"])}</td>
-            <td>${estadoInvimaTexto ? escaparHTML(estadoInvimaTexto) : `<span class="celda-muda">—</span>`}</td>
-            <td><span class="celda-muda">—</span></td>
-          </tr>
+          ${filaEstadoCum}
           ${filasCampos}
           ${filasPares}
-          ${filaTitular}
         </tbody>
       </table>
     </div>
@@ -694,4 +807,57 @@ function escaparHTML(texto: string): string {
     "'": "&#039;",
   };
   return texto.replace(/[&<>"']/g, (char) => map[char]);
+}
+
+interface AparicionEnVivo {
+  listado: string;
+  estado_cum: string;
+  estado_registro: string;
+  producto: string;
+  filas: number;
+}
+
+interface ResultadoEnVivo {
+  codigo: string;
+  encontrado: boolean;
+  apariciones: AparicionEnVivo[];
+  listados_no_consultados: string[];
+  error: string;
+  consultado_utc: string;
+}
+
+/** Lo que INVIMA responde AHORA, para contrastarlo con lo que muestra el
+ * resto de la vista (que sale del último refresco). Cuando los dos no
+ * coinciden, el snapshot está viejo -- normalmente porque el refresco cayó
+ * al respaldo local con Socrata caído. */
+function renderEnVivo(resultados: ResultadoEnVivo[], errorGeneral: string): string {
+  if (errorGeneral) {
+    return `<p class="consulta-invima__mensaje consulta-invima__mensaje--error">${escaparHTML(errorGeneral)}</p>`;
+  }
+  if (!resultados.length) return "";
+  const bloques = resultados.map((r) => {
+    if (r.error) {
+      return `<li><strong>${escaparHTML(r.codigo)}</strong> — <span class="consulta-invima__mensaje--advertencia">${escaparHTML(r.error)}</span></li>`;
+    }
+    if (!r.encontrado) {
+      return `<li><strong>${escaparHTML(r.codigo)}</strong> — no aparece en ninguno de los 4 listados de INVIMA</li>`;
+    }
+    const donde = r.apariciones
+      .map(
+        (a) =>
+          `${etiquetaEstadoListadoInvima(a.listado)} · estado CUM <strong>${escaparHTML(a.estado_cum)}</strong> · ${escaparHTML(a.estado_registro)} (${a.filas} fila${a.filas === 1 ? "" : "s"})`,
+      )
+      .join("<br/>");
+    const producto = r.apariciones[0]?.producto ?? "";
+    const aviso = r.listados_no_consultados.length
+      ? `<br/><span class="consulta-invima__mensaje--advertencia">No se pudo consultar: ${escaparHTML(r.listados_no_consultados.join("; "))}</span>`
+      : "";
+    return `<li><strong>${escaparHTML(r.codigo)}</strong> — ${escaparHTML(producto)}<br/>${donde}${aviso}</li>`;
+  });
+  return `
+    <div class="tarjeta-alerta tarjeta-alerta--info">
+      <p><strong>Respuesta de INVIMA en vivo</strong> — consultado ahora, sin pasar por el último refresco.</p>
+      <ul>${bloques.join("")}</ul>
+    </div>
+  `;
 }
