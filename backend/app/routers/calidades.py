@@ -54,16 +54,16 @@ def _tabla_auditoria(carpeta: Path):
 
 
 def _con_estado_listado_invima(calidad: Calidad, auditoria: pd.DataFrame) -> Calidad:
-    """Agrega ESTADO_LISTADO_INVIMA y ESTADO_CUM_INVIMA a cada calidad, al
-    lado de ACTIVO -- pedido explicito del usuario (2026-09-02): comparar el
-    estado local con el de INVIMA en la misma fila, en TODAS las tablas de
-    calidades. ESTADO_CUM_INVIMA es la vigencia real de INVIMA
-    (Activo/Inactivo), mientras ESTADO_LISTADO_INVIMA es solo metadato de
-    ubicacion (vigente/vencido/renovacion/otros_estados).
-    No toca `calidades_auditoria()` (src/gemma_cum_loader): se inserta la
-    columna aca, en la capa de lectura."""
-    # Ya inyectadas por calidades.py, nada que hacer
-    if "ESTADO_CUM_INVIMA" in calidad.columnas and "ESTADO_LISTADO_INVIMA" in calidad.columnas:
+    """Agrega ESTADO_CUM_INVIMA (la vigencia real que declara INVIMA) al lado
+    de ACTIVO -- pedido explicito del usuario (2026-09-02): comparar el estado
+    local con el de INVIMA en la misma fila, en TODAS las tablas de calidades.
+    No toca `calidades_auditoria()`: se inserta en la capa de lectura.
+
+    Ya NO inyecta ESTADO_LISTADO_INVIMA: la reemplaza ESTADO_INVIMA, que
+    calidades.py compone fusionando el listado con su detalle (2026-09-04).
+    Seguir agregandola devolvia a la tabla la columna redundante que ese
+    cambio quita -- "Vencido" al lado de "Vencido"."""
+    if "ESTADO_CUM_INVIMA" in calidad.columnas:
         return calidad
 
     columnas = list(calidad.columnas)
@@ -76,16 +76,6 @@ def _con_estado_listado_invima(calidad: Calidad, auditoria: pd.DataFrame) -> Cal
         else:
             columnas.insert(0, "ESTADO_CUM_INVIMA")
         df_tabla["ESTADO_CUM_INVIMA"] = auditoria.loc[df_tabla.index, "ESTADO_CUM_INVIMA"]
-
-    # Inyectar ESTADO_LISTADO_INVIMA si falta (despues de ESTADO_CUM_INVIMA)
-    if "ESTADO_LISTADO_INVIMA" not in columnas and "ESTADO_LISTADO_INVIMA" in auditoria.columns:
-        if "ESTADO_CUM_INVIMA" in columnas:
-            columnas.insert(columnas.index("ESTADO_CUM_INVIMA") + 1, "ESTADO_LISTADO_INVIMA")
-        elif "ACTIVO" in columnas:
-            columnas.insert(columnas.index("ACTIVO") + 1, "ESTADO_LISTADO_INVIMA")
-        else:
-            columnas.append("ESTADO_LISTADO_INVIMA")
-        df_tabla["ESTADO_LISTADO_INVIMA"] = auditoria.loc[df_tabla.index, "ESTADO_LISTADO_INVIMA"]
 
     df_tabla = df_tabla[columnas]
     return replace(calidad, columnas=tuple(columnas), df_tabla=df_tabla)

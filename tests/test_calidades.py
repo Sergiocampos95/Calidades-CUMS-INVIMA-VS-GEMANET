@@ -1,6 +1,7 @@
 import pandas as pd
 
 from gemma_cum_loader.auditoria.calidades import (
+    _con_columnas_derivadas,
     _consultas_verificacion_gemanet,
     calidades_auditoria,
     filtrar_por_seccion,
@@ -337,3 +338,35 @@ def test_seccion_desconocida_devuelve_la_tabla_entera():
     una tabla vacia) por una clave vieja en un enlace."""
     tabla = _tabla_con_diferencias()
     assert len(filtrar_por_seccion(tabla, "campo:INVENTADO")) == len(tabla)
+
+
+def test_estado_invima_no_repite_la_palabra_cuando_el_listado_ya_la_dice():
+    """ESTADO_INVIMA fusiona listado + detalle en una sola columna. Antes
+    salian contiguas diciendo lo mismo ("Vencido" | "Vencido") en el 91 % de
+    las filas -- 116.267 de 127.734 medidas contra el snapshot."""
+    auditoria = pd.DataFrame([
+        _fila("500-1", ESTADO_LISTADO_INVIMA="vencido", ESTADO_INVIMA_DETALLE="Vencido"),
+        _fila("600-1", ESTADO_LISTADO_INVIMA="vencido", ESTADO_INVIMA_DETALLE="Vencido"),
+    ])
+
+    columna = _con_columnas_derivadas(auditoria)["ESTADO_INVIMA"]
+
+    assert list(columna) == ["Vencido", "Vencido"]
+
+
+def test_estado_invima_conserva_el_detalle_cuando_el_listado_agrupa_varios():
+    """`otros_estados` es heterogeneo por naturaleza: agrupa 8 estados reales
+    (Cancelado, Negado, Perdida Fuerza Ejec...). Ahi el nombre del archivo no
+    basta para saber que dice INVIMA, asi que el detalle va entre parentesis.
+
+    El criterio es CONTAR cuantos valores agrupa el listado, no comparar los
+    dos textos: comparar fallaba con las abreviaturas y producia el parentesis
+    inutil "En trámite de renovación (En tramite renov)"."""
+    auditoria = pd.DataFrame([
+        _fila("500-1", ESTADO_LISTADO_INVIMA="otros_estados", ESTADO_INVIMA_DETALLE="Cancelado"),
+        _fila("600-1", ESTADO_LISTADO_INVIMA="otros_estados", ESTADO_INVIMA_DETALLE="Negado"),
+    ])
+
+    columna = _con_columnas_derivadas(auditoria)["ESTADO_INVIMA"]
+
+    assert list(columna) == ["Otro estado (Cancelado)", "Otro estado (Negado)"]

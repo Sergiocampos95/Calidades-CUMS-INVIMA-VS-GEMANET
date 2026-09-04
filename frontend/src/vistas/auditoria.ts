@@ -15,6 +15,7 @@ import {
   etiquetaEstadoCoherencia,
   pildoraEstadoCadena,
   pildoraEstadoCoherencia,
+  pildoraEstadoInvimaUnificado,
   pildoraEstadoListadoInvima,
   pildoraNovedadVigencia,
   pildoraValidacion,
@@ -33,6 +34,11 @@ const ETIQUETAS_ACTIVO_VS_INVIMA = {
   // dice en cual de los 4 archivos aparece el registro. Rotularlos distinto
   // evita leer la ubicacion como si fuera el veredicto.
   ESTADO_CUM_INVIMA: "Estado CUM INVIMA",
+  // Una sola columna en vez de "Estado Registro INVIMA" + "INVIMA Listado",
+  // que salian contiguas repitiendo la misma palabra ("Vencido" | "Vencido")
+  // en el 91 % de las filas. La compone el backend en calidades.py, para que
+  // el filtro y el Excel de descarga vean lo mismo que la pantalla.
+  ESTADO_INVIMA: "Estado en INVIMA",
   ESTADO_INVIMA_DETALLE: "Estado Registro INVIMA",
   ESTADO_LISTADO_INVIMA: "INVIMA Listado",
   RESPONSABLE_DISCREPANCIA: "Responsable",
@@ -50,6 +56,7 @@ const ETIQUETAS_ACTIVO_VS_INVIMA = {
 const FORMATEADOR_ESTADO = (columna: string, valor: unknown) => {
   if (columna === "ESTADO_COHERENCIA") return pildoraEstadoCoherencia(valor);
   if (columna === "ESTADO_LISTADO_INVIMA") return pildoraEstadoListadoInvima(valor);
+  if (columna === "ESTADO_INVIMA") return pildoraEstadoInvimaUnificado(valor);
   return null;
 };
 

@@ -81,6 +81,19 @@ def _consultas_verificacion_gemanet(codigos_internos: pd.Series) -> pd.Series:
     )
 
 
+# Mismo vocabulario que ETIQUETA_ESTADO_LISTADO_INVIMA en
+# frontend/src/pildoras.ts. Se repite aca a proposito: esta cadena viaja al
+# Excel de descarga, que nadie abre con el frontend al lado, asi que el valor
+# guardado tiene que ser legible por si mismo.
+ETIQUETA_LISTADO_INVIMA = {
+    "vigente": "Vigente",
+    "vencido": "Vencido",
+    "renovacion": "En trámite de renovación",
+    "otros_estados": "Otro estado",
+    "ninguno": "No existe en INVIMA",
+}
+
+
 def _con_columnas_derivadas(auditoria: pd.DataFrame) -> pd.DataFrame:
     """Agrega CONSEJO (que hacer, segun NATURALEZA_HALLAZGO), CONSULTA_VERIFICACION_SQL,
     DETALLE_DIFERENCIAS (lista de campos con diferencia para drilldown), y
@@ -103,6 +116,42 @@ def _con_columnas_derivadas(auditoria: pd.DataFrame) -> pd.DataFrame:
         auditoria["DETALLE_DIFERENCIAS"] = auditoria["CAMPOS_CON_DIFERENCIA"].apply(
             lambda campos: f"Ver ({len(str(campos).split(',')) if pd.notna(campos) and campos != '' else 0} campos)"
         )
+    # ESTADO_INVIMA: UNA sola columna en vez de ESTADO_LISTADO_INVIMA +
+    # ESTADO_INVIMA_DETALLE, que en la tabla salian una al lado de la otra
+    # diciendo lo mismo ("Vencido" | "Vencido").
+    #
+    # Medido contra el snapshot: en 116.267 de las 127.734 filas con listado el
+    # detalle toma UN solo valor, identico al del listado. Solo en
+    # `otros_estados` aporta -- ahi desglosa en 8 (Perdida Fuerza Ejec, Negado,
+    # Cancelado...) porque es un archivo heterogeneo por naturaleza. Por eso el
+    # detalle va entre parentesis y SOLO cuando dice algo distinto: se conserva
+    # el desglose sin repetir la palabra en el 91 % de las filas.
+    #
+    # Se compone aca, como CONSEJO, y no en el frontend: asi la misma cadena
+    # alimenta la tabla, el filtro por columna y el Excel de descarga. Si se
+    # armara al pintar, filtrar y descargar seguirian viendo las dos columnas
+    # viejas.
+    if "ESTADO_LISTADO_INVIMA" in auditoria.columns:
+        listado_legible = _columna_texto(auditoria, "ESTADO_LISTADO_INVIMA").map(
+            lambda v: ETIQUETA_LISTADO_INVIMA.get(v, v)
+        )
+        detalle = _columna_texto(auditoria, "ESTADO_INVIMA_DETALLE")
+        # El detalle aporta cuando su listado agrupa MAS DE UN valor: ahi el
+        # nombre del archivo no basta para saber que dice INVIMA. Se decide
+        # contando, no comparando los dos textos, porque comparar fallaba con
+        # las abreviaturas -- "En tramite renov" contra "En trámite de
+        # renovación" no son iguales como cadena y producian el parentesis
+        # inutil "En trámite de renovación (En tramite renov)". Contando, el
+        # criterio ademas se adapta solo: si algun dia Vencidos empieza a traer
+        # dos estados distintos, el detalle aparecera sin tocar esto.
+        distintos_por_listado = detalle.groupby(
+            _columna_texto(auditoria, "ESTADO_LISTADO_INVIMA")
+        ).transform("nunique")
+        aporta = detalle.ne("") & distintos_por_listado.gt(1)
+        auditoria["ESTADO_INVIMA"] = listado_legible.where(
+            ~aporta, listado_legible + " (" + detalle + ")"
+        )
+
     # RESPONSABLE_DISCREPANCIA: quien debe actuar segun la direccion de la discrepancia
     # (solo para tarjetas 2 y 6 que lo usan, otros casos quedan vacío).
     responsable = pd.Series("", index=auditoria.index, dtype="object")
@@ -225,18 +274,22 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
         | _no_vacio(auditoria, "INCONSISTENCIA_FECHAS_ACTIVO")
     )
 
-    # Los cuatro estados van CONTIGUOS y a la izquierda, en este orden exacto
-    # (pedido del usuario, 2026-09-02): el estado local, la vigencia real de
-    # INVIMA, el detalle del registro y por ultimo el listado donde se
-    # encuentra. Van en `base` -- y no al final de cada tarjeta -- porque si
-    # CONSEJO queda en medio se pierde la lectura de un vistazo.
+    # Los estados van CONTIGUOS y a la izquierda: el estado local, la vigencia
+    # real de INVIMA y donde vive el registro. Van en `base` -- y no al final
+    # de cada tarjeta -- porque si CONSEJO queda en medio se pierde la lectura
+    # de un vistazo.
+    #
+    # ESTADO_INVIMA_DETALLE y ESTADO_LISTADO_INVIMA se fusionaron en
+    # ESTADO_INVIMA (2026-09-04): salian contiguas repitiendo la misma palabra
+    # ("Vencido" | "Vencido") en el 91 % de las filas. Ver la composicion en
+    # `_con_columnas_derivadas`. Las dos originales siguen en el DataFrame --
+    # otras vistas y las descargas las usan -- solo dejan de mostrarse aca.
     base = [
         "CODIGO_INTERNO",
         "DESCRIPCION",
         "ACTIVO",
         "ESTADO_CUM_INVIMA",
-        "ESTADO_INVIMA_DETALLE",
-        "ESTADO_LISTADO_INVIMA",
+        "ESTADO_INVIMA",
         "CONSEJO",
     ]
     return [

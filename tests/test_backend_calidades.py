@@ -82,13 +82,16 @@ def test_listar_calidades_devuelve_6_con_conteos_correctos(tmp_path):
         app.dependency_overrides.clear()
 
 
-def test_todas_las_calidades_incluyen_estado_listado_invima_en_columnas_y_filas(tmp_path):
-    """Pedido explicito del usuario (2026-09-01): ESTADO_LISTADO_INVIMA debe
-    estar disponible en CADA calidad -- tanto en la lista de `columnas` que
-    describe la calidad como en las filas reales que trae
-    /auditoria/calidades/{nombre} -- para poder distinguir vigente/vencido/
-    en_tramite_renovacion/otros_estados en cualquier tabla que se abra desde
-    la UI, sin tener que adivinar la columna en cada vista."""
+def test_todas_las_calidades_incluyen_el_estado_de_invima_en_columnas_y_filas(tmp_path):
+    """Pedido explicito del usuario (2026-09-01): en CADA calidad se tiene que
+    poder distinguir vigente/vencido/renovacion/otros_estados -- tanto en la
+    lista de `columnas` que describe la calidad como en las filas reales de
+    /auditoria/calidades/{nombre} -- sin adivinar la columna en cada vista.
+
+    Desde 2026-09-04 quien cumple ese papel es ESTADO_INVIMA, que fusiona el
+    listado con su detalle en una sola columna: antes salian las dos contiguas
+    repitiendo la misma palabra ("Vencido" | "Vencido") en el 91 % de las
+    filas."""
     cliente, carpeta = _cliente(tmp_path)
     try:
         escribir_snapshot({"auditoria": _auditoria_muestra()}, carpeta=carpeta)
@@ -97,13 +100,13 @@ def test_todas_las_calidades_incluyen_estado_listado_invima_en_columnas_y_filas(
         calidades = r.json()
         assert len(calidades) > 0
         for calidad in calidades:
-            assert "ESTADO_LISTADO_INVIMA" in calidad["columnas"], calidad["nombre"]
+            assert "ESTADO_INVIMA" in calidad["columnas"], calidad["nombre"]
             if calidad["medicamentos"] == 0:
                 continue
             r_detalle = cliente.get(f"/auditoria/calidades/{calidad['nombre']}")
             assert r_detalle.status_code == 200
             for fila in r_detalle.json()["filas"]:
-                assert "ESTADO_LISTADO_INVIMA" in fila, calidad["nombre"]
+                assert "ESTADO_INVIMA" in fila, calidad["nombre"]
     finally:
         app.dependency_overrides.clear()
 

@@ -79,6 +79,24 @@ export function etiquetaEstadoListadoInvima(valor: string): string {
   return ETIQUETA_ESTADO_LISTADO_INVIMA[valor] ?? valor;
 }
 
+/** Pildora para ESTADO_INVIMA, la columna que fusiona listado + detalle
+ * (`calidades.py::_con_columnas_derivadas`). El backend ya manda el texto
+ * legible y compuesto -- "Vencido", "Otro estado (Cancelado)" -- asi que el
+ * color se decide por el PREFIJO, que es la parte que corresponde al listado.
+ *
+ * Se busca por prefijo y no por igualdad exacta justamente por el parentesis:
+ * los 8 valores distintos de "otros_estados" comparten el mismo color de
+ * riesgo, que es lo que interesa de un vistazo. */
+export function pildoraEstadoInvimaUnificado(valor: unknown): string {
+  const texto = String(valor ?? "").trim();
+  if (!texto) return pildora("neutro", "—");
+  const entrada = Object.entries(ETIQUETA_ESTADO_LISTADO_INVIMA).find(([, etiqueta]) =>
+    texto.startsWith(etiqueta),
+  );
+  const clave = entrada ? entrada[0] : "";
+  return pildora(TIPO_POR_ESTADO_LISTADO_INVIMA[clave] ?? "neutro", texto);
+}
+
 
 // Vocabulario de NOVEDAD_VIGENCIA_INVIMA (auditoria/coherencia_invima.py,
 // dimension 10) -- mismas etiquetas que _ETIQUETA_VALOR_INTERNO en
