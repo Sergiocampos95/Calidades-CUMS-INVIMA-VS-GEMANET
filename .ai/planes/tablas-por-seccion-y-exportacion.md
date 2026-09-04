@@ -120,6 +120,11 @@ Reglas del proyecto en juego:
   critica para el rendimiento; sigue teniendo sentido para no re-pedir al
   volver a la vista (pedido explicito del usuario), pero el cuello real ya
   esta resuelto en el backend y beneficia a TODAS las vistas, no solo a esta.
+- (paso 5) 8 pruebas del endpoint de descarga, verificadas por DOS mutaciones:
+  (a) recortar la descarga a 1.000 filas -> cayo la prueba del alcance;
+  (b) escribir el csv/txt sin BOM -> cayeron las dos de formato. Ese BOM no es
+  cosmetico: sin el, Excel de Windows muestra "DESCRIPCIÃ“N" y nadie lo nota
+  hasta que un usuario abre el reporte.
 - **Cache de paginas en memoria, y sobrevive a salir y volver a la vista**
   (pedido explicito: "cargo una tabla, me devuelvo, vuelvo a entrar y de
   nuevo la carga"). Se descarta al cambiar filtro/seccion/busqueda **y al
@@ -180,7 +185,7 @@ pagina) y por si solo ya agiliza la app. Va primero.
       `seccion`, `filtros_json`, `busqueda`. Reusa el MISMO filtrado del
       endpoint de tabla (extraerlo a una funcion compartida, no duplicarlo:
       duplicar es como la pantalla y el archivo acaban discrepando).
-- [ ] 5. (claude/pruebas) `tests/test_backend_descargas.py` — que el archivo
+- [x] 5. (claude/pruebas) `tests/test_backend_descargas.py` — que el archivo
       trae la SECCION COMPLETA (no la pagina de 1.000), que respeta las
       columnas de la seccion, y los 3 formatos.
 - [ ] 6. (claude/ui-vite) `frontend/src/cache_tablas.ts` (NUEVO) — store a
