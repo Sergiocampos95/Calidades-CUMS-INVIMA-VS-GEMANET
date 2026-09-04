@@ -62,6 +62,39 @@ Reglas del proyecto en juego:
   nuevo la carga"). Se descarta al cambiar filtro/seccion/busqueda **y al
   cambiar el snapshot** — si no, tras un refresco se mostrarian datos viejos.
 
+## Estructura: NO hay que cambiarla (medido, 2026-09-04)
+
+La app corre sobre una sola vista: `render()` en `main.ts` llama a
+`subActual.montar(vista)` y cada vista hace `contenedor.innerHTML = ...`, asi
+que **cada navegacion destruye y recrea el DOM** (23 sitios lo hacen). La
+pregunta era si eso obliga a rehacer la arquitectura para poder cachear.
+
+No obliga. Medido contra el backend real:
+
+| | |
+|---|---|
+| Pagina de 1.000 filas | **0,63 s · 2,0 MB · 38 columnas** |
+| Columnas utiles en la seccion Concentracion | **8** |
+| Datos de mas que viajan hoy | **79 %** |
+
+Lo caro es la RED, no el DOM: recrear 1.000 filas en el navegador son
+milisegundos, pedirlas son 0,6 s. Basta con que la cache y el estado de tabla
+vivan en un MODULO y no en la instancia de `TablaFiltrable`, que si muere al
+navegar. Al volver, la vista se remonta pero pinta desde memoria sin tocar la
+red. Ya hay precedente: `_codigoPendiente` en `consulta_detalle.ts`.
+
+Se descarta la alternativa de no destruir las vistas (ocultarlas con
+`hidden`): daria scroll y filtros conservados gratis, pero obliga a revisar
+los 23 sitios que asumen "monto desde cero", con riesgo de listeners
+duplicados y fugas, para ganar milisegundos de DOM cuando el cuello esta en
+la red.
+
+**Consecuencia para el orden de los pasos:** se midio la seccion
+`Concentracion` y pesa lo MISMO que sin seccion (2,2 MB) — las 38 columnas
+viajan siempre y el frontend solo las esconde. El paso 1 no es estetica: es
+la mayor ganancia de rendimiento de todo el trabajo (79 % menos datos por
+pagina) y por si solo ya agiliza la app. Va primero.
+
 ## Pasos
 
 - [ ] 1. (claude/implementador) `src/gemma_cum_loader/auditoria/calidades.py`
@@ -87,13 +120,19 @@ Reglas del proyecto en juego:
 - [ ] 5. (claude/pruebas) `tests/test_backend_descargas.py` — que el archivo
       trae las filas del filtro (no la pagina), que respeta las columnas de
       la seccion, y los 3 formatos.
-- [ ] 6. (claude/ui-vite) `frontend/src/tabla.ts` — quitar el checkbox
+- [ ] 6. (claude/ui-vite) `frontend/src/cache_tablas.ts` (NUEVO) — store a
+      nivel de MODULO con las paginas ya traidas y el estado de cada tabla
+      (pagina actual, filtros, seccion), con clave
+      {vista, seccion, filtros, busqueda, snapshot}. Tiene que vivir fuera de
+      `TablaFiltrable`: esa instancia muere en cada navegacion (ver la
+      seccion "Estructura" arriba).
+- [ ] 7. (claude/ui-vite) `frontend/src/tabla.ts` — quitar el checkbox
       "Cargar la tabla completa" y `onCargarTodo`; barra de paginacion
-      (anterior/siguiente + "pagina N de M"); cache de paginas con clave
-      {vista, seccion, filtros, busqueda, snapshot}.
-- [ ] 7. (claude/ui-vite) `frontend/src/tabla.ts` + vista — botones de
+      (anterior/siguiente + "pagina N de M"); leer y escribir en el store del
+      paso 6 en vez de pedir siempre a la red.
+- [ ] 8. (claude/ui-vite) `frontend/src/tabla.ts` + vista — botones de
       descarga XLSX/CSV/TXT que llevan el filtro vigente.
-- [ ] 8. (claude/revisor) — revision antes del commit: que no quede un
+- [ ] 9. (claude/revisor) — revision antes del commit: que no quede un
       segundo mecanismo de render de tablas ni de descarga.
 
 ## Abierto
