@@ -17,9 +17,10 @@ para no romper convenciones.
 ## Comandos
 
 ```bash
-pytest                                    # suite completa (572 pruebas)
+pytest                                    # suite completa (597 pruebas)
 pytest tests/test_reglas.py -q            # un modulo
-ruff check src/ tests/ ui_revision/       # lint
+ruff check src/ tests/                    # lint
+cd frontend && npx tsc --noEmit           # tipos del frontend
 
 # DESARROLLO (reinicia AUTOMÁTICAMENTE todo):
 .\reinicia_todo.ps1                       # backend + refresco + frontend
@@ -118,35 +119,50 @@ independientes).
 de MB). **Nunca subirlos al repositorio ni pegar su contenido en un reporte.**
 Los archivos reales son la fuente para medir rendimiento, no para versionar.
 
-## UI (Streamlit)
+## UI (Vite + TypeScript)
+
+**La app real es el frontend Vite en http://localhost:5173, servido por la API
+FastAPI de `backend/app/` en el 8000.** `ui_revision/app_streamlit.py` esta
+DESCARTADO: no se toca ni se le agregan funcionalidades (regla dura, ver
+`.claude/agents/ui-vite.md`). Si algo hay que cambiar en pantalla, es en
+`frontend/src/`.
 
 - **Toda tabla de medicamentos lleva filtros y busqueda libre.** Ninguna se
-  muestra en crudo.
-- Las advertencias van como **tarjeta corta + icono "?" con tooltip nativo**
-  (`st.button(help=...)`), nunca como parrafos largos dentro de un banner ni
-  como expander/popover de detalle -- pedido explicito del usuario
-  (2026-08-25): un desplegable "solo desperdicia espacio". La unica funcion
-  que arma ese icono es `_mostrar_detalle_alerta` en `app_streamlit.py`; no
-  crear un segundo mecanismo de detalle para avisos cortos. (Un expander SI
-  sigue siendo correcto para esconder contenido sustancial -- una tabla, una
-  lista larga -- eso no es lo que esta regla prohibe.)
-- 6 secciones en el menu lateral, agrupadas en "candidatos para cargue" y
-  "medicamentos ya cargados": Resumen de resolucion · Casos que requieren
-  decision · Cargue a Gemma Net · Por que no se cargo · Consultar INVIMA ·
-  Auditoria de coherencia. Varias tienen sub-vistas propias (ver
-  `SUBVISTAS_POR_SECCION` en `app_streamlit.py`).
-- **Toda tabla dibujada en pantalla recorta su previsualizacion a
-  `_LIMITE_PREVISUALIZACION_MEDICAMENTOS` (1.000) filas, con la opcion
-  explicita de cargar la tabla completa.** Pedido explicito del usuario
-  (2026-08-27): antes solo la variante "medicamentos" de
-  `_mostrar_tabla_estandar` tenia tope; una tabla de resumen que creciera no
-  lo tenia. El unico lugar donde se dibuja un DataFrame en toda la app es
-  `_mostrar_tabla_estandar` (`app_streamlit.py`) -- no crear un segundo
-  mecanismo de render de tablas. El recorte es solo de lo que se ENVIA al
-  navegador: `df` nunca se modifica, y las descargas siempre usan el
-  DataFrame completo. Un checkbox ("Cargar la tabla completa") guardado en
-  `session_state` por una `key` unica por tabla ofrece ver todas las filas
-  cuando hace falta -- nunca se asume en silencio que el limite alcanza.
+  muestra en crudo. El unico componente que dibuja tablas es
+  `TablaFiltrable` (`frontend/src/tabla.ts`) -- no crear un segundo
+  mecanismo de render.
+- **Toda tabla recorta su previsualizacion a `LIMITE_PREVISUALIZACION`
+  (1.000) filas, con la opcion explicita de cargar la tabla completa.** El
+  recorte es solo de lo que se ENVIA al navegador; las descargas siempre
+  usan el DataFrame completo del backend. Nunca se asume en silencio que el
+  limite alcanza.
+- Las advertencias van como **tarjeta corta**, nunca como parrafos largos
+  dentro de un banner -- pedido explicito del usuario (2026-08-25): un
+  desplegable "solo desperdicia espacio". (Esconder contenido sustancial --
+  una tabla, una lista larga -- si es correcto; no es lo que la regla
+  prohibe.)
+- Las secciones y sub-vistas se declaran en un solo sitio, `SECCIONES` en
+  `frontend/src/main.ts`, agrupadas en "Candidatos para cargue" y
+  "Medicamentos ya cargados".
+- **Una vista NUNCA recalcula un veredicto que el backend ya emitio.** Se lee
+  el trio `<CAMPO>_GEMANET` / `_INVIMA` / `_VALIDACION` que la auditoria dejo
+  en la fila. Reimplementar la comparacion en TypeScript es exactamente como
+  se llega a que la consulta puntual y las tarjetas de calidades digan cosas
+  distintas del mismo CUM (paso el 2026-09-03 y costo una sesion entera).
+- **Una fila de comparacion solo existe si los dos lados se pueden
+  contrastar.** Un dato que solo tiene INVIMA va como informacion fuera de la
+  tabla, no como fila con "no aplica" y "sin comparar" -- eso llenaba la
+  pantalla de veredictos que no significaban nada (2026-09-04).
+- **Formatear no es transformar el dato.** `frontend/src/fechas.ts` escribe el
+  mes con letras SOLO en pantalla, porque INVIMA publica en MM/DD/YYYY y
+  Gemma Net en YYYY-MM-DD y "04/03/2017" contra "2017-03-04" parecen fechas
+  distintas siendo la misma. Las descargas se arman en el backend y siguen
+  llevando la fecha como fecha, no como texto. Si el valor no es reconocible
+  se muestra el crudo: nunca se adivina.
+- Navegacion: todo salto pasa por `navegarA` en `main.ts`, que alimenta el
+  historial del boton "Volver" (y Alt+Flecha). Una vista pide navegar con el
+  evento `gemma:navegar`, sin importar `main.ts` -- que ya importa las vistas,
+  y el import inverso cerraria un ciclo.
 
 ## Equipo de agentes
 
