@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
 from backend.app.dependencies import carpeta_snapshots
+from gemma_cum_loader.ingesta.invima_socrata import consultar_cum_en_listados
 from worker.almacen_snapshots import leer_tabla
 
 router = APIRouter(prefix="/consulta-detalle", tags=["consulta-detalle"])
@@ -257,3 +258,51 @@ def consultar_medicamento(codigo: str, carpeta: Path = Depends(carpeta_snapshots
     if error_lecturas:
         contenido["error"] = error_lecturas
     return JSONResponse(content=contenido)
+
+
+@router.get("/invima-en-vivo")
+def consultar_invima_en_vivo(codigo: str):
+    """Pregunta por uno o varios codigos a los 4 datasets de INVIMA AHORA
+    MISMO, sin pasar por el snapshot.
+
+    Existe para poder corroborar lo que muestra `/medicamento`, que resuelve
+    contra el snapshot: si el ultimo refresco cayo al respaldo local (Socrata
+    caido), ese snapshot puede traer datos viejos y un CUM aparece en un
+    listado que ya no le corresponde. Caso real 2026-09-03: el snapshot del
+    dia anterior venia de los Excel de 2022 (101.183 vigentes contra los
+    157.756 que la API servia ese dia), y un CUM hoy vigente se veia en
+    renovacion.
+
+    Va bajo accion explicita del usuario, nunca automatico al abrir la vista:
+    son 4 llamadas de red por codigo y la vista debe seguir sirviendo sin
+    conexion (regla 4 del proyecto para `explicar_fila`, mismo criterio)."""
+    codigos = [_limpiar_codigo(c) for c in codigo.split(",") if _limpiar_codigo(c)]
+    if not codigos:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Escribe al menos un codigo para consultar.", "resultados": []},
+        )
+
+    resultados = []
+    for cod in codigos:
+        consulta = consultar_cum_en_listados(cod)
+        resultados.append(
+            {
+                "codigo": consulta.codigo_interno,
+                "encontrado": consulta.encontrado,
+                "apariciones": [
+                    {
+                        "listado": a.listado,
+                        "estado_cum": a.estado_cum,
+                        "estado_registro": a.estado_registro,
+                        "producto": a.producto,
+                        "filas": a.filas,
+                    }
+                    for a in consulta.apariciones
+                ],
+                "listados_no_consultados": list(consulta.listados_no_consultados),
+                "error": consulta.error,
+                "consultado_utc": consulta.fecha_consulta.isoformat(),
+            }
+        )
+    return JSONResponse(content={"resultados": resultados})

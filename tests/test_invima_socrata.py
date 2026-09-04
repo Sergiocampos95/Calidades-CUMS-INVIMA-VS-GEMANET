@@ -5,7 +5,6 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from gemma_cum_loader.integraciones.socrata import ErrorSocrata
 from gemma_cum_loader.ingesta.invima_socrata import (
     CAMPOS_API,
     DATASET_CUM_VENCIDOS,
@@ -13,8 +12,10 @@ from gemma_cum_loader.ingesta.invima_socrata import (
     EstadoValidacionCUM,
     comparar_nombre,
     consultar_cum,
+    consultar_cum_en_listados,
     leer_catalogo_invima_api,
 )
+from gemma_cum_loader.integraciones.socrata import ErrorSocrata
 
 
 @dataclass
@@ -206,3 +207,48 @@ def test_comparar_nombre_no_toca_estados_que_no_son_valido_vigente():
     sesion = _SesionFalsa([_RespuestaFalsa(200, []), _RespuestaFalsa(200, [{"count": "1"}])])
     resultado = consultar_cum("999-9", token="t", sesion=sesion)
     assert comparar_nombre("CUALQUIER COSA", resultado) == EstadoValidacionCUM.NO_ENCONTRADO
+
+
+def test_consulta_en_vivo_dice_en_cual_de_los_4_listados_esta_el_cum():
+    """La consulta puntual pregunta a los CUATRO datasets, no solo a
+    Vigentes como `consultar_cum`: un CUM que vive en Vencidos tiene que
+    poder verse, y el listado es justamente el dato que se quiere corroborar
+    contra el snapshot."""
+    sesion = _SesionFalsa(
+        respuestas=[
+            _RespuestaFalsa(200, []),  # vigente
+            _RespuestaFalsa(200, [_fila_api(estadocum="Activo", estadoregistro="Vencido")]),  # vencido
+            _RespuestaFalsa(200, []),  # renovacion
+            _RespuestaFalsa(200, []),  # otros_estados
+        ]
+    )
+
+    r = consultar_cum_en_listados("500-1", token="t", sesion=sesion)
+
+    assert r.encontrado
+    assert [a.listado for a in r.apariciones] == ["vencido"]
+    assert r.apariciones[0].estado_cum == "Activo"
+    assert r.error == ""
+
+
+def test_consulta_en_vivo_no_afirma_que_no_existe_si_ningun_listado_respondio():
+    """Degradacion explicita: si los 4 datasets fallan, la respuesta NO puede
+    leerse como "este CUM no existe" -- eso es justo lo que llevaria a alguien
+    a crear un medicamento duplicado o a negar una autorizacion."""
+    sesion = _SesionFalsa(respuestas=[_RespuestaFalsa(500, {}) for _ in range(4)])
+
+    r = consultar_cum_en_listados("500-1", token="t", sesion=sesion)
+
+    assert not r.encontrado
+    assert r.error
+    assert len(r.listados_no_consultados) == 4
+
+
+def test_consulta_en_vivo_quita_los_ceros_a_la_izquierda_del_expediente():
+    """INVIMA guarda el expediente como numero: "00000500" no encuentra nada."""
+    sesion = _SesionFalsa(respuestas=[_RespuestaFalsa(200, []) for _ in range(4)])
+
+    consultar_cum_en_listados("00000500-01", token="t", sesion=sesion)
+
+    assert "expediente='500'" in sesion.llamadas[0]["params"]["$where"]
+    assert "consecutivocum='1'" in sesion.llamadas[0]["params"]["$where"]

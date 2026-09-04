@@ -264,6 +264,135 @@ def consultar_cum(
     )
 
 
+# Los 4 datasets con la etiqueta de listado que usa el resto del sistema
+# (las mismas de `worker/tareas.py`, que es lo que termina en
+# ESTADO_LISTADO_INVIMA). En este orden a proposito: es el mismo orden de
+# prioridad con el que `auditar_coherencia` resuelve el listado de un CUM,
+# asi que la consulta en vivo y la auditoria nombran igual el mismo caso.
+DATASETS_POR_LISTADO: tuple[tuple[str, str], ...] = (
+    ("vigente", DATASET_CUM_VIGENTES),
+    ("vencido", DATASET_CUM_VENCIDOS),
+    ("renovacion", DATASET_CUM_RENOVACION),
+    ("otros_estados", DATASET_CUM_OTROS_ESTADOS),
+)
+
+
+@dataclass(frozen=True)
+class AparicionEnListado:
+    """Un CUM encontrado en UNO de los 4 listados de INVIMA, en vivo."""
+
+    listado: str
+    estado_cum: str
+    estado_registro: str
+    producto: str
+    filas: int
+
+
+@dataclass(frozen=True)
+class ConsultaCumEnVivo:
+    """Donde aparece un CUM AHORA MISMO en INVIMA, preguntando a los 4
+    datasets, sin pasar por el snapshot."""
+
+    codigo_interno: str
+    apariciones: tuple[AparicionEnListado, ...]
+    listados_no_consultados: tuple[str, ...]
+    error: str
+    fecha_consulta: dt.datetime
+
+    @property
+    def encontrado(self) -> bool:
+        return bool(self.apariciones)
+
+
+def consultar_cum_en_listados(
+    codigo_interno: str,
+    token: str | None = None,
+    sesion: socrata.SesionHTTP | None = None,
+) -> ConsultaCumEnVivo:
+    """Pregunta por un CUM a los CUATRO listados de INVIMA en vivo, no solo a
+    Vigentes como `consultar_cum`.
+
+    Por que existe: la vista "Consultar INVIMA" resuelve contra el SNAPSHOT,
+    que puede tener horas o dias -- y cuando la API de Socrata esta caida el
+    refresco cae al respaldo local, que puede ser mucho mas viejo todavia
+    (caso real 2026-09-03: el snapshot del dia anterior venia de los Excel de
+    2022, con 101.183 vigentes contra los 157.756 que la API servia ese dia).
+    Con eso, un CUM podia verse "en renovacion" en pantalla estando hoy
+    vigente en INVIMA. Esta funcion permite corroborar el dato puntual contra
+    la fuente, sin esperar a un refresco completo de 3 minutos.
+
+    Un dataset que falle NO tumba la consulta: se anota en
+    `listados_no_consultados` y se devuelve lo que si respondio -- degradacion
+    explicita, nunca un "no existe" que en realidad era un servicio caido.
+    Ese es el mismo cuidado que ya toma `consultar_cum` con `hay_datos`."""
+    ahora = dt.datetime.now()
+    codigo_interno = str(codigo_interno).strip() if codigo_interno else ""
+    if not codigo_interno:
+        return ConsultaCumEnVivo(
+            codigo_interno=codigo_interno,
+            apariciones=(),
+            listados_no_consultados=(),
+            error="El codigo interno esta vacio.",
+            fecha_consulta=ahora,
+        )
+
+    partes = codigo_interno.rsplit("-", 1)
+    if len(partes) != 2 or not partes[0].isdigit() or not partes[1].isdigit():
+        return ConsultaCumEnVivo(
+            codigo_interno=codigo_interno,
+            apariciones=(),
+            listados_no_consultados=(),
+            error=(
+                f"'{codigo_interno}' no sigue el formato EXPEDIENTE-CONSECUTIVO "
+                "esperado para un CUM de INVIMA."
+            ),
+            fecha_consulta=ahora,
+        )
+    expediente, consecutivo = partes
+    # Los ceros a la izquierda se quitan porque INVIMA guarda el expediente
+    # como numero: "00019905376" no encuentra nada, "19905376" si.
+    where = (
+        f"expediente='{expediente.lstrip('0') or '0'}' "
+        f"AND consecutivocum='{consecutivo.lstrip('0') or '0'}'"
+    )
+
+    apariciones: list[AparicionEnListado] = []
+    no_consultados: list[str] = []
+    for listado, dataset in DATASETS_POR_LISTADO:
+        try:
+            filas = socrata.consultar(dataset, {"$where": where}, token=token, sesion=sesion)
+        except socrata.ErrorSocrata as exc:
+            no_consultados.append(f"{listado}: {exc}")
+            continue
+        if not filas:
+            continue
+        primera = filas[0]
+        apariciones.append(
+            AparicionEnListado(
+                listado=listado,
+                estado_cum=str(primera.get("estadocum", "") or ""),
+                estado_registro=str(primera.get("estadoregistro", "") or ""),
+                producto=str(primera.get("producto", "") or ""),
+                filas=len(filas),
+            )
+        )
+
+    error = ""
+    if not apariciones and no_consultados:
+        # Ningun listado respondio: no se puede afirmar que el CUM no exista.
+        error = (
+            "No se pudo consultar ningun listado de INVIMA en este momento, "
+            "asi que no se puede confirmar ni descartar el codigo."
+        )
+    return ConsultaCumEnVivo(
+        codigo_interno=codigo_interno,
+        apariciones=tuple(apariciones),
+        listados_no_consultados=tuple(no_consultados),
+        error=error,
+        fecha_consulta=ahora,
+    )
+
+
 def comparar_nombre(nombre_local: str, resultado: ResultadoValidacionCUM) -> EstadoValidacionCUM:
     """Si `resultado` ya es VALIDO_VIGENTE, compara el nombre/producto local
     contra el oficial (normalizado) y degrada a CON_DIFERENCIAS si no
