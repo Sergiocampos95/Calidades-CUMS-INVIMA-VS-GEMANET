@@ -125,6 +125,21 @@ Reglas del proyecto en juego:
   (b) escribir el csv/txt sin BOM -> cayeron las dos de formato. Ese BOM no es
   cosmetico: sin el, Excel de Windows muestra "DESCRIPCIÃ“N" y nadie lo nota
   hasta que un usuario abre el reporte.
+- (paso 6) El snapshot es **un campo mas de la clave**, no una comprobacion
+  aparte como en el backend. Efecto: una consulta contra un snapshot nuevo
+  jamas puede leer una entrada del viejo, porque la clave entera es distinta
+  -- no hace falta que nadie dispare un "borrar todo" al detectar el refresco.
+  `invalidarTodo()` queda como reset explicito, no como parte del flujo.
+- (paso 6) Tope **30 paginas** con LRU (Map + borrar-y-reinsertar). Sale de la
+  medicion: ~0,6 MB por pagina recortada y ~2,0 MB en el peor caso sin
+  seccion, o sea ~60 MB de techo. Sin tope se repetiria el problema que
+  reporto el usuario con "cargar todo" ("hasta se trababa el computador").
+- (paso 6) `EstadoTabla` (donde estaba parado el usuario) NO lleva snapshot ni
+  LRU: es posicion de navegacion, no dato cacheado. Sobrevive a un refresco, y
+  las paginas que se repidan ya iran con la clave del snapshot nuevo.
+- (paso 6) Usa `offset` y no "numero de pagina" porque es lo que ya viaja entre
+  `TablaFiltrable`, `ParametrosTabla` y `PaginaTabla` -- evita una conversion
+  al conectarlo en el paso 7.
 - **Cache de paginas en memoria, y sobrevive a salir y volver a la vista**
   (pedido explicito: "cargo una tabla, me devuelvo, vuelvo a entrar y de
   nuevo la carga"). Se descarta al cambiar filtro/seccion/busqueda **y al
@@ -188,7 +203,7 @@ pagina) y por si solo ya agiliza la app. Va primero.
 - [x] 5. (claude/pruebas) `tests/test_backend_descargas.py` — que el archivo
       trae la SECCION COMPLETA (no la pagina de 1.000), que respeta las
       columnas de la seccion, y los 3 formatos.
-- [ ] 6. (claude/ui-vite) `frontend/src/cache_tablas.ts` (NUEVO) — store a
+- [x] 6. (claude/ui-vite) `frontend/src/cache_tablas.ts` (NUEVO) — store a
       nivel de MODULO con las paginas ya traidas y el estado de cada tabla
       (pagina actual, filtros, seccion), con clave
       {vista, seccion, filtros, busqueda, snapshot}. Tiene que vivir fuera de
