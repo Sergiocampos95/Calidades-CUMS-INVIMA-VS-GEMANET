@@ -88,6 +88,25 @@ def _ordenar(df: pd.DataFrame, ordenar_por: str | None, orden_descendente: bool)
     return df.sort_values(ordenar_por, ascending=not orden_descendente, na_position="last", kind="stable")
 
 
+def filtrar_tabla(
+    df: pd.DataFrame,
+    *,
+    q: str | None = None,
+    filtros_json: str | None = None,
+    ordenar_por: str | None = None,
+    orden_descendente: bool = False,
+) -> pd.DataFrame:
+    """Busqueda libre + filtro por columna + orden -- el mismo recorte que ve
+    la pantalla, SIN paginar ni convertir a JSON. `paginar()` la usa para la
+    previsualizacion; la exportacion de una calidad filtrada
+    (`descargas.py::descargar_calidad`) la usa para traer TODAS las filas del
+    filtro, no solo la pagina visible. Extraida a proposito (plan
+    tablas-por-seccion-y-exportacion.md, paso 4): que pantalla y archivo
+    llamen a la misma funcion es lo que garantiza que nunca discrepen."""
+    filtrado = _filtrar_por_columnas(_buscar_texto_libre(df, q), filtros_json)
+    return _ordenar(filtrado, ordenar_por, orden_descendente)
+
+
 def paginar(
     df: pd.DataFrame,
     *,
@@ -102,8 +121,7 @@ def paginar(
     """`todo=True` es la contraparte exacta del checkbox "Cargar la tabla
     completa" de Streamlit -- nunca se asume en silencio que el limite
     alcanza, el cliente lo pide explicitamente."""
-    filtrado = _filtrar_por_columnas(_buscar_texto_libre(df, q), filtros_json)
-    filtrado = _ordenar(filtrado, ordenar_por, orden_descendente)
+    filtrado = filtrar_tabla(df, q=q, filtros_json=filtros_json, ordenar_por=ordenar_por, orden_descendente=orden_descendente)
     total = len(filtrado)
 
     if todo:

@@ -50,10 +50,24 @@ Reglas del proyecto en juego:
 
 ## Decisiones ya tomadas con el usuario
 
-- **La descarga baja TODO el resultado del filtro**, no solo la pagina
-  visible: si el filtro da 8.865 filas, el archivo trae 8.865 aunque en
-  pantalla se vean 1.000. La paginacion es comodidad de pantalla, no debe
-  recortar el entregable. El archivo lo arma el servidor.
+- **La descarga baja la SECCION COMPLETA, no la pagina visible ni el filtro.**
+  CORREGIDO por el usuario el 2026-09-04: "si estamos en Descripcion
+  diferencia vamos a exportar la calidad completa de diferencia en
+  descripcion... ya no hace falta exportar solo lo que se muestra en pantalla
+  sino todo". O sea: se respeta la SECCION abierta (es el contexto de trabajo)
+  y se ignoran los filtros de columna. El endpoint los sigue aceptando como
+  opcionales -- no estorban y el frontend simplemente no los manda.
+  Medido, ya con el recorte de columnas del paso 1, el coste es bajo hasta en
+  la seccion mas grande:
+
+  | seccion | filas | xlsx |
+  |---|---|---|
+  | Principio activo | 8.865 | 1,3 s · 0,4 MB |
+  | Descripcion | 14.630 | 1,8 s · 0,6 MB |
+  | Fecha fin | 57.255 | 4,8 s · 2,2 MB |
+
+  El caso lento (24 s / 10,9 MB) es solo la calidad SIN seccion, con las 38
+  columnas -- que con esta correccion ya no es lo que descarga el boton.
 - **Las columnas por seccion se deciden en el BACKEND.** Asi la tabla, el
   filtro por columna y la descarga ven lo mismo, y no viajan 40 columnas por
   la red para descartarlas al pintar.
@@ -146,14 +160,14 @@ pagina) y por si solo ya agiliza la app. Va primero.
       `tests/test_backend_calidades.py` — que la seccion de un campo trae su
       trio y NO los de los otros campos; que sin seccion las columnas no
       cambian (no romper las 6 tarjetas).
-- [ ] 4. (claude/ui-vite) `backend/app/routers/descargas.py` —
+- [x] 4. (claude/ui-vite) `backend/app/routers/descargas.py` —
       `GET /descargas/calidad/{nombre}` con `formato` (xlsx|csv|txt),
       `seccion`, `filtros_json`, `busqueda`. Reusa el MISMO filtrado del
       endpoint de tabla (extraerlo a una funcion compartida, no duplicarlo:
       duplicar es como la pantalla y el archivo acaban discrepando).
 - [ ] 5. (claude/pruebas) `tests/test_backend_descargas.py` — que el archivo
-      trae las filas del filtro (no la pagina), que respeta las columnas de
-      la seccion, y los 3 formatos.
+      trae la SECCION COMPLETA (no la pagina de 1.000), que respeta las
+      columnas de la seccion, y los 3 formatos.
 - [ ] 6. (claude/ui-vite) `frontend/src/cache_tablas.ts` (NUEVO) — store a
       nivel de MODULO con las paginas ya traidas y el estado de cada tabla
       (pagina actual, filtros, seccion), con clave
@@ -177,6 +191,20 @@ pagina) y por si solo ya agiliza la app. Va primero.
 - Tope de la descarga: 59.005 filas x ~40 columnas en XLSX puede tardar. Con
   las columnas recortadas del paso 1 baja mucho, pero conviene medirlo antes
   de decidir si hace falta streaming o un aviso de espera.
+  **MEDIDO (paso 4, 2026-09-04)**, `GET /descargas/calidad/{nombre}` contra
+  el backend real, "Diferencia de estado o campos" con
+  `seccion=campo:CONCENTRACION` (2.000 filas x 8 columnas, el caso que
+  importa porque una descarga sin seccion casi siempre viene de una tabla ya
+  filtrada en pantalla): **xlsx 1,5 s / 183 KB, csv 0,79 s / 1,0 MB, txt
+  0,76 s / 1,0 MB.** No hace falta streaming ni aviso de espera con seccion
+  aplicada -- el recorte de columnas del paso 1 es lo que lo hace viable.
+  El caso sin seccion (calidad completa, 59.007 filas x 38 columnas) SI es
+  lento: **xlsx 24,9 s / 11,4 MB** (csv/txt no medidos ahi, pero al no pasar
+  por openpyxl deberian ser bastante mas rapidos que el xlsx). Consecuencia
+  para el paso 8: la UI deberia ofrecer descargar SOLO lo que esta filtrado
+  en pantalla (con seccion/busqueda/filtro de columna aplicados), no un boton
+  suelto de "descargar toda la calidad" sin ningun filtro -- ese caso es el
+  unico que de verdad pediria streaming o un spinner con aviso.
 
 ## Verificacion
 

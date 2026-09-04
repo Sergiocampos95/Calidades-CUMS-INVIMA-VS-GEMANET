@@ -15,7 +15,7 @@ import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException
 
 from backend.app.dependencies import carpeta_snapshots
-from backend.app.paginacion import paginar, valores_distintos
+from backend.app.paginacion import filtrar_tabla, paginar, valores_distintos
 from backend.app.schemas import (
     LIMITE_PREVISUALIZACION_DEFECTO,
     CalidadResumen,
@@ -163,6 +163,37 @@ def _con_columnas_de_seccion(tabla: pd.DataFrame, seccion: str) -> pd.DataFrame:
     return tabla[presentes]
 
 
+def tabla_calidad_filtrada(
+    nombre: str,
+    carpeta: Path,
+    *,
+    seccion: str | None = None,
+    q: str | None = None,
+    filtros_json: str | None = None,
+) -> pd.DataFrame:
+    """La tabla de una calidad recortada a su seccion (filas Y columnas, pasos
+    1-2 del plan) y con la busqueda/filtro de columna ya aplicados -- SIN
+    paginar. La comparten `obtener_calidad` (que pagina el resultado para la
+    pantalla) y `GET /descargas/calidad/{nombre}` (que exporta TODAS las
+    filas que deja el filtro, no solo la pagina visible): que pantalla y
+    archivo llamen a la misma funcion es lo que evita que discrepen -- ya paso
+    en otras vistas de este proyecto y llevo dias arreglarlo.
+
+    Lanza 404 (via `_calidad_o_404`) si `nombre` no es una calidad reconocida,
+    y 503 (via `_tabla_auditoria`, adentro de `_calidades`) si el worker
+    todavia no dejo ningun snapshot -- ambos casos antes de tocar ningun
+    filtro."""
+    calidad = _calidad_o_404(nombre, carpeta)
+    # El gate por calidad va aca tambien, y no solo en /secciones: si no, un
+    # enlace viejo con ?seccion= seguiria recortando una calidad que ya no se
+    # secciona, y la tabla mostraria menos filas de las que anuncia su tarjeta.
+    aplica = seccion is not None and calidad_admite_secciones(nombre)
+    tabla = filtrar_por_seccion(calidad.df_tabla, seccion) if aplica else calidad.df_tabla
+    if aplica and seccion is not None:
+        tabla = _con_columnas_de_seccion(tabla, seccion)
+    return filtrar_tabla(tabla, q=q, filtros_json=filtros_json)
+
+
 @router.get("/calidades/{nombre}", response_model=PaginaTabla)
 def obtener_calidad(
     nombre: str,
@@ -176,23 +207,16 @@ def obtener_calidad(
     seccion: str | None = None,
     carpeta: Path = Depends(carpeta_snapshots),
 ) -> PaginaTabla:
-    calidad = _calidad_o_404(nombre, carpeta)
-    # El gate por calidad va aca tambien, y no solo en /secciones: si no, un
-    # enlace viejo con ?seccion= seguiria recortando una calidad que ya no se
-    # secciona, y la tabla mostraria menos filas de las que anuncia su tarjeta.
-    aplica = seccion is not None and calidad_admite_secciones(nombre)
-    tabla = filtrar_por_seccion(calidad.df_tabla, seccion) if aplica else calidad.df_tabla
-    if aplica and seccion is not None:
-        tabla = _con_columnas_de_seccion(tabla, seccion)
+    tabla = tabla_calidad_filtrada(nombre, carpeta, seccion=seccion, q=q, filtros_json=filtros_json)
+    # q/filtros_json ya se aplicaron arriba (misma funcion que usa la
+    # descarga); aca solo falta ordenar y paginar para la pantalla.
     return paginar(
         tabla,
-        q=q,
         limite=limite,
         offset=offset,
         todo=todo,
         ordenar_por=ordenar_por,
         orden_descendente=orden_descendente,
-        filtros_json=filtros_json,
     )
 
 
