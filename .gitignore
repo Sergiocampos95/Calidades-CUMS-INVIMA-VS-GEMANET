@@ -41,6 +41,12 @@ data_runtime/
 # Parquet derivados de la base de PRODUCCION de Pijao Salud, que segun
 # CLAUDE.md nunca deben subirse al repositorio.
 snapshots/
+# Cualquier variante renombrada de esas carpetas (ej. `snapshots.viejo/`,
+# apartada el 2026-09-04 para comprobar que nada la usaba antes de borrarla).
+# Sin esto un `git add -A` se lleva 157 MB de Parquet de produccion al
+# repositorio, que es justo lo que las lineas de arriba evitan.
+snapshots.*/
+data_runtime.*/
 
 # Log del uvicorn local.
 .uvicorn_out.log
