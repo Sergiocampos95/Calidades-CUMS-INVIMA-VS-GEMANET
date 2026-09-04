@@ -69,6 +69,20 @@ Reglas del proyecto en juego:
   mostrar, y duplicar el mapeo era pedir que discrepen -- ya cambio una vez
   (FECHA_FIN dejo de compararse contra FECHA INACTIVO). Si un modulo hermano
   la necesita, no es privada; importar con guion bajo era saltarse la senal.
+- (paso 2) El recorte se aplica SOLO en el endpoint de la tabla, no en el de
+  `valores` de una columna: ese ya recibe la columna puntual que el usuario
+  eligio entre las que la tabla muestra, y recortar ahi tambien arriesgaria
+  dejar el filtro sin opciones si las dos listas discreparan.
+- (paso 2) Una columna de la lista que no exista en el DataFrame se OMITE
+  (`[c for c in columnas if c in tabla.columns]`), no rompe. Es el mismo
+  patron que ya usa `calidades_auditoria()` al armar cada `Calidad`.
+- (paso 2) **MEDIDO tras el recorte:** 2,01 MB -> 0,61 MB en Concentracion
+  (-70 %) y 0,45 MB en Fecha inicio (-78 %). Pero el TIEMPO no bajo (0,65 s
+  en los tres casos): el coste esta en filtrar el DataFrame, no en
+  serializar. La ganancia es de ancho de banda y memoria del navegador.
+  **Consecuencia para el paso 6: la cache importa mas de lo previsto**, porque
+  esos 0,65 s son un coste fijo por pagina que solo se evita no volviendo a
+  pedirla.
 - **Cache de paginas en memoria, y sobrevive a salir y volver a la vista**
   (pedido explicito: "cargo una tabla, me devuelvo, vuelvo a entrar y de
   nuevo la carga"). Se descarta al cambiar filtro/seccion/busqueda **y al
@@ -116,7 +130,7 @@ pagina) y por si solo ya agiliza la app. Va primero.
       ESTADO_CUM_INVIMA, ESTADO_INVIMA]`; para `fecha:FECHA_INICIO`, el par de
       fechas y su veredicto. Unica fuente de la lista, al lado de
       `_registro_secciones` para que no puedan discrepar.
-- [ ] 2. (claude/implementador) `backend/app/routers/calidades.py` — cuando
+- [x] 2. (claude/implementador) `backend/app/routers/calidades.py` — cuando
       llega `seccion`, recortar las columnas con lo del paso 1. Degradar
       explicito: si una columna no esta en el DataFrame se omite y se anota,
       nunca se rompe la respuesta.

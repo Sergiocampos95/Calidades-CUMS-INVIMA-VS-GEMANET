@@ -29,6 +29,7 @@ from gemma_cum_loader.auditoria.calidades import (
     Calidad,
     calidad_admite_secciones,
     calidades_auditoria,
+    columnas_de_seccion,
     filtrar_por_seccion,
     secciones_de_diferencia,
 )
@@ -144,6 +145,24 @@ def listar_secciones_calidad(
     ]
 
 
+def _con_columnas_de_seccion(tabla: pd.DataFrame, seccion: str) -> pd.DataFrame:
+    """Recorta la tabla a las columnas de la seccion abierta (paso 1,
+    `columnas_de_seccion`): de 38 columnas a 8, la ganancia principal del
+    plan (medido: 2,0 MB por pagina de 1.000, 79 % de mas que viaja hoy sin
+    usarse). Clave sin reconocer -> `columnas_de_seccion` devuelve tupla
+    vacia, que aca se interpreta como "no recortar" (degradacion explicita
+    acordada en el plan: nunca una tabla sin columnas por una clave vieja).
+
+    Una columna de la lista que no llego a esta tarjeta se omite en vez de
+    romper con KeyError -- mismo patron que ya usa `calidades_auditoria()`
+    al armar cada `Calidad` (filtrar contra `df.columns` antes de indexar)."""
+    columnas = columnas_de_seccion(seccion)
+    if not columnas:
+        return tabla
+    presentes = [c for c in columnas if c in tabla.columns]
+    return tabla[presentes]
+
+
 @router.get("/calidades/{nombre}", response_model=PaginaTabla)
 def obtener_calidad(
     nombre: str,
@@ -163,6 +182,8 @@ def obtener_calidad(
     # secciona, y la tabla mostraria menos filas de las que anuncia su tarjeta.
     aplica = seccion is not None and calidad_admite_secciones(nombre)
     tabla = filtrar_por_seccion(calidad.df_tabla, seccion) if aplica else calidad.df_tabla
+    if aplica and seccion is not None:
+        tabla = _con_columnas_de_seccion(tabla, seccion)
     return paginar(
         tabla,
         q=q,
@@ -182,9 +203,13 @@ def valores_columna_calidad(
     seccion: str | None = None,
     carpeta: Path = Depends(carpeta_snapshots),
 ) -> list[dict[str, object]]:
-    # Acota los valores a la seccion abierta: ofrecer como filtro un valor que
+    # Acota FILAS a la seccion abierta: ofrecer como filtro un valor que
     # no existe en lo que se esta viendo lleva a una tabla vacia sin explicar
-    # por que.
+    # por que. NO se recorta a las COLUMNAS de la seccion (a diferencia de
+    # obtener_calidad): `columna` ya llega elegida por el frontend entre las
+    # que la tabla recortada esta mostrando, y `valores_distintos` solo mira
+    # esa columna puntual -- aplicar ademas el recorte de columnas aca
+    # arriesgaria dejar el filtro sin opciones si alguna vez discreparan.
     tabla = _calidad_o_404(nombre, carpeta).df_tabla
     if seccion is not None and calidad_admite_secciones(nombre):
         tabla = filtrar_por_seccion(tabla, seccion)
