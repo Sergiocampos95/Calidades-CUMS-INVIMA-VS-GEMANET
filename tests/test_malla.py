@@ -1,6 +1,9 @@
 import pandas as pd
 
-from gemma_cum_loader.armado.malla import candidatos_creacion, universo_invima_clasificado
+from gemma_cum_loader.armado.malla import (
+    candidatos_creacion,
+    universo_invima_clasificado,
+)
 
 
 def _fila(**overrides):

@@ -6,15 +6,15 @@ from dataclasses import dataclass, field
 import pytest
 
 from gemma_cum_loader.integraciones.socrata import (
-    fecha_ultima_actualizacion,
     ErrorAutenticacionSocrata,
     ErrorSocrata,
     consultar,
-    iterar_paginas,
     consultar_todo,
     enmascarar_token,
     estado_token,
+    fecha_ultima_actualizacion,
     hay_datos,
+    iterar_paginas,
 )
 
 

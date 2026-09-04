@@ -18,9 +18,9 @@ en el batch del pipeline.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
-from collections.abc import Mapping
 
 MODELO_IA = "claude-haiku-4-5"
 

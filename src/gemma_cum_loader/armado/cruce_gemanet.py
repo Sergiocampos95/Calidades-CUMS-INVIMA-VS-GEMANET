@@ -86,7 +86,6 @@ def _leer_delimitado(
 
         def _guardar_y_omitir(linea_mala: list[str]) -> None:
             omitidas.append(linea_mala)
-            return None
 
         df = pd.read_csv(
             io.StringIO(contenido),

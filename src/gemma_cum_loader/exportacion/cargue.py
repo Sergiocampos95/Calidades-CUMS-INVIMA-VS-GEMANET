@@ -31,7 +31,10 @@ from pathlib import Path
 
 import pandas as pd
 
-from gemma_cum_loader.armado.reglas_negocio import ClasificacionExpediente, ReglasNegocio
+from gemma_cum_loader.armado.reglas_negocio import (
+    ClasificacionExpediente,
+    ReglasNegocio,
+)
 
 CAMPOS_CARGUE_GEMANET = [
     "DESCRIPCION", "GRUPO_MEDICAMENTO", "CODIGO_INTERNO", "CONCENTRACION", "POS",

@@ -4,11 +4,10 @@ API real de Anthropic (no hay red ni API key en esta suite)."""
 import json
 from dataclasses import dataclass, field
 
-
 from gemma_cum_loader.catalogos.ia_client import (
+    MODELO_IA,
     ClienteExplicacionIA,
     ExplicacionIA,
-    MODELO_IA,
 )
 
 

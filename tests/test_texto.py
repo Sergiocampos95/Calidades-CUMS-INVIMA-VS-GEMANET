@@ -1,6 +1,10 @@
 import pytest
 
-from gemma_cum_loader.normaliza.texto import normalizar, normalizar_entidad, normalizar_encabezado
+from gemma_cum_loader.normaliza.texto import (
+    normalizar,
+    normalizar_encabezado,
+    normalizar_entidad,
+)
 
 
 @pytest.mark.parametrize(

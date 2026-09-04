@@ -1,0 +1,55 @@
+#!/bin/sh
+# Hook pre-push: corre la verificacion completa y ABORTA el push si algo falla.
+#
+# Por que en pre-push y no en pre-commit: la suite tarda ~40 s. En cada commit
+# molestaria lo suficiente como para que alguien acabe usando --no-verify por
+# costumbre, que es peor que no tener hook. En push se ejecuta una vez por
+# tanda y ahi es donde de verdad importa: lo que se sube es lo que otros (y el
+# yo de mañana) van a dar por bueno.
+#
+# Instalacion:  .\scripts\instalar-hooks.ps1
+# Saltarlo (solo si sabes por que):  git push --no-verify
+
+set -e
+
+RAIZ="$(git rev-parse --show-toplevel)"
+cd "$RAIZ"
+
+# El hook corre fuera del venv activado, asi que se apunta al interprete del
+# proyecto en vez de confiar en el `python` del PATH -- esa suposicion ya
+# rompio el refresco una vez ("No module named 'pandas'").
+PY=".venv/Scripts/python.exe"
+[ -x "$PY" ] || PY=".venv/bin/python"
+if [ ! -x "$PY" ]; then
+  echo "pre-push: no encuentro el interprete del venv (.venv/). Instala con: pip install -e \".[dev]\"" >&2
+  exit 1
+fi
+
+echo "pre-push: pytest..."
+PYTHONPATH="$RAIZ" "$PY" -m pytest -q || {
+  echo "" >&2
+  echo "pre-push: HAY PRUEBAS EN ROJO. No se sube." >&2
+  exit 1
+}
+
+echo "pre-push: ruff..."
+"$PY" -m ruff check src/ tests/ || {
+  echo "" >&2
+  echo "pre-push: ruff encontro problemas. No se sube." >&2
+  exit 1
+}
+
+# Solo si el frontend tiene dependencias instaladas: en una maquina que solo
+# toca el backend, exigir npm install seria ruido, no seguridad.
+if [ -d frontend/node_modules ]; then
+  echo "pre-push: tsc..."
+  (cd frontend && npx --no-install tsc --noEmit -p tsconfig.json) || {
+    echo "" >&2
+    echo "pre-push: el frontend no compila. No se sube." >&2
+    exit 1
+  }
+else
+  echo "pre-push: frontend/node_modules ausente, se omite tsc."
+fi
+
+echo "pre-push: todo verde."

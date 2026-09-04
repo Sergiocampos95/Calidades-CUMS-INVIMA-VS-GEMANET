@@ -1,6 +1,9 @@
 import pandas as pd
 
-from gemma_cum_loader.armado.reglas_negocio import ClasificacionExpediente, ReglasNegocio
+from gemma_cum_loader.armado.reglas_negocio import (
+    ClasificacionExpediente,
+    ReglasNegocio,
+)
 from gemma_cum_loader.exportacion.cargue import (
     CAMPOS_CARGUE_GEMANET,
     CAMPOS_PENDIENTES_REGLA_NEGOCIO,
@@ -92,10 +95,10 @@ def test_evaluar_candidatos_marca_correctamente_listo_vs_pendiente():
     evaluados = evaluar_candidatos_cargue(_resultado(), _reglas())
     por_codigo = evaluados.set_index("CODIGO_INTERNO")
 
-    assert por_codigo.loc["1-1", "listo_para_cargue"] == True  # noqa: E712
-    assert por_codigo.loc["3-1", "listo_para_cargue"] == True  # noqa: E712
-    assert por_codigo.loc["4-1", "listo_para_cargue"] == False  # noqa: E712
-    assert por_codigo.loc["5-1", "listo_para_cargue"] == False  # noqa: E712
+    assert por_codigo.loc["1-1", "listo_para_cargue"] == True
+    assert por_codigo.loc["3-1", "listo_para_cargue"] == True
+    assert por_codigo.loc["4-1", "listo_para_cargue"] == False
+    assert por_codigo.loc["5-1", "listo_para_cargue"] == False
     assert "no tiene ninguna presentacion previa" in por_codigo.loc["5-1", "motivo_pendiente"]
 
 

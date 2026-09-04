@@ -240,10 +240,12 @@ def procesar_desde_catalogo_invima(
             # a quien revisa que basta con verificar Gemma Net a mano, cuando
             # en realidad tambien falta resolver la marca/unidad despues.
             motivos_fila = [
-                "no se pudo confirmar si ya esta cargado en Gemma Net: este "
-                "CODIGO_INTERNO coincide con una linea del archivo exportado que "
-                "no se pudo leer completa (formato irregular) -- verificar "
-                "manualmente antes de crear, para no duplicarlo"
+                (
+                    "no se pudo confirmar si ya esta cargado en Gemma Net: este "
+                    "CODIGO_INTERNO coincide con una linea del archivo exportado que "
+                    "no se pudo leer completa (formato irregular) -- verificar "
+                    "manualmente antes de crear, para no duplicarlo"
+                )
             ]
             if r_unidad.metodo == "sin_resolver":
                 motivos_fila.append(

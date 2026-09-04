@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import datetime as dt
 import os
-from dataclasses import dataclass
 from collections.abc import Iterator
+from dataclasses import dataclass
 from typing import Any, Protocol
 
 NOMBRE_VARIABLE_ENTORNO = "INVIMA_SOCRATA_APP_TOKEN"

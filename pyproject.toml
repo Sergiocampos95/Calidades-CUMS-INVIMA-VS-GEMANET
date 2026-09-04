@@ -61,6 +61,27 @@ packages = ["src/gemma_cum_loader"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
+[tool.ruff.lint]
+# Estas dos familias marcan patrones que en ESTE proyecto son deliberados, no
+# descuidos. Se declaran aca -- con el porque -- en vez de dejar 13 avisos
+# permanentes que obligan a leer la salida de ruff buscando cual es nuevo, que
+# es como se acaba ignorando el linter entero.
+#
+# BLE001 (`except Exception`): la regla de diseno #2 del proyecto es
+# "degradacion explicita, nunca suposicion silenciosa". Los lectores con
+# respaldo y `ejecutar_refresco` capturan CUALQUIER fallo a proposito para
+# registrarlo y seguir con el archivo local, en vez de tumbar un refresco de
+# 3 minutos. Acotar el except a excepciones conocidas dejaria escapar justo
+# las que no se previeron, que son las que hay que reportar.
+#
+# DTZ (fechas sin timezone): ni INVIMA ni Gemma Net entregan zona horaria --
+# INVIMA publica "04/03/2017" y Gemma Net "2017-03-04", ambas naive. Todo el
+# dominio compara fechas de calendario (vigencias, vencimientos), nunca
+# instantes, asi que anadir tzinfo seria inventar precision que el dato no
+# tiene. Ver `FECHAS_CENTINELA` y `ANIO_CENTINELA_SIN_VENCIMIENTO` en
+# auditoria/coherencia_invima.py.
+ignore = ["BLE001", "DTZ005", "DTZ006", "DTZ011", "DTZ012"]
+
 [tool.ruff.lint.flake8-bugbear]
 # `Depends(...)`/`Query(...)` como valor por defecto es el patron OBLIGATORIO
 # de FastAPI (backend/app/routers/*.py) -- no el bug de "llamada mutable en

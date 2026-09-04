@@ -2,7 +2,10 @@ import datetime as dt
 
 import pandas as pd
 
-from gemma_cum_loader.armado.reglas_negocio import ClasificacionExpediente, ReglasNegocio
+from gemma_cum_loader.armado.reglas_negocio import (
+    ClasificacionExpediente,
+    ReglasNegocio,
+)
 from gemma_cum_loader.exportacion.cargue import CAMPOS_CARGUE_GEMANET
 from gemma_cum_loader.exportacion.estructura_cargue import (
     armar_estructura_cargue,

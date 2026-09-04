@@ -164,6 +164,47 @@ DESCARTADO: no se toca ni se le agregan funcionalidades (regla dura, ver
   evento `gemma:navegar`, sin importar `main.ts` -- que ya importa las vistas,
   y el import inverso cerraria un ciclo.
 
+## Flujo de trabajo y control de versiones
+
+Reglas acordadas con el usuario el 2026-09-04, despues de una sesion en la que
+se acumularon 55 commits sin subir y dos agentes se pisaron en la misma rama.
+
+**Ramas.** `master` es la rama estable y siempre debe quedar desplegable. Todo
+trabajo va en una rama por tarea (`fix/<tema>` o `feature/<tema>`), que se
+fusiona a `master` solo cuando esta verde Y verificada en pantalla. Nunca se
+commitea directo a `master`.
+
+**Antes de empezar una tanda:** `git fetch origin && git status`. Si la rama
+quedo atras, ponerse al dia antes de tocar nada.
+
+**Verificacion automatica.** El hook `pre-push` (en `scripts/`, se instala una
+vez con `.\scripts\instalar-hooks.ps1`) corre pytest + ruff + tsc y ABORTA el
+push si algo falla. Va en push y no en commit a proposito: la suite tarda ~40 s
+y en cada commit acabaria evitandose con `--no-verify` por costumbre, que es
+peor que no tenerlo. Saltarlo (`git push --no-verify`) solo con una razon
+concreta.
+
+**Subir seguido.** El codigo solo esta a salvo cuando esta en `origin`
+(https://github.com/soferf/gemma-cum.git). Un dia de trabajo sin push es un dia
+que vive unicamente en un disco. Antes de cerrar una sesion: commit + push.
+
+**Copias de seguridad.** Antes de una tanda que toque logica de negocio, una
+rama de respaldo (`respaldo/AAAA-MM-DD-<tema>`) publicada en `origin` deja un
+punto de retorno. Los datos NO se respaldan en git: `data/`, `data_runtime/` y
+`snapshots/` estan en `.gitignore` porque son de PRODUCCION de Pijao Salud, y
+ademas son regenerables con un refresco.
+
+**El lint no acumula ruido.** Si una regla marca un patron deliberado del
+proyecto, se declara en `[tool.ruff.lint] ignore` con el porque -- no se deja
+como aviso permanente. Trece avisos cronicos obligan a leer la salida buscando
+cual es nuevo, y asi es como se acaba ignorando el linter entero.
+
+**Una cifra no es buena hasta verla contra un proceso reiniciado.** Ver
+`.\reinicia_todo.ps1` arriba y las cuatro cosas que hacen falta. Un backend
+vivo sirve el codigo que cargo al arrancar, y un snapshot viejo degrada a cero
+en silencio: un 0 se lee como "no hay hallazgos" cuando significa "este
+snapshot es de antes".
+
 ## Equipo de agentes
 
 Este proyecto define agentes especializados en `.claude/agents/`. Ver
