@@ -57,6 +57,18 @@ Reglas del proyecto en juego:
 - **Las columnas por seccion se deciden en el BACKEND.** Asi la tabla, el
   filtro por columna y la descarga ven lo mismo, y no viajan 40 columnas por
   la red para descartarlas al pintar.
+- (paso 1) `columnas_de_seccion(clave)` DERIVA las columnas del prefijo de la
+  clave (`campo:` / `fecha:`), no de una lista aparte: asi "que secciones
+  existen" y "que columnas trae cada una" no pueden discrepar si se agrega o
+  quita un campo comparado. Devuelve 8 columnas donde viajaban 38.
+- (paso 1) Clave desconocida o vacia -> **tupla vacia**, que el paso 2 debe
+  interpretar como "no recortar". Nunca inventar columnas para una seccion
+  que no existe.
+- (paso 1) `PARES_FECHAS_GEMANET_INVIMA` (coherencia_invima.py) **dejo de ser
+  privada**: `columnas_de_seccion` la necesita para saber que par de fechas
+  mostrar, y duplicar el mapeo era pedir que discrepen -- ya cambio una vez
+  (FECHA_FIN dejo de compararse contra FECHA INACTIVO). Si un modulo hermano
+  la necesita, no es privada; importar con guion bajo era saltarse la senal.
 - **Cache de paginas en memoria, y sobrevive a salir y volver a la vista**
   (pedido explicito: "cargo una tabla, me devuelvo, vuelvo a entrar y de
   nuevo la carga"). Se descarta al cambiar filtro/seccion/busqueda **y al
@@ -97,7 +109,7 @@ pagina) y por si solo ya agiliza la app. Va primero.
 
 ## Pasos
 
-- [ ] 1. (claude/implementador) `src/gemma_cum_loader/auditoria/calidades.py`
+- [x] 1. (claude/implementador) `src/gemma_cum_loader/auditoria/calidades.py`
       — `columnas_de_seccion(clave)`: dada `campo:CONCENTRACION` devuelve
       `[CODIGO_INTERNO, DESCRIPCION, CONCENTRACION_GEMANET,
       CONCENTRACION_INVIMA, CONCENTRACION_VALIDACION, ACTIVO,

@@ -360,7 +360,12 @@ def _es_fecha_comodin(serie: pd.Series) -> pd.Series:
 # no la fecha en que la presentacion comercial entro o salio de circulacion.
 #
 #   columna local -> (columna INVIMA ya propagada, como se lee en el mensaje)
-_PARES_FECHAS_GEMANET_INVIMA = {
+#
+# PUBLICA a proposito: `calidades.columnas_de_seccion` la usa para saber que
+# par de fechas mostrar en una seccion, y duplicar el mapeo alla seria pedir
+# que discrepen -- ya cambio una vez (FECHA_FIN dejo de compararse contra
+# FECHA INACTIVO). Si un modulo hermano la necesita, no es privada.
+PARES_FECHAS_GEMANET_INVIMA = {
     "FECHA_INICIO": ("FECHA_ACTIVO_INVIMA", "FECHA ACTIVO"),
     # FECHA_FIN se compara contra FECHA VENCIMIENTO, no contra FECHA INACTIVO
     # -- correccion del usuario (2026-09-02): "fecha vencimiento invima =
@@ -379,7 +384,7 @@ def _comparar_fechas_con_invima(
 ) -> pd.Series:
     """Dimension 11 -- COHERENCIA DE FECHAS ENTRE FUENTES: la fecha que guarda
     Gemma Net contra la que reporta INVIMA para el MISMO par de campos (ver
-    `_PARES_FECHAS_GEMANET_INVIMA`).
+    `PARES_FECHAS_GEMANET_INVIMA`).
 
     Solo compara donde AMBOS lados traen una fecha real. Un comodin de Gemma
     Net (`2999-12-31`, `1900-01-01` -- ver FECHAS_CENTINELA) significa "sin
@@ -397,7 +402,7 @@ def _comparar_fechas_con_invima(
     mismo criterio no negociable que `PORCENTAJE_CALIDAD`.
     """
     diferencias = {}
-    for columna_local, (columna_invima, etiqueta) in _PARES_FECHAS_GEMANET_INVIMA.items():
+    for columna_local, (columna_invima, etiqueta) in PARES_FECHAS_GEMANET_INVIMA.items():
         local = _columna_fecha(combinado, columna_local)
         oficial = fechas_invima[columna_invima]
         oficial_real = _es_fecha_real(oficial)
@@ -2271,7 +2276,7 @@ def auditar_coherencia(
     # no la tiene. Dejarlo fuera del denominador lo devolveria a 100,0%.
     fechas_comparables = pd.Series(0, index=combinado.index)
     fechas_con_diferencia = pd.Series(0, index=combinado.index)
-    for columna_local, (columna_invima, _etiqueta) in _PARES_FECHAS_GEMANET_INVIMA.items():
+    for columna_local, (columna_invima, _etiqueta) in PARES_FECHAS_GEMANET_INVIMA.items():
         local = _columna_fecha(combinado, columna_local)
         oficial = fechas_invima[columna_invima]
         comparable = listado_invima.ne("") & _es_fecha_real(oficial)

@@ -26,6 +26,7 @@ from gemma_cum_loader.auditoria.coherencia_invima import (
     ACCION_POR_NATURALEZA,
     CAMPOS_COMPARADOS_COHERENCIA,
     CAMPOS_DERIVADOS,
+    PARES_FECHAS_GEMANET_INVIMA,
     SUFIJO_GEMANET,
     SUFIJO_INVIMA,
     SUFIJO_VALIDACION,
@@ -585,3 +586,54 @@ def filtrar_por_seccion(tabla: pd.DataFrame, clave: str) -> pd.DataFrame:
         if clave_registro == clave:
             return tabla[mascara]
     return tabla
+
+
+#: Columnas que acompanan a toda seccion: el codigo y la descripcion para
+#: identificar el medicamento, y los tres estados que dicen si vale la pena
+#: mirarlo (local, veredicto de INVIMA, y donde vive en INVIMA). Van SIEMPRE
+#: al final -- pedido del usuario (2026-09-04): "codigo, descripcion, campo
+#: validado, estado en Gemma y estado en INVIMA".
+_COLUMNAS_IDENTIFICACION_SECCION = ("CODIGO_INTERNO", "DESCRIPCION")
+_COLUMNAS_ESTADO_SECCION = ("ACTIVO", "ESTADO_CUM_INVIMA", "ESTADO_INVIMA")
+
+
+def columnas_de_seccion(clave: str) -> tuple[str, ...]:
+    """Las columnas que hacen falta para ENTENDER una seccion puntual, no las
+    38 de la tarjeta completa -- pedido del usuario (2026-09-04): la seccion
+    Concentracion mostraba el trio de todos los campos comparados (principio
+    activo, ATC, fechas...) cuando solo el trio de CONCENTRACION importa aca.
+    Medido: 8 columnas utiles de 38 que viajaban (79 % de mas por pagina).
+
+    Deriva el campo de la clave con el MISMO prefijo (`campo:`/`fecha:`) que
+    arma `_registro_secciones`, en vez de mantener una lista aparte: asi
+    "que secciones existen" y "que columnas trae cada una" no pueden
+    discrepar entre si si algun dia se agrega o quita un campo comparado.
+
+    Clave sin reconocer (o vacia) -> tupla vacia. El llamador la interpreta
+    como "no recortar nada" -- degradacion explicita, nunca se inventa una
+    lista de columnas para una seccion que no existe."""
+    if clave.startswith("campo:"):
+        campo = clave.removeprefix("campo:")
+        if campo not in CAMPOS_COMPARADOS_COHERENCIA:
+            return ()
+        return (
+            *_COLUMNAS_IDENTIFICACION_SECCION,
+            f"{campo}{SUFIJO_GEMANET}",
+            f"{campo}{SUFIJO_INVIMA}",
+            f"{campo}{SUFIJO_VALIDACION}",
+            *_COLUMNAS_ESTADO_SECCION,
+        )
+    if clave.startswith("fecha:"):
+        campo = clave.removeprefix("fecha:")
+        par = PARES_FECHAS_GEMANET_INVIMA.get(campo)
+        if par is None:
+            return ()
+        columna_invima, _etiqueta_invima = par
+        return (
+            *_COLUMNAS_IDENTIFICACION_SECCION,
+            campo,
+            columna_invima,
+            "COHERENCIA_FECHAS_INVIMA",
+            *_COLUMNAS_ESTADO_SECCION,
+        )
+    return ()
