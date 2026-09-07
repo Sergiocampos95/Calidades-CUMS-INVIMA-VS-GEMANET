@@ -32,6 +32,11 @@ const DEMORA_BUSQUEDA_MS = 300;
 const ANCHO_COLUMNA_DEFECTO_PX = 150;
 const ANCHO_COLUMNA_ANCHA_PX = 280; // columnas de texto largo conocidas -- ver ES_COLUMNA_ANCHA
 const ANCHO_COLUMNA_MINIMO_PX = 60;
+/** A partir de cuantas filas se avisa de que la descarga puede tardar. Sale
+ * de la medicion del plan: la calidad completa sin seccion (59.007 filas x 38
+ * columnas) tarda 24,9 s en xlsx, mientras que cualquier seccion ya recortada
+ * queda en 1-5 s. El umbral separa los dos casos con margen. */
+const AVISO_DESCARGA_LENTA_FILAS = 20000;
 
 const ES_COLUMNA_ANCHA = /DESCRIPCION|MOTIVO|COMO_VERIFICAR|DETALLE|CAMPOS_CON|CONSEJO|CONSULTA_VERIFICACION_SQL/i;
 
@@ -328,9 +333,9 @@ export class TablaFiltrable {
         q: this.busqueda,
         limite: LIMITE_PREVISUALIZACION,
         offset: this.offset,
-        // Se manda siempre false: la tabla ya no ofrece traerse el conjunto
-        // completo de un golpe. El parametro sigue en la firma porque otros
-        // llamadores del backend lo usan.
+        // Siempre false: ninguna vista ofrece ya traerse el conjunto completo
+        // de un golpe. El parametro sigue en la firma porque los endpoints del
+        // backend lo aceptan; ningun llamador del frontend manda true.
         todo: false,
         ordenar_por: this.ordenarPor,
         orden_descendente: this.ordenDescendente,
@@ -422,21 +427,43 @@ export class TablaFiltrable {
       descargas.className = "tabla-filtrable__descargas";
       const rotulo = document.createElement("span");
       rotulo.className = "tabla-filtrable__descargas-rotulo";
-      // Se dice CUANTAS filas trae el archivo porque no son las que se ven:
-      // la pantalla pagina, la descarga no. Sin esta linea el usuario no
-      // tiene forma de saber si bajo 1.000 o 59.000.
-      rotulo.textContent = `Descargar las ${pagina.total.toLocaleString("es-CO")} filas:`;
+      // El archivo trae la SECCION COMPLETA: no la pagina que se ve, y
+      // tampoco lo que dejo el filtro (decision del usuario, 2026-09-04). Con
+      // busqueda o filtro activos, `pagina.total` es el conteo YA filtrado, y
+      // ponerlo aca seria mentir: diria "Descargar las 37 filas" y bajaria
+      // 14.630. Cuando hay filtro se dice explicitamente que el archivo lo
+      // ignora, en vez de arriesgar un numero falso.
+      const hayFiltro = this.busqueda.trim() !== "" || this.filtrosColumna.size > 0;
+      rotulo.textContent = hayFiltro
+        ? "Descargar (el archivo trae la sección completa, sin los filtros de pantalla):"
+        : `Descargar las ${pagina.total.toLocaleString("es-CO")} filas:`;
       descargas.appendChild(rotulo);
+      // Sin seccion abierta el archivo lleva la calidad entera con todas sus
+      // columnas: 59.007 filas x 38 columnas medidas en 24,9 s. Como es un
+      // <a download> el navegador no muestra ningun progreso durante esos
+      // segundos, y lo natural es volver a pulsar -- cada clic lanza otra
+      // generacion completa en el servidor. Avisar es lo minimo; el usuario
+      // decide si espera o si abre una seccion primero.
+      const puedeTardar = !this.opciones.seccion && pagina.total > AVISO_DESCARGA_LENTA_FILAS;
       for (const { formato, etiqueta, titulo } of FORMATOS_DESCARGA) {
         const enlace = document.createElement("a");
         enlace.className = "btn btn--suave";
         enlace.href = this.opciones.urlDescarga(formato);
-        enlace.title = titulo;
+        enlace.title = puedeTardar
+          ? `${titulo}. Son ${pagina.total.toLocaleString("es-CO")} filas sin recortar: puede tardar bastante y el navegador no avisa mientras se genera.`
+          : titulo;
         enlace.textContent = etiqueta;
         // El navegador dispara la descarga solo: son GET con
         // Content-Disposition: attachment, sin fetch+blob de por medio.
         enlace.setAttribute("download", "");
         descargas.appendChild(enlace);
+      }
+      if (puedeTardar) {
+        const aviso = document.createElement("span");
+        aviso.className = "tabla-filtrable__descargas-aviso";
+        aviso.textContent = "⏳ puede tardar";
+        aviso.title = "Abrir una sección primero deja el archivo en unos pocos segundos.";
+        descargas.appendChild(aviso);
       }
       pie.appendChild(descargas);
     }
@@ -455,7 +482,7 @@ export class TablaFiltrable {
   private onMostrarTecnicas(marcado: boolean): void {
     this.mostrarTecnicas = marcado;
     // Solo cambia QUE se pinta: la pagina ya esta en memoria, no se vuelve a
-    // pedir al backend (a diferencia de buscar/filtrar/cargar-todo, que si
+    // pedir al backend (a diferencia de buscar/filtrar/paginar, que si
     // cambian el conjunto de filas).
     this.render(this.ultimaPagina);
   }
@@ -679,7 +706,7 @@ export class TablaFiltrable {
     const tecnicasEnTabla = this.opciones.columnas.filter((c) => COLUMNAS_TECNICAS.has(c));
     if (tecnicasEnTabla.length > 0) {
       const etiquetaTecnicas = document.createElement("label");
-      etiquetaTecnicas.className = "tabla-filtrable__cargar-todo";
+      etiquetaTecnicas.className = "tabla-filtrable__casilla";
       const casilla = document.createElement("input");
       casilla.type = "checkbox";
       casilla.checked = this.mostrarTecnicas;

@@ -94,6 +94,26 @@ ETIQUETA_LISTADO_INVIMA = {
     "ninguno": "No existe en INVIMA",
 }
 
+# Valores de ESTADO_INVIMA_DETALLE que NO agregan nada a su listado: son la
+# misma informacion, tal cual la escribe INVIMA en cada Excel (con sus
+# abreviaturas). Se comparan en minusculas.
+#
+# Explicito y por listado a proposito: el criterio tiene que dar el mismo
+# resultado para una fila sin importar que otras filas vengan en el lote. Y
+# `otros_estados` NO aparece aca justamente porque ahi el detalle siempre
+# aporta -- es un archivo heterogeneo (Cancelado, Negado, Perdida Fuerza
+# Ejec...) y esconderlo detras de "Otro estado" contradiria la regla de
+# coherencia_invima.py de no tapar el valor real con una etiqueta generica.
+#
+# Si INVIMA cambia como escribe alguno de estos, el efecto es que el detalle
+# vuelve a mostrarse entre parentesis: redundante y feo, pero nunca se pierde
+# informacion. El fallo va hacia el lado seguro.
+DETALLE_REDUNDANTE_POR_LISTADO: dict[str, frozenset[str]] = {
+    "vigente": frozenset({"vigente"}),
+    "vencido": frozenset({"vencido"}),
+    "renovacion": frozenset({"en tramite renov", "en trámite de renovación"}),
+}
+
 
 def _con_columnas_derivadas(auditoria: pd.DataFrame) -> pd.DataFrame:
     """Agrega CONSEJO (que hacer, segun NATURALEZA_HALLAZGO), CONSULTA_VERIFICACION_SQL,
@@ -137,18 +157,31 @@ def _con_columnas_derivadas(auditoria: pd.DataFrame) -> pd.DataFrame:
             lambda v: ETIQUETA_LISTADO_INVIMA.get(v, v)
         )
         detalle = _columna_texto(auditoria, "ESTADO_INVIMA_DETALLE")
-        # El detalle aporta cuando su listado agrupa MAS DE UN valor: ahi el
-        # nombre del archivo no basta para saber que dice INVIMA. Se decide
-        # contando, no comparando los dos textos, porque comparar fallaba con
-        # las abreviaturas -- "En tramite renov" contra "En trámite de
-        # renovación" no son iguales como cadena y producian el parentesis
-        # inutil "En trámite de renovación (En tramite renov)". Contando, el
-        # criterio ademas se adapta solo: si algun dia Vencidos empieza a traer
-        # dos estados distintos, el detalle aparecera sin tocar esto.
-        distintos_por_listado = detalle.groupby(
-            _columna_texto(auditoria, "ESTADO_LISTADO_INVIMA")
-        ).transform("nunique")
-        aporta = detalle.ne("") & distintos_por_listado.gt(1)
+        # El detalle solo se esconde cuando REPITE lo que ya dice el listado.
+        # La comparacion es contra una lista explicita por listado y no
+        # `detalle == listado_legible` porque INVIMA abrevia: "En tramite
+        # renov" contra "En trámite de renovación" no son iguales como cadena
+        # y producian el parentesis inutil "En trámite de renovación (En
+        # tramite renov)".
+        #
+        # Antes esto se decidia contando cuantos valores distintos traia cada
+        # listado (`nunique > 1`). Se cambio porque el resultado dependia de
+        # las OTRAS filas del lote: una sola fila de Vigentes con el campo en
+        # blanco o con una variante subia el conteo a 2 y las 43.312 filas
+        # vigentes pasaban a mostrar "Vigente (Vigente)"; y al reves, si
+        # `otros_estados` llegara homogeneo en una corrida, el detalle real
+        # (Cancelado, Negado...) DESAPARECERIA -- contradiciendo la regla de
+        # coherencia_invima.py de no esconderlo tras una etiqueta generica.
+        # Que el mismo medicamento se lea distinto segun con quien le toco
+        # venir en el lote no es un criterio, es una casualidad.
+        redundantes = _columna_texto(auditoria, "ESTADO_LISTADO_INVIMA").map(
+            lambda v: DETALLE_REDUNDANTE_POR_LISTADO.get(v, frozenset())
+        )
+        es_redundante = pd.Series(
+            [d.strip().casefold() in r for d, r in zip(detalle, redundantes, strict=True)],
+            index=auditoria.index,
+        )
+        aporta = detalle.ne("") & ~es_redundante
         auditoria["ESTADO_INVIMA"] = listado_legible.where(
             ~aporta, listado_legible + " (" + detalle + ")"
         )

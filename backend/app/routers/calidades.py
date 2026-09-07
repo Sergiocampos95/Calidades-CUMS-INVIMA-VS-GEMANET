@@ -8,7 +8,6 @@ pesado -- mismo criterio ya documentado en cadena_calidad.py."""
 
 from __future__ import annotations
 
-from dataclasses import replace
 from pathlib import Path
 
 import pandas as pd
@@ -54,34 +53,6 @@ def _tabla_auditoria(carpeta: Path):
     return df
 
 
-def _con_estado_listado_invima(calidad: Calidad, auditoria: pd.DataFrame) -> Calidad:
-    """Agrega ESTADO_CUM_INVIMA (la vigencia real que declara INVIMA) al lado
-    de ACTIVO -- pedido explicito del usuario (2026-09-02): comparar el estado
-    local con el de INVIMA en la misma fila, en TODAS las tablas de calidades.
-    No toca `calidades_auditoria()`: se inserta en la capa de lectura.
-
-    Ya NO inyecta ESTADO_LISTADO_INVIMA: la reemplaza ESTADO_INVIMA, que
-    calidades.py compone fusionando el listado con su detalle (2026-09-04).
-    Seguir agregandola devolvia a la tabla la columna redundante que ese
-    cambio quita -- "Vencido" al lado de "Vencido"."""
-    if "ESTADO_CUM_INVIMA" in calidad.columnas:
-        return calidad
-
-    columnas = list(calidad.columnas)
-    df_tabla = calidad.df_tabla.copy()
-
-    # Inyectar ESTADO_CUM_INVIMA si falta (despues de ACTIVO)
-    if "ESTADO_CUM_INVIMA" not in columnas and "ESTADO_CUM_INVIMA" in auditoria.columns:
-        if "ACTIVO" in columnas:
-            columnas.insert(columnas.index("ACTIVO") + 1, "ESTADO_CUM_INVIMA")
-        else:
-            columnas.insert(0, "ESTADO_CUM_INVIMA")
-        df_tabla["ESTADO_CUM_INVIMA"] = auditoria.loc[df_tabla.index, "ESTADO_CUM_INVIMA"]
-
-    df_tabla = df_tabla[columnas]
-    return replace(calidad, columnas=tuple(columnas), df_tabla=df_tabla)
-
-
 # Cache de las 6 calidades ya calculadas, por snapshot. Mismo patron y misma
 # razon que `_CACHE_TABLAS` en worker/almacen_snapshots.py: alli el cuello era
 # releer el Parquet en cada request, aca es RECALCULARLO.
@@ -103,6 +74,13 @@ def _con_estado_listado_invima(calidad: Calidad, auditoria: pd.DataFrame) -> Cal
 _CACHE_CALIDADES: dict[str, tuple[str, list[Calidad]]] = {}
 
 
+# Ya no se post-procesa cada Calidad para inyectarle ESTADO_CUM_INVIMA: las
+# 6 definiciones la piden en `base` (auditoria/calidades.py) y `_definiciones`
+# solo conserva las columnas que existen en el DataFrame, asi que si el
+# snapshot la trae ya viene incluida, y si no la trae tampoco habria de donde
+# sacarla. La funcion que lo hacia (`_con_estado_listado_invima`) solo copiaba
+# los 6 df_tabla para devolverlos identicos -- gasto de memoria en el camino
+# degradado, que es justo donde menos conviene.
 def _calidades(carpeta: Path) -> list[Calidad]:
     auditoria = _tabla_auditoria(carpeta)
     snapshot = snapshot_actual(carpeta)
@@ -111,14 +89,14 @@ def _calidades(carpeta: Path) -> list[Calidad]:
     # invalidar. Con `_tabla_auditoria` habiendo respondido, este caso no
     # deberia darse; es una guarda, no un camino esperado.
     if snapshot is None:
-        return [_con_estado_listado_invima(c, auditoria) for c in calidades_auditoria(auditoria)]
+        return calidades_auditoria(auditoria)
 
     clave = str(carpeta)
     en_cache = _CACHE_CALIDADES.get(clave)
     if en_cache is not None and en_cache[0] == snapshot.nombre:
         return en_cache[1]
 
-    cals = [_con_estado_listado_invima(c, auditoria) for c in calidades_auditoria(auditoria)]
+    cals = calidades_auditoria(auditoria)
     _CACHE_CALIDADES[clave] = (snapshot.nombre, cals)
     return cals
 

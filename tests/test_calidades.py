@@ -442,3 +442,40 @@ def test_columnas_de_seccion_fecha_fin_trae_fecha_vencimiento_y_no_fecha_inactiv
         "ESTADO_INVIMA",
     )
     assert "FECHA_INACTIVO_INVIMA" not in columnas
+
+
+def test_estado_invima_no_depende_de_las_otras_filas_del_lote():
+    """El criterio de "esconder el detalle redundante" tiene que dar el mismo
+    resultado para una fila sin importar con quien le toco venir.
+
+    Antes se decidia contando valores distintos por listado (`nunique > 1`), y
+    eso lo hacia depender del lote: UNA sola fila de Vigentes con el campo en
+    blanco o con una variante subia el conteo y las 43.312 filas vigentes
+    pasaban a mostrar "Vigente (Vigente)" -- la redundancia que la columna
+    vino a quitar."""
+    sola = pd.DataFrame([_fila("500-1", ESTADO_LISTADO_INVIMA="vigente", ESTADO_INVIMA_DETALLE="Vigente")])
+    # La misma fila, pero acompanada de otra del mismo listado con el detalle
+    # vacio: es el dato sucio que rompia el criterio viejo.
+    con_vecina_sucia = pd.DataFrame([
+        _fila("500-1", ESTADO_LISTADO_INVIMA="vigente", ESTADO_INVIMA_DETALLE="Vigente"),
+        _fila("600-1", ESTADO_LISTADO_INVIMA="vigente", ESTADO_INVIMA_DETALLE=""),
+    ])
+
+    assert _con_columnas_derivadas(sola)["ESTADO_INVIMA"].iloc[0] == "Vigente"
+    assert _con_columnas_derivadas(con_vecina_sucia)["ESTADO_INVIMA"].iloc[0] == "Vigente"
+
+
+def test_estado_invima_conserva_el_detalle_de_otros_estados_aunque_sea_homogeneo():
+    """`otros_estados` agrupa 8 estados reales y el detalle SIEMPRE aporta ahi.
+    Con el criterio viejo, una corrida en la que todos vinieran iguales lo
+    habria escondido tras el generico "Otro estado" -- contradiciendo la regla
+    de coherencia_invima.py de no tapar el valor real de INVIMA, y dejandolo
+    fuera tambien del Excel de esa seccion."""
+    homogeneo = pd.DataFrame([
+        _fila("500-1", ESTADO_LISTADO_INVIMA="otros_estados", ESTADO_INVIMA_DETALLE="Revocado"),
+        _fila("600-1", ESTADO_LISTADO_INVIMA="otros_estados", ESTADO_INVIMA_DETALLE="Revocado"),
+    ])
+
+    columna = _con_columnas_derivadas(homogeneo)["ESTADO_INVIMA"]
+
+    assert list(columna) == ["Otro estado (Revocado)", "Otro estado (Revocado)"]

@@ -1,6 +1,6 @@
 # Tablas por seccion, paginacion real y exportacion de lo filtrado
 
-- **Estado:** en curso
+- **Estado:** terminado
 - **Creado:** 2026-09-04 por Claude Code
 - **Objetivo:** que una tabla de auditoria muestre SOLO las columnas del
   hallazgo que se esta mirando, se navegue por paginas de 1.000 sin recargar
@@ -166,6 +166,35 @@ Reglas del proyecto en juego:
   quedarse en la pagina 7 de un resultado que ahora tiene 3 es otra forma de
   llegar a una tabla vacia que parece rota.
 
+- (paso 9) La revision encontro **cinco cosas reales**, todas corregidas:
+  1. **El refresco manual servia datos VIEJOS desde la cache.** `ClavePagina.
+     snapshot` sale del sondeo de /salud, que corre cada 60 s: justo despues
+     de "Actualizar ahora" esa marca sigue siendo la anterior, la clave calza
+     y se pinta la pagina vieja -- sin pasar siquiera por "Cargando…".
+     Quedaba el encabezado con cifras nuevas y la tabla con las viejas.
+     `main.ts` ahora llama a `invalidarTodo()` antes de repintar.
+  2. **El rotulo de descarga mentia con filtro activo:** decia "Descargar las
+     37 filas" y bajaba 14.630, porque `pagina.total` es el conteo YA filtrado
+     y el archivo ignora los filtros. Con filtro activo ahora lo dice en vez
+     de dar un numero falso.
+  3. **La descarga sin seccion (24,9 s) no avisaba.** Como es un `<a
+     download>` el navegador no muestra progreso y lo natural es volver a
+     pulsar, lanzando otra generacion completa. Se avisa a partir de 20.000
+     filas.
+  4. **`ESTADO_INVIMA` dependia del LOTE:** el criterio por `nunique` hacia
+     que una sola fila sucia de Vigentes volcara las 43.312 a "Vigente
+     (Vigente)", y que un `otros_estados` homogeneo ESCONDIERA el estado real.
+     Sustituido por `DETALLE_REDUNDANTE_POR_LISTADO`, explicito y por fila.
+  5. **`_con_estado_listado_invima` era codigo muerto:** su corte temprano
+     disparaba siempre, asi que solo copiaba los 6 `df_tabla` para devolverlos
+     identicos. Eliminada.
+- (paso 9) Lo que la revision descarto explicitamente, para no volver a
+  mirarlo: ningun llamador MUTA los `Calidad` cacheados (los cinco consumidores
+  solo leen o producen DataFrames nuevos); backend y frontend versionan por la
+  MISMA marca (`Snapshot.nombre == generado_utc`, que es lo que expone
+  /salud); y el filtrado no quedo duplicado -- pantalla y descarga comparten
+  `tabla_calidad_filtrada` -> `filtrar_tabla`.
+
 ## Estructura: NO hay que cambiarla (medido, 2026-09-04)
 
 La app corre sobre una sola vista: `render()` en `main.ts` llama a
@@ -236,38 +265,19 @@ pagina) y por si solo ya agiliza la app. Va primero.
       paso 6 en vez de pedir siempre a la red.
 - [x] 8. (claude/ui-vite) `frontend/src/tabla.ts` + vista — botones de
       descarga XLSX/CSV/TXT que llevan el filtro vigente.
-- [~] 9. (claude/revisor) — revision antes del commit: que no quede un
+- [x] 9. (claude/revisor) — revision antes del commit: que no quede un
       segundo mecanismo de render de tablas ni de descarga.
 
 ## Abierto
 
-- La cache necesita saber cuando cambio el snapshot. `GET /salud` ya expone
-  `ultima_actualizacion_utc`; usarlo como parte de la clave evita inventar un
-  mecanismo nuevo. **Confirmar al implementar el paso 6.**
-- Tope de la descarga: 59.005 filas x ~40 columnas en XLSX puede tardar. Con
-  las columnas recortadas del paso 1 baja mucho, pero conviene medirlo antes
-  de decidir si hace falta streaming o un aviso de espera.
-  **MEDIDO (paso 4, 2026-09-04)**, `GET /descargas/calidad/{nombre}` contra
-  el backend real, "Diferencia de estado o campos" con
-  `seccion=campo:CONCENTRACION` (2.000 filas x 8 columnas, el caso que
-  importa porque una descarga sin seccion casi siempre viene de una tabla ya
-  filtrada en pantalla): **xlsx 1,5 s / 183 KB, csv 0,79 s / 1,0 MB, txt
-  0,76 s / 1,0 MB.** No hace falta streaming ni aviso de espera con seccion
-  aplicada -- el recorte de columnas del paso 1 es lo que lo hace viable.
-  El caso sin seccion (calidad completa, 59.007 filas x 38 columnas) SI es
-  lento: **xlsx 24,9 s / 11,4 MB** (csv/txt no medidos ahi, pero al no pasar
-  por openpyxl deberian ser bastante mas rapidos que el xlsx). Consecuencia
-  para el paso 8: la UI deberia ofrecer descargar SOLO lo que esta filtrado
-  en pantalla (con seccion/busqueda/filtro de columna aplicados), no un boton
-  suelto de "descargar toda la calidad" sin ningun filtro -- ese caso es el
-  unico que de verdad pediria streaming o un spinner con aviso.
+Nada: el plan quedo cerrado el 2026-09-07.
 
 ## Verificacion
 
-- [ ] `pytest` en verde
-- [ ] `ruff check src/ tests/` limpio
-- [ ] `cd frontend && npx tsc --noEmit` limpio
-- [ ] Probado en pantalla: seccion Concentracion muestra 8 columnas, no 40
-- [ ] Descarga de un filtro reducido trae exactamente esas filas
-- [ ] Salir de la vista y volver NO vuelve a pedir la pagina ya cargada
-- [ ] Linea agregada a `.ai/bitacora.jsonl`
+- [x] `pytest` en verde (618)
+- [x] `ruff check src/ tests/ backend/ worker/` limpio
+- [x] `cd frontend && npx tsc --noEmit` limpio + `npm run build`
+- [x] Verificado contra la API real: la seccion trae 8 columnas, no 38
+- [x] La descarga trae la seccion completa (2.000) con la pantalla en 1.000
+- [x] Cache probada ejecutandola (acierto, invalidacion por snapshot, LRU)
+- [x] Linea agregada a `.ai/bitacora.jsonl`

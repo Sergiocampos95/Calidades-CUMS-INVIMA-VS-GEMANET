@@ -1,3 +1,4 @@
+import { invalidarTodo } from "./cache_tablas";
 import { montarRefrescoManual } from "./refresco-manual";
 import { montarSalud } from "./salud";
 import { montarAuditEntender, montarAuditExplorar, montarAuditPriorizar, montarCadenaCalidad } from "./vistas/auditoria";
@@ -171,7 +172,17 @@ function inicializarRefrescoManual(): void {
   const panel = document.getElementById("panel-progreso");
   if (!boton || !panel) return;
   montarRefrescoManual(boton, panel, (exito) => {
-    if (exito) render(); // re-pinta la vista actual con los datos ya frescos
+    if (!exito) return;
+    // Vaciar la cache ANTES de repintar, si no la vista se redibuja con las
+    // paginas del snapshot viejo. `ClavePagina.snapshot` sale del sondeo de
+    // /salud, que corre cada 60 s: justo despues de un refresco manual esa
+    // marca todavia es la anterior, asi que la clave calzaria y se serviria
+    // dato viejo -- sin pasar siquiera por "Cargando…", porque un acierto de
+    // cache se pinta directo. Quedaria el encabezado con las cifras nuevas y
+    // la tabla con las viejas, que es el mismo "dos vistas dicen cosas
+    // distintas del mismo dato" que ya costo una sesion entera aca.
+    invalidarTodo();
+    render();
   });
 }
 

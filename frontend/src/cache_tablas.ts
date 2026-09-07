@@ -154,11 +154,15 @@ export function guardarEstado(idTabla: string, estado: EstadoTabla): void {
   _estados.set(idTabla, estado);
 }
 
-/** Vacia todo el store -- paginas y estados de navegacion. La invalidacion
- * por snapshot ya ocurre sola via `ClavePagina.snapshot` (ver comentario en
- * ese campo); esta funcion es para los casos que SI necesitan un reinicio
- * duro y explicito (ej. una futura accion "olvidar cache" en la UI, o
- * pruebas), no un paso obligatorio del flujo de refresco. */
+/** Vacia todo el store -- paginas y estados de navegacion.
+ *
+ * La invalidacion por snapshot ocurre sola via `ClavePagina.snapshot`, pero
+ * SOLO vale mientras esa marca este al dia, y quien la escribe es el sondeo
+ * de /salud, que corre cada 60 s. Justo despues de un refresco MANUAL la
+ * marca sigue siendo la anterior, asi que la clave calzaria y se serviria una
+ * pagina vieja -- sin pasar siquiera por "Cargando…". Por eso main.ts llama a
+ * esta funcion al terminar un refresco manual, antes de repintar. Tambien
+ * sirve para un futuro "olvidar cache" en la UI, o para pruebas. */
 export function invalidarTodo(): void {
   _paginas.clear();
   _estados.clear();
