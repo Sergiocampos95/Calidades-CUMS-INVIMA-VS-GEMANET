@@ -425,6 +425,23 @@ button, select, input { font-family: inherit; }
 }
 .tabla-filtrable__leyenda { font-size: 0.74rem; color: var(--text-faint); padding: 0 16px 8px; margin: 0; }
 .tabla-filtrable__cargar-todo { display: flex; align-items: center; gap: 6px; font-size: 0.78rem; color: var(--text-muted); padding: 0 16px 10px; }
+
+/* Pie de tabla: navegar por paginas + descargar. Reemplaza al checkbox
+   "Cargar la tabla completa", que para ver la fila 1.001 obligaba a traerse
+   decenas de miles de una vez y trababa el equipo. Va DEBAJO de la tabla:
+   se usa despues de mirar las filas, no antes. */
+.tabla-filtrable__pie {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; padding: 10px 16px 14px;
+  border-top: 1px solid var(--border);
+}
+.tabla-filtrable__paginacion { display: flex; align-items: center; gap: 8px; }
+.tabla-filtrable__pagina-actual { font-size: 0.78rem; color: var(--text-muted); white-space: nowrap; }
+.tabla-filtrable__descargas { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.tabla-filtrable__descargas-rotulo { font-size: 0.78rem; color: var(--text-muted); }
+/* Los botones de descarga son <a>, no <button>: el navegador dispara la
+   descarga solo. Sin esto heredarian el subrayado de enlace. */
+.tabla-filtrable__descargas .btn { text-decoration: none; }
 .tabla-filtrable__cargando { color: var(--text-faint); padding: 0 16px 14px; margin: 0; }
 .tabla-filtrable__envoltorio {
   overflow-x: auto; overflow-y: auto; max-height: 460px; border-top: 1px solid var(--border);

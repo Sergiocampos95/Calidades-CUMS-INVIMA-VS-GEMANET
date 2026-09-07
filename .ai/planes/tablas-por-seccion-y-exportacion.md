@@ -145,6 +145,27 @@ Reglas del proyecto en juego:
   nuevo la carga"). Se descarta al cambiar filtro/seccion/busqueda **y al
   cambiar el snapshot** — si no, tras un refresco se mostrarian datos viejos.
 
+- (pasos 7-8) El checkbox "Cargar la tabla completa" se ELIMINO. En su lugar
+  un pie debajo de la tabla con paginacion (Anterior / "Pagina N de M · filas
+  X-Y" / Siguiente) y los tres botones de descarga, que dicen cuantas filas
+  trae el archivo -- no son las que se ven, y sin ese rotulo el usuario no
+  tiene como saberlo.
+- (pasos 7-8) `TablaFiltrable` gano `idTabla`, `seccion` y `urlDescarga`, los
+  tres OPCIONALES: una tabla que no los pase funciona igual que antes, solo
+  sin cache ni botones. Asi las 8 tablas existentes no habia que tocarlas.
+- (pasos 7-8) El snapshot para la clave de cache lo escribe `salud.ts`, que ya
+  sondea /salud para el anillo de "hace N min". Un solo sitio sabe cual es el
+  snapshot vigente; las tablas solo leen. Evita que cada tabla pregunte por su
+  cuenta.
+- (pasos 7-8) **Caso borde encontrado al debuggear:** una pagina vacia con
+  `offset > 0` no es "no hay hallazgos", es que el conjunto encogio debajo de
+  donde estaba parado el usuario (refresco con menos filas, estado restaurado
+  de la sesion anterior). Se vuelve solo a la primera pagina en vez de mostrar
+  una tabla en blanco, que aca se leeria como un error.
+- (pasos 7-8) Cambiar busqueda, orden o filtro devuelve a la pagina 1:
+  quedarse en la pagina 7 de un resultado que ahora tiene 3 es otra forma de
+  llegar a una tabla vacia que parece rota.
+
 ## Estructura: NO hay que cambiarla (medido, 2026-09-04)
 
 La app corre sobre una sola vista: `render()` en `main.ts` llama a
@@ -209,13 +230,13 @@ pagina) y por si solo ya agiliza la app. Va primero.
       {vista, seccion, filtros, busqueda, snapshot}. Tiene que vivir fuera de
       `TablaFiltrable`: esa instancia muere en cada navegacion (ver la
       seccion "Estructura" arriba).
-- [ ] 7. (claude/ui-vite) `frontend/src/tabla.ts` — quitar el checkbox
+- [x] 7. (claude/ui-vite) `frontend/src/tabla.ts` — quitar el checkbox
       "Cargar la tabla completa" y `onCargarTodo`; barra de paginacion
       (anterior/siguiente + "pagina N de M"); leer y escribir en el store del
       paso 6 en vez de pedir siempre a la red.
-- [ ] 8. (claude/ui-vite) `frontend/src/tabla.ts` + vista — botones de
+- [x] 8. (claude/ui-vite) `frontend/src/tabla.ts` + vista — botones de
       descarga XLSX/CSV/TXT que llevan el filtro vigente.
-- [ ] 9. (claude/revisor) — revision antes del commit: que no quede un
+- [~] 9. (claude/revisor) — revision antes del commit: que no quede un
       segundo mecanismo de render de tablas ni de descarga.
 
 ## Abierto

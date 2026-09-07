@@ -1,4 +1,5 @@
 import { obtenerSalud } from "./api";
+import { fijarSnapshot } from "./cache_tablas";
 import type { EstadoSalud } from "./tipos";
 
 // Cada cuanto se vuelve a consultar /salud mientras la pagina esta abierta.
@@ -40,6 +41,11 @@ export function montarSalud(elementos: {
   const revisar = async () => {
     try {
       const salud = await obtenerSalud();
+      // La cache de tablas versiona sus entradas por snapshot. Se alimenta
+      // desde aca en vez de que cada tabla pregunte a /salud por su cuenta:
+      // este sondeo ya corre igual para el anillo de "hace N min", y asi hay
+      // UN solo sitio que sabe cual es el snapshot vigente.
+      fijarSnapshot(salud.ultima_actualizacion_utc ?? null);
       pintarBanner(elementos.banner, salud);
       pintarRefresco(elementos, salud);
     } catch (error) {

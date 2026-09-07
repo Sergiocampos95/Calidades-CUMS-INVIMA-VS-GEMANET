@@ -8,6 +8,7 @@ import {
   obtenerResumenAuditoria,
   obtenerSeccionesCalidad,
   obtenerValoresColumna,
+  urlDescargaCalidad,
 } from "../api";
 import { cabeceraConDescarga } from "../descargas";
 import {
@@ -237,9 +238,16 @@ export async function montarAuditEntender(contenedor: HTMLElement): Promise<void
     const clave = seccion?.clave;
     new TablaFiltrable(tablaEl, {
       columnas: calidad.columnas,
+      // La identidad incluye la calidad, no solo "calidad": son 6 tablas
+      // distintas y compartir id les haria compartir cache y posicion.
+      idTabla: `calidad:${calidad.nombre}`,
+      seccion: clave,
       formatearCelda: formatearCeldaCalidad,
       etiquetasColumna: ETIQUETAS_ACTIVO_VS_INVIMA,
       cargarPagina: (p) => obtenerCalidad(calidad.nombre, { ...p, seccion: clave }),
+      // Sin filtros ni pagina: el archivo trae la seccion completa (ver
+      // urlDescargaCalidad).
+      urlDescarga: (formato) => urlDescargaCalidad(calidad.nombre, formato, clave),
       obtenerValoresColumna: (columna) =>
         obtenerValoresColumna(`/auditoria/calidades/${encodeURIComponent(calidad.nombre)}/valores`, columna, clave),
     });

@@ -1,11 +1,13 @@
+import type { ClavePagina } from "./cache_tablas";
+import { guardarEstado, guardarPagina, leerEstado, leerPagina, snapshotVigente } from "./cache_tablas";
 import type { PaginaTabla } from "./tipos";
 
 /**
  * El equivalente de `_tabla_filtrable`/`_mostrar_tabla_estandar` de la UI de
  * Streamlit: UN solo componente para dibujar cualquier tabla grande, con
- * busqueda libre siempre visible y el recorte de previsualizacion + opcion
- * explicita de "Cargar la tabla completa" (regla de CLAUDE.md, seccion UI).
- * Ninguna tabla de esta app se dibuja fuera de este componente.
+ * busqueda libre siempre visible y el recorte de previsualizacion, que ahora
+ * se navega por paginas (regla de CLAUDE.md, seccion UI). Ninguna tabla de
+ * esta app se dibuja fuera de este componente.
  *
  * Ancho de columna FIJO + texto truncado (con tooltip nativo del valor
  * completo) + arrastrar el borde del encabezado para redimensionar, como en
@@ -38,8 +40,28 @@ export interface ValorColumnaTabla {
   conteo: number;
 }
 
+export type FormatoDescarga = "xlsx" | "csv" | "txt";
+
+/** Etiqueta y titulo de cada boton de descarga. En un solo sitio para que el
+ * orden y los textos no se dupliquen por vista. */
+const FORMATOS_DESCARGA: { formato: FormatoDescarga; etiqueta: string; titulo: string }[] = [
+  { formato: "xlsx", etiqueta: "⤓ Excel", titulo: "Descargar en Excel (.xlsx)" },
+  { formato: "csv", etiqueta: "⤓ CSV", titulo: "Descargar en CSV (separado por comas)" },
+  { formato: "txt", etiqueta: "⤓ TXT", titulo: "Descargar en texto separado por tabulaciones" },
+];
+
 export interface OpcionesTablaFiltrable {
   columnas: string[];
+  /** Identidad de esta tabla para la cache de paginas y para recordar donde
+   * estaba parado el usuario al volver a la vista (ver cache_tablas.ts). Sin
+   * esto la tabla funciona igual pero no cachea ni recuerda: es opcional a
+   * proposito, para no obligar a cada llamador a inventarse un id antes de
+   * que la cache le sirva de algo. Ej: "calidad:Diferencia de estado o
+   * campos". */
+  idTabla?: string;
+  /** Seccion abierta, si la tabla las tiene. Entra en la clave de cache
+   * porque cambia QUE filas y QUE columnas devuelve el backend. */
+  seccion?: string;
   /** Recibe {q, limite, offset, todo, ordenar_por, orden_descendente,
    * filtros_json} + los filtros extra que agregue el llamador (ej.
    * estado_coherencia) y devuelve la pagina correspondiente. */
@@ -52,6 +74,10 @@ export interface OpcionesTablaFiltrable {
     orden_descendente?: boolean;
     filtros_json?: string;
   }) => Promise<PaginaTabla>;
+  /** URL de descarga para cada formato. Si se define, la tabla dibuja los
+   * tres botones (Excel/CSV/TXT). Es el llamador quien la arma porque cada
+   * vista tiene su endpoint y su contexto (calidad + seccion). */
+  urlDescarga?: (formato: FormatoDescarga) => string;
   /** Controles de filtro adicionales (ej. selector de ESTADO_COHERENCIA),
    * ya montados por el llamador -- este componente solo los ubica arriba
    * de la busqueda y escucha su evento "cambio-filtro" para re-consultar. */
@@ -138,14 +164,20 @@ if (typeof document !== "undefined") {
  * -- pedido explicito del usuario (2026-09-02): "el campo que facilita la
  * consulta de verificacion puede permanecer oculto hasta que se requiera".
  * Se ocultan de la VISTA, nunca del dato: siguen viajando en la respuesta y en
- * las descargas, y la casilla de abajo las revela cuando hacen falta -- mismo
- * criterio que "Cargar la tabla completa" (nunca se asume en silencio que al
- * usuario no le hacen falta). */
+ * las descargas, y la casilla de abajo las revela cuando hacen falta -- nunca
+ * se asume en silencio que al usuario no le hacen falta. */
 const COLUMNAS_TECNICAS = new Set(["CONSULTA_VERIFICACION_SQL"]);
 
 export class TablaFiltrable {
   private busqueda = "";
-  private mostrarTodo = false;
+  /** Primera fila de la pagina que se esta viendo. Reemplaza al viejo
+   * `mostrarTodo`: antes la unica alternativa a "las primeras 1.000" era
+   * traerse la tabla ENTERA de un golpe, y eso trababa el equipo -- reporte
+   * del usuario (2026-09-04): "si el usuario daba click al lado de la casilla
+   * de cargar todos los datos hasta se trababa el computador". Ahora se
+   * navega de 1.000 en 1.000 y el que quiere el conjunto completo lo
+   * descarga, que es para lo que sirve un reporte. */
+  private offset = 0;
   private mostrarTecnicas = false;
   private cargando = false;
   /** La ultima pagina servida, para poder repintar sin volver a pedirla
@@ -208,32 +240,135 @@ export class TablaFiltrable {
     this.contenedorDatos = document.createElement("div");
     this.raiz.appendChild(this.contenedorDatos);
 
-    this.opciones.controlesExtra?.addEventListener("cambio-filtro", () => this.recargar());
+    this.opciones.controlesExtra?.addEventListener("cambio-filtro", () => this.onCambioDeFiltro());
+    this.restaurarEstado();
     this.recargar();
   }
 
+  /** Vuelve a donde estaba el usuario la ultima vez que miro esta tabla.
+   * Existe porque cada navegacion destruye esta instancia (`innerHTML = ...`
+   * al montar la vista), asi que sin esto volver a una tabla siempre
+   * significaba empezar de cero: pagina 1, sin filtros, sin orden. */
+  private restaurarEstado(): void {
+    if (!this.opciones.idTabla) return;
+    const guardado = leerEstado(this.opciones.idTabla);
+    // El estado se guarda por tabla, pero la seccion abierta la decide la
+    // vista al construirla: si no coincide, ese estado es de otra cosa.
+    if (!guardado || guardado.seccion !== this.opciones.seccion) return;
+    this.busqueda = guardado.busqueda;
+    this.offset = guardado.offset;
+    this.ordenarPor = guardado.ordenarPor;
+    this.ordenDescendente = guardado.ordenDescendente;
+    if (guardado.filtrosJson) {
+      try {
+        const filtros = JSON.parse(guardado.filtrosJson) as Record<string, string[]>;
+        this.filtrosColumna = new Map(Object.entries(filtros).map(([c, v]) => [c, new Set(v)]));
+      } catch {
+        // Un estado corrupto no puede impedir abrir la tabla: se empieza
+        // limpio, que es exactamente lo que pasaba antes de tener cache.
+      }
+    }
+    const input = this.raiz.querySelector<HTMLInputElement>(".tabla-filtrable__busqueda input");
+    if (input) input.value = this.busqueda;
+  }
+
+  private get filtrosJson(): string | undefined {
+    return this.filtrosColumna.size
+      ? JSON.stringify(Object.fromEntries([...this.filtrosColumna].map(([c, v]) => [c, [...v]])))
+      : undefined;
+  }
+
+  /** La clave con la que esta consulta exacta entra y sale de la cache.
+   * `undefined` cuando la tabla no declaro `idTabla`: sin identidad no se
+   * puede cachear sin arriesgar servirle a una tabla los datos de otra. */
+  private claveCache(): ClavePagina | undefined {
+    if (!this.opciones.idTabla) return undefined;
+    return {
+      idTabla: this.opciones.idTabla,
+      seccion: this.opciones.seccion,
+      busqueda: this.busqueda,
+      ordenarPor: this.ordenarPor,
+      ordenDescendente: this.ordenDescendente,
+      filtrosJson: this.filtrosJson,
+      offset: this.offset,
+      snapshot: snapshotVigente(),
+    };
+  }
+
+  private persistirEstado(): void {
+    if (!this.opciones.idTabla) return;
+    guardarEstado(this.opciones.idTabla, {
+      seccion: this.opciones.seccion,
+      busqueda: this.busqueda,
+      ordenarPor: this.ordenarPor,
+      ordenDescendente: this.ordenDescendente,
+      filtrosJson: this.filtrosJson,
+      offset: this.offset,
+    });
+  }
+
   private async recargar(): Promise<void> {
+    this.persistirEstado();
+    const clave = this.claveCache();
+
+    // Un acierto de cache se pinta SIN pasar por "Cargando…": ese parpadeo
+    // en una pagina que ya se tiene es justo lo que hace sentir lenta la app.
+    const cacheada = clave ? leerPagina(clave) : undefined;
+    if (cacheada) {
+      this.cargando = false;
+      this.ultimaPagina = cacheada;
+      this.render(cacheada);
+      return;
+    }
+
     this.cargando = true;
     this.render();
     try {
       const pagina = await this.opciones.cargarPagina({
         q: this.busqueda,
         limite: LIMITE_PREVISUALIZACION,
-        offset: 0,
-        todo: this.mostrarTodo,
+        offset: this.offset,
+        // Se manda siempre false: la tabla ya no ofrece traerse el conjunto
+        // completo de un golpe. El parametro sigue en la firma porque otros
+        // llamadores del backend lo usan.
+        todo: false,
         ordenar_por: this.ordenarPor,
         orden_descendente: this.ordenDescendente,
-        filtros_json: this.filtrosColumna.size
-          ? JSON.stringify(Object.fromEntries([...this.filtrosColumna].map(([c, v]) => [c, [...v]])))
-          : undefined,
+        filtros_json: this.filtrosJson,
       });
       this.cargando = false;
+
+      // Una pagina vacia con offset > 0 no es "no hay hallazgos": es que el
+      // conjunto encogio debajo de donde estaba parado el usuario (un
+      // refresco con menos filas, un estado restaurado de la sesion
+      // anterior). Se vuelve a la primera en vez de mostrar una tabla en
+      // blanco, que aca se leeria como un error o como "esto no tiene datos".
+      if (pagina.visibles === 0 && pagina.total > 0 && this.offset > 0) {
+        this.offset = 0;
+        void this.recargar();
+        return;
+      }
+
       this.ultimaPagina = pagina;
+      if (clave) guardarPagina(clave, pagina);
       this.render(pagina);
     } catch (error) {
       this.cargando = false;
       this.render(undefined, error instanceof Error ? error.message : String(error));
     }
+  }
+
+  /** Cualquier cambio de busqueda, orden o filtro devuelve a la primera
+   * pagina: quedarse en la pagina 7 de un resultado que ahora tiene 3 es
+   * como se llega a una tabla vacia que parece un error. */
+  private onCambioDeFiltro(): void {
+    this.offset = 0;
+    this.recargar();
+  }
+
+  private irAPagina(nuevoOffset: number): void {
+    this.offset = Math.max(0, nuevoOffset);
+    this.recargar();
   }
 
   private temporizadorBusqueda: ReturnType<typeof setTimeout> | undefined;
@@ -244,9 +379,69 @@ export class TablaFiltrable {
     this.temporizadorBusqueda = setTimeout(() => this.recargar(), DEMORA_BUSQUEDA_MS);
   }
 
-  private onCargarTodo(marcado: boolean): void {
-    this.mostrarTodo = marcado;
-    this.recargar();
+  /** Barra de paginacion + descargas. Sustituye al checkbox "Cargar la tabla
+   * completa", que para ver la fila 1.001 obligaba a traerse las 59.000 de
+   * una vez y trababa el equipo. */
+  private construirPie(pagina: PaginaTabla): HTMLElement {
+    const pie = document.createElement("div");
+    pie.className = "tabla-filtrable__pie";
+
+    const totalPaginas = Math.max(1, Math.ceil(pagina.total / LIMITE_PREVISUALIZACION));
+    const paginaActual = Math.floor(this.offset / LIMITE_PREVISUALIZACION) + 1;
+
+    if (totalPaginas > 1) {
+      const navegacion = document.createElement("div");
+      navegacion.className = "tabla-filtrable__paginacion";
+
+      const anterior = document.createElement("button");
+      anterior.type = "button";
+      anterior.className = "btn btn--suave";
+      anterior.textContent = "‹ Anterior";
+      anterior.disabled = this.offset <= 0 || this.cargando;
+      anterior.addEventListener("click", () => this.irAPagina(this.offset - LIMITE_PREVISUALIZACION));
+
+      const indicador = document.createElement("span");
+      indicador.className = "tabla-filtrable__pagina-actual";
+      const desde = pagina.total === 0 ? 0 : this.offset + 1;
+      const hasta = this.offset + pagina.visibles;
+      indicador.textContent = `Página ${paginaActual.toLocaleString("es-CO")} de ${totalPaginas.toLocaleString("es-CO")} · filas ${desde.toLocaleString("es-CO")}–${hasta.toLocaleString("es-CO")}`;
+
+      const siguiente = document.createElement("button");
+      siguiente.type = "button";
+      siguiente.className = "btn btn--suave";
+      siguiente.textContent = "Siguiente ›";
+      siguiente.disabled = paginaActual >= totalPaginas || this.cargando;
+      siguiente.addEventListener("click", () => this.irAPagina(this.offset + LIMITE_PREVISUALIZACION));
+
+      navegacion.append(anterior, indicador, siguiente);
+      pie.appendChild(navegacion);
+    }
+
+    if (this.opciones.urlDescarga) {
+      const descargas = document.createElement("div");
+      descargas.className = "tabla-filtrable__descargas";
+      const rotulo = document.createElement("span");
+      rotulo.className = "tabla-filtrable__descargas-rotulo";
+      // Se dice CUANTAS filas trae el archivo porque no son las que se ven:
+      // la pantalla pagina, la descarga no. Sin esta linea el usuario no
+      // tiene forma de saber si bajo 1.000 o 59.000.
+      rotulo.textContent = `Descargar las ${pagina.total.toLocaleString("es-CO")} filas:`;
+      descargas.appendChild(rotulo);
+      for (const { formato, etiqueta, titulo } of FORMATOS_DESCARGA) {
+        const enlace = document.createElement("a");
+        enlace.className = "btn btn--suave";
+        enlace.href = this.opciones.urlDescarga(formato);
+        enlace.title = titulo;
+        enlace.textContent = etiqueta;
+        // El navegador dispara la descarga solo: son GET con
+        // Content-Disposition: attachment, sin fetch+blob de por medio.
+        enlace.setAttribute("download", "");
+        descargas.appendChild(enlace);
+      }
+      pie.appendChild(descargas);
+    }
+
+    return pie;
   }
 
   /** Las columnas que se DIBUJAN. Unico lugar que decide eso: el resto del
@@ -471,26 +666,13 @@ export class TablaFiltrable {
 
     const leyenda = document.createElement("p");
     leyenda.className = "tabla-filtrable__leyenda";
-    if (pagina.limite_aplicado) {
-      leyenda.textContent = `Total: ${pagina.total.toLocaleString("es-CO")} · visibles: ${pagina.visibles.toLocaleString("es-CO")}. Para que la pantalla siga ágil, se muestran las primeras ${LIMITE_PREVISUALIZACION.toLocaleString("es-CO")}.`;
+    const totalPaginas = Math.max(1, Math.ceil(pagina.total / LIMITE_PREVISUALIZACION));
+    if (totalPaginas > 1) {
+      leyenda.textContent = `Total: ${pagina.total.toLocaleString("es-CO")} filas · se muestran de a ${LIMITE_PREVISUALIZACION.toLocaleString("es-CO")} para que la pantalla siga ágil.`;
     } else {
       leyenda.textContent = `Total: ${pagina.total.toLocaleString("es-CO")} · todos caben en esta vista.`;
     }
     this.contenedorDatos.appendChild(leyenda);
-
-    if (pagina.limite_aplicado || this.mostrarTodo) {
-      const etiquetaCheckbox = document.createElement("label");
-      etiquetaCheckbox.className = "tabla-filtrable__cargar-todo";
-      const checkbox = document.createElement("input");
-      checkbox.type = "checkbox";
-      checkbox.checked = this.mostrarTodo;
-      checkbox.addEventListener("change", (e) => this.onCargarTodo((e.target as HTMLInputElement).checked));
-      etiquetaCheckbox.appendChild(checkbox);
-      etiquetaCheckbox.appendChild(
-        document.createTextNode(` Cargar la tabla completa (${pagina.total.toLocaleString("es-CO")} filas, puede tardar más)`),
-      );
-      this.contenedorDatos.appendChild(etiquetaCheckbox);
-    }
 
     // Solo se ofrece si ESTA tabla trae alguna columna tecnica: una casilla
     // que no revela nada seria ruido en las tablas que no las tienen.
@@ -595,5 +777,6 @@ export class TablaFiltrable {
     tabla.appendChild(cuerpo);
     envoltorio.appendChild(tabla);
     this.contenedorDatos.appendChild(envoltorio);
+    this.contenedorDatos.appendChild(this.construirPie(pagina));
   }
 }

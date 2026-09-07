@@ -48,8 +48,9 @@ snapshots/
 snapshots.*/
 data_runtime.*/
 
-# Log del uvicorn local.
+# Logs de los procesos locales de desarrollo (uvicorn y vite).
 .uvicorn_out.log
+.vite_out.log
 
 # Frontend (Fase 3): dependencias y build, se regeneran con npm install/
 # npm run build -- no son fuente, no se versionan.

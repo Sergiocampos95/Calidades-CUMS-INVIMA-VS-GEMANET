@@ -163,3 +163,22 @@ export function invalidarTodo(): void {
   _paginas.clear();
   _estados.clear();
 }
+
+// El snapshot vigente, para que `ClavePagina.snapshot` no obligue a cada
+// tabla a preguntarle a /salud por su cuenta. Lo escribe el sondeo de salud
+// que main.ts ya hace para el anillo de "hace N min"; las tablas solo leen.
+//
+// Vale `null` mientras ese sondeo no haya respondido todavia. Con null la
+// clave sigue siendo consistente (una tabla cargada antes de saber el
+// snapshot no reusa entradas de una cargada despues), que es justo el
+// comportamiento seguro: ante la duda se vuelve a pedir, nunca se sirve algo
+// que podria ser viejo.
+let _snapshot: string | null = null;
+
+export function fijarSnapshot(valor: string | null): void {
+  _snapshot = valor;
+}
+
+export function snapshotVigente(): string | null {
+  return _snapshot;
+}

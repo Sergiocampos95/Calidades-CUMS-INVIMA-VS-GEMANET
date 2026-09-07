@@ -227,3 +227,21 @@ export function obtenerAdvertenciasMalla(): Promise<AdvertenciaMalla[]> {
 export function urlDescarga(ruta: "candidatos" | "auditoria" | "cargue-estructura" | "cargue-final"): string {
   return `${BASE_URL}/descargas/${ruta}`;
 }
+
+/** URL para descargar una calidad de auditoria en xlsx/csv/txt.
+ *
+ * Trae la SECCION COMPLETA, no la pagina que se ve en pantalla: la
+ * paginacion es comodidad de la vista y no debe recortar un reporte
+ * (decision del usuario, 2026-09-04 -- "exportar la calidad completa de
+ * diferencia en descripcion"). Por eso NO lleva `limite`/`offset` ni los
+ * filtros de columna. */
+export function urlDescargaCalidad(
+  nombre: string,
+  formato: "xlsx" | "csv" | "txt",
+  seccion?: string,
+): string {
+  const url = new URL(`${BASE_URL}/descargas/calidad/${encodeURIComponent(nombre)}`);
+  url.searchParams.set("formato", formato);
+  if (seccion) url.searchParams.set("seccion", seccion);
+  return url.toString();
+}

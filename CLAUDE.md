@@ -131,11 +131,18 @@ DESCARTADO: no se toca ni se le agregan funcionalidades (regla dura, ver
   muestra en crudo. El unico componente que dibuja tablas es
   `TablaFiltrable` (`frontend/src/tabla.ts`) -- no crear un segundo
   mecanismo de render.
-- **Toda tabla recorta su previsualizacion a `LIMITE_PREVISUALIZACION`
-  (1.000) filas, con la opcion explicita de cargar la tabla completa.** El
-  recorte es solo de lo que se ENVIA al navegador; las descargas siempre
-  usan el DataFrame completo del backend. Nunca se asume en silencio que el
-  limite alcanza.
+- **Toda tabla se navega por paginas de `LIMITE_PREVISUALIZACION` (1.000)
+  filas.** Ya NO existe un "cargar la tabla completa": traerse 59.000 filas
+  de un golpe trababa el equipo (reporte del usuario, 2026-09-04). Para el
+  conjunto entero estan los botones de descarga, que piden el archivo al
+  backend. El recorte es solo de lo que se ENVIA al navegador y nunca se
+  asume en silencio: el pie dice en que pagina se esta y cuantas filas trae
+  el archivo.
+- **La cache de tablas (`frontend/src/cache_tablas.ts`) va versionada por
+  snapshot.** Vive a nivel de MODULO, no en la instancia de `TablaFiltrable`,
+  porque cada navegacion la destruye. Una cache que no se invalida al
+  refrescar serviria cifras viejas -- el mismo fallo que ya costo una sesion
+  entera.
 - Las advertencias van como **tarjeta corta**, nunca como parrafos largos
   dentro de un banner -- pedido explicito del usuario (2026-08-25): un
   desplegable "solo desperdicia espacio". (Esconder contenido sustancial --
