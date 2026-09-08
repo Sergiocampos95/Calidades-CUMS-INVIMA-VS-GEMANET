@@ -108,6 +108,40 @@ y en el Excel de cargue.
 las dos últimas se guardan en Gemma Net como **código numérico** y hay que
 resolverlas contra un catálogo antes de comparar.
 
+### Medicamento combinado: `DESCRIPCION` y `PRINCIPIO_ACTIVO` van a Garantía y Calidad
+
+Un medicamento combinado (varios principios activos, mismo
+EXPEDIENTE-CONSECUTIVO) lo modelan las dos fuentes distinto:
+
+| | INVIMA | Gemma Net (plataforma oficial) |
+|---|---|---|
+| Combinado | **N filas**, una por principio activo | **1 fila**, con las N descripciones y principios activos **pegados** en el mismo campo |
+
+La auditoría cruza 1:1 por `CODIGO_INTERNO` y, cuando INVIMA trae varias filas,
+se queda con la primera (`drop_duplicates(keep="first")`). Comparar
+`DESCRIPCION` y `PRINCIPIO_ACTIVO` campo a campo contra esa única fila da un
+"difiere" que **no significa nada**: la concatenación la hace Gemma Net, no
+esta herramienta, y el dato hay que **entenderlo, no corregirlo**.
+
+Regla (2026-09-08, pedido del usuario): en ese caso esos dos campos —y solo
+esos dos— reciben el veredicto **`pendiente de decisión — Garantía y Calidad`**
+(`VALIDACION_PENDIENTE_GYC`). El resto de campos se compara normal contra la
+fila que ganó. Un campo en manos de GyC **no es acierto ni fallo**: sale del
+denominador de `PORCENTAJE_CALIDAD` igual que un campo que ninguna fuente trae,
+y no aparece en `CAMPOS_CON_DIFERENCIA` (se lista aparte en
+`CAMPOS_PENDIENTE_GYC`).
+
+Se marca solo cuando pasan **las dos** cosas: (1) INVIMA trae >1 fila para ese
+`CODIGO_INTERNO` **y** (2) el valor de Gemma Net contiene, como subcadena
+normalizada, el texto de **dos o más** de esas filas. Si INVIMA trae varias
+filas pero el dato de Gemma Net calza con **una sola**, se compara normal —no
+es un combinado pegado, es un registro que corresponde a una de las filas.
+
+Pendiente de decisión de GyC (anotado 2026-09-08): `ESTADO_COHERENCIA` de la
+fila **no** se tocó —una fila cuyos únicos hallazgos son de este tipo puede
+quedar en `correcto`—. El usuario eligió explícitamente "solo los campos
+afectados"; revisar si la fila también necesita un estado propio.
+
 ### Centinelas de "sin dato"
 
 - **`-999`** es el centinela de Gemma Net. No es un número. Si un campo supera

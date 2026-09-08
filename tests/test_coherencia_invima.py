@@ -16,6 +16,8 @@ from gemma_cum_loader.auditoria.coherencia_invima import (
     PRIORIDAD_CRITICA,
     PRIORIDAD_INFORMATIVA,
     PRIORIDAD_MEDIA,
+    VALIDACION_COINCIDE,
+    VALIDACION_PENDIENTE_GYC,
     EstadoCoherencia,
     _es_fecha_comodin,
     _es_fecha_real,
@@ -2191,3 +2193,96 @@ def test_vencido_con_cum_inactivo_si_es_riesgo():
 
     assert resultado["NOVEDAD_VIGENCIA_INVIMA"] == NOVEDAD_RIESGO_ACTIVO
     assert "sin registro vigente" in resultado["DETALLE_VIGENCIA_INVIMA"]
+
+
+# --- Medicamento combinado: Gemma Net junta varias filas de INVIMA en una ---
+#
+# INVIMA publica el combinado como VARIAS filas (una por principio activo,
+# mismo EXPEDIENTE-CONSECUTIVO). La plataforma oficial Gemma Net lo guarda en
+# UNA sola fila pegando descripciones y principios activos. Comparar campo a
+# campo contra una sola de esas filas de INVIMA no significa nada: DESCRIPCION
+# y PRINCIPIO_ACTIVO pasan a "pendiente de decision - GyC".
+
+
+def _combinado_ibuprofeno_tiocolchicosido_invima():
+    return [
+        _fila_invima(
+            "20086888-11",
+            PRINCIPIO_ACTIVO="IBUPROFENO",
+            CANTIDAD=400,
+            FORMA_FARMACEUTICA="TABLETA",
+        ),
+        _fila_invima(
+            "20086888-11",
+            PRINCIPIO_ACTIVO="TIOCOLCHICOSIDO",
+            CANTIDAD=4,
+            FORMA_FARMACEUTICA="TABLETA",
+        ),
+    ]
+
+
+def test_combinado_manda_descripcion_y_principio_activo_a_garantia_y_calidad():
+    resultado = _auditar(
+        [
+            _fila_gemanet(
+                "20086888-11",
+                DESCRIPCION="IBUPROFENO 400MG TABLETA TIOCOLCHICOSIDO 4MG TABLETA",
+                PRINCIPIO_ACTIVO="IBUPROFENO TIOCOLCHICOSIDO",
+            )
+        ],
+        _combinado_ibuprofeno_tiocolchicosido_invima(),
+    ).loc["20086888-11"]
+
+    assert resultado["DESCRIPCION_VALIDACION"] == VALIDACION_PENDIENTE_GYC
+    assert resultado["PRINCIPIO_ACTIVO_VALIDACION"] == VALIDACION_PENDIENTE_GYC
+    # El resto de campos se sigue comparando normal contra la fila que gano.
+    assert resultado["FORMA_FARMACEUTICA_VALIDACION"] == VALIDACION_COINCIDE
+    # No es una diferencia: es un caso a entender.
+    assert "DESCRIPCION" not in resultado["CAMPOS_CON_DIFERENCIA"]
+    assert "PRINCIPIO_ACTIVO" in resultado["CAMPOS_PENDIENTE_GYC"]
+    assert "DESCRIPCION" in resultado["CAMPOS_PENDIENTE_GYC"]
+    # Fuera del denominador de PORCENTAJE_CALIDAD: los 5 campos restantes
+    # coinciden, asi que queda 100 y no penalizado por el combinado.
+    assert resultado["PORCENTAJE_CALIDAD"] == 100.0
+
+
+def test_varias_filas_invima_pero_gemma_calza_con_una_no_va_a_gyc():
+    """Si INVIMA trae varias filas pero el dato de Gemma Net corresponde a UNA
+    sola (no es un combinado pegado), se compara normal contra esa."""
+    resultado = _auditar(
+        [
+            _fila_gemanet(
+                "20086888-11",
+                DESCRIPCION="IBUPROFENO 400MG TABLETA",
+                PRINCIPIO_ACTIVO="IBUPROFENO",
+            )
+        ],
+        _combinado_ibuprofeno_tiocolchicosido_invima(),
+    ).loc["20086888-11"]
+
+    assert resultado["PRINCIPIO_ACTIVO_VALIDACION"] != VALIDACION_PENDIENTE_GYC
+    assert resultado["DESCRIPCION_VALIDACION"] != VALIDACION_PENDIENTE_GYC
+    assert resultado["CAMPOS_PENDIENTE_GYC"] == ""
+
+
+def test_una_sola_fila_invima_nunca_va_a_gyc_aunque_el_principio_activo_tenga_varias_palabras():
+    resultado = _auditar(
+        [
+            _fila_gemanet(
+                "20086888-11",
+                DESCRIPCION="IBUPROFENO ARGININA 400MG TABLETA",
+                PRINCIPIO_ACTIVO="IBUPROFENO ARGININA",
+            )
+        ],
+        [
+            _fila_invima(
+                "20086888-11",
+                PRINCIPIO_ACTIVO="IBUPROFENO ARGININA",
+                CANTIDAD=400,
+                FORMA_FARMACEUTICA="TABLETA",
+            )
+        ],
+    ).loc["20086888-11"]
+
+    assert resultado["CAMPOS_PENDIENTE_GYC"] == ""
+    assert resultado["PRINCIPIO_ACTIVO_VALIDACION"] == VALIDACION_COINCIDE

@@ -984,6 +984,85 @@ def _descripcion_esperada_invima(invima: pd.DataFrame) -> pd.Series:
     ).str.strip()
 
 
+def _campos_en_pendiente_gyc(
+    clave_cruce_por_fila: pd.Series,
+    valores_locales: dict[str, pd.Series],
+    df_invima: pd.DataFrame,
+) -> dict[str, pd.Series]:
+    """Por campo, una mascara True donde el dato de Gemma Net es un
+    medicamento COMBINADO que la plataforma guardo en una sola fila.
+
+    Se marca cuando pasan LAS DOS cosas a la vez:
+
+      1. INVIMA trae MAS DE UNA fila para ese EXPEDIENTE-CONSECUTIVO
+         (`CODIGO_INTERNO` repetido en `df_invima` -- el caso normal es una
+         fila por principio activo, ver `invima_reader.py`).
+      2. El valor de Gemma Net contiene, como subcadena ya normalizada, el
+         texto de DOS O MAS de esas filas -- es decir, junta varios
+         principios activos / descripciones en uno.
+
+    Si INVIMA trae varias filas pero el dato de Gemma Net calza con UNA
+    sola, NO se marca: eso se compara normal (contra la fila que gano el
+    `drop_duplicates` de `auditar_coherencia`). La deteccion se limita a
+    `_CAMPOS_COMBINADO_GYC` porque el resto de campos es identico para
+    todos los principios activos del combinado.
+
+    `df_invima` es el dataset CRUDO de Vigentes, ANTES de deduplicar por
+    `CODIGO_INTERNO` -- por eso hay que pasarlo aparte y no reusar el
+    `invima` ya colapsado.
+    """
+    vacio = pd.Series(False, index=clave_cruce_por_fila.index)
+    if df_invima.empty or "CODIGO_INTERNO" not in df_invima.columns:
+        return {campo: vacio.copy() for campo in valores_locales}
+
+    clave_invima = df_invima["CODIGO_INTERNO"].fillna("").astype(str).str.strip()
+    filas_por_clave = clave_invima.value_counts()
+    tiene_varias_filas = (
+        clave_cruce_por_fila.map(filas_por_clave).fillna(0).gt(1)
+    )
+
+    texto_invima_por_campo = {
+        "DESCRIPCION": _normalizada(_descripcion_esperada_invima(df_invima)),
+        "PRINCIPIO_ACTIVO": _normalizada(_columna_o_vacia(df_invima, "PRINCIPIO_ACTIVO")),
+    }
+
+    resultado: dict[str, pd.Series] = {}
+    for campo in _CAMPOS_COMBINADO_GYC:
+        if campo not in valores_locales:
+            continue
+        # clave INVIMA -> conjunto de textos normalizados NO vacios de sus
+        # filas. Un `set` para no contar dos veces la misma frase repetida.
+        bloques_por_clave: dict[str, set[str]] = {}
+        for clave, texto in zip(clave_invima, texto_invima_por_campo[campo]):
+            if texto:
+                bloques_por_clave.setdefault(clave, set()).add(texto)
+
+        local_normalizado = _normalizada(valores_locales[campo])
+        bloques_presentes = pd.Series(
+            [
+                _bloques_distintos_en(bloques_por_clave.get(clave, ()), texto_local)
+                for clave, texto_local in zip(clave_cruce_por_fila, local_normalizado)
+            ],
+            index=clave_cruce_por_fila.index,
+        )
+        resultado[campo] = tiene_varias_filas & bloques_presentes.ge(2)
+    return resultado
+
+
+def _bloques_distintos_en(bloques: set[str], texto_local: str) -> int:
+    """Cuantos textos de INVIMA distintos aparecen como subcadena en el dato
+    local. Descarta el bloque que es a su vez subcadena de otro bloque
+    presente mas largo -- "IBUPROFENO" dentro de "IBUPROFENO ARGININA" no es
+    un segundo principio activo, es el mismo escrito mas corto.
+    """
+    presentes = [b for b in bloques if b and b in texto_local]
+    return sum(
+        1
+        for b in presentes
+        if not any(b != otro and b in otro for otro in presentes)
+    )
+
+
 PREFIJO_SIMILITUD = "SIMILITUD_"
 
 # El trio de columnas por campo comparable: lo que dice Gemma Net, lo que dice
@@ -1005,6 +1084,19 @@ VALIDACION_SIN_COMPARAR = "sin comparar"
 # nuestro. La accion tampoco es la misma -- lo primero no se puede resolver,
 # lo segundo se resuelve diligenciando el campo.
 VALIDACION_SIN_DATO_LOCAL = "sin dato en Gemma Net"
+# Ni "coincide" ni "difiere": INVIMA publica el medicamento como VARIAS filas
+# (una por principio activo, mismo EXPEDIENTE-CONSECUTIVO) y la plataforma
+# oficial Gemma Net lo guardo en UNA sola fila pegando esas descripciones /
+# principios activos. Comparar campo a campo contra una sola de esas filas no
+# significa nada -- el dato hay que entenderlo, no "corregirlo": va a Garantia
+# y Calidad. Solo aplica a DESCRIPCION y PRINCIPIO_ACTIVO. Ver
+# design/reglas_negocio.md.
+VALIDACION_PENDIENTE_GYC = "pendiente de decision - Garantia y Calidad"
+
+# Los unicos dos campos que un medicamento combinado mezcla en Gemma Net: la
+# descripcion y el principio activo. El resto (forma farmaceutica, ATC, unidad)
+# es el mismo para los N principios activos, asi que se compara normal.
+_CAMPOS_COMBINADO_GYC = ("DESCRIPCION", "PRINCIPIO_ACTIVO")
 
 
 def similitud_de_campo(local: pd.Series, oficial: pd.Series) -> pd.Series:
@@ -2184,6 +2276,39 @@ def auditar_coherencia(
     )
     matriz_diferencias = matriz_diferencias & ~matriz_sin_dato
 
+    # Medicamento COMBINADO: la plataforma oficial Gemma Net guardo en UNA
+    # fila (un solo EXPEDIENTE-CONSECUTIVO) un medicamento que INVIMA publica
+    # como VARIAS -- una por principio activo -- pegando sus descripciones y
+    # principios activos. El merge de arriba se quedo con la primera fila de
+    # INVIMA (`drop_duplicates(keep="first")`), asi que comparar DESCRIPCION y
+    # PRINCIPIO_ACTIVO campo a campo daria un "difiere" que no significa nada.
+    # Esos dos campos pasan a `pendiente de decision - GyC`: la concatenacion
+    # es de Gemma Net, no de esta herramienta, y hay que ENTENDER por que la
+    # plataforma lo guarda asi antes de "corregir" nada. Ver
+    # design/reglas_negocio.md.
+    pendiente_gyc_por_campo = _campos_en_pendiente_gyc(
+        combinado["_CLAVE_CRUCE_INVIMA"],
+        {
+            "DESCRIPCION": _columna_o_vacia(combinado, "DESCRIPCION"),
+            "PRINCIPIO_ACTIVO": _columna_o_vacia(combinado, "PRINCIPIO_ACTIVO"),
+        },
+        df_invima,
+    )
+    matriz_pendiente_gyc = pd.DataFrame(
+        {
+            campo: pendiente_gyc_por_campo.get(
+                campo, pd.Series(False, index=combinado.index)
+            )
+            for campo in CAMPOS_COMPARADOS_COHERENCIA
+        },
+        index=combinado.index,
+    )
+    # Un campo en manos de GyC no es ni acierto ni fallo: fuera de las
+    # diferencias -- no lo lista CAMPOS_CON_DIFERENCIA y, mas abajo, tampoco
+    # entra al denominador de PORCENTAJE_CALIDAD (mismo trato que
+    # `sin_dato_en_ambos`).
+    matriz_diferencias = matriz_diferencias & ~matriz_pendiente_gyc
+
     # Una columna SIMILITUD_<CAMPO> por campo comparable: el binario dice que
     # hay un problema, el porcentaje dice si es una tilde o si son dos
     # medicamentos distintos (ver `similitud_de_campo`).
@@ -2218,8 +2343,11 @@ def auditar_coherencia(
         {campo: crudos_invima[campo].astype(str).str.strip().ne("") for campo in matriz_sin_dato.columns},
         index=combinado.index,
     )
-    sin_dato_en_ambos = matriz_sin_dato & ~matriz_oficial_presente
-    sin_dato_solo_local = matriz_sin_dato & matriz_oficial_presente
+    # `| matriz_pendiente_gyc`: un campo que se mando a GyC (medicamento
+    # combinado) no se puede exigir alineado con una sola fila de INVIMA, asi
+    # que sale del denominador igual que un campo que ninguna fuente trae.
+    sin_dato_en_ambos = (matriz_sin_dato & ~matriz_oficial_presente) | matriz_pendiente_gyc
+    sin_dato_solo_local = matriz_sin_dato & matriz_oficial_presente & ~matriz_pendiente_gyc
     campos_comparables_fila = len(matriz_diferencias.columns) - sin_dato_en_ambos.sum(axis=1)
     campos_ok = (
         campos_comparables_fila
@@ -2510,6 +2638,10 @@ def auditar_coherencia(
     resultado["ESTADO_CUM_INVIMA"] = estado_cum_invima.values
     resultado["ESTADO_INVIMA_DETALLE"] = estado_invima_detalle.values
     resultado["CAMPOS_CON_DIFERENCIA"] = campos_con_diferencia.values
+    # Campos que NO se compararon porque el dato de Gemma Net es un
+    # medicamento combinado (varios principios activos en una fila). Van a
+    # Garantia y Calidad -- no son un fallo de dato, son un caso a entender.
+    resultado["CAMPOS_PENDIENTE_GYC"] = _columnas_marcadas(matriz_pendiente_gyc, ", ").values
     resultado["PORCENTAJE_CALIDAD"] = porcentaje_calidad.values
     resultado["TIPO_SIN_CORRESPONDENCIA"] = tipo_sin_correspondencia.values
     resultado["INCONSISTENCIA_FECHAS_ACTIVO"] = inconsistencia_fechas.values
@@ -2541,6 +2673,11 @@ def auditar_coherencia(
         # Al final: pisa a "coincide", porque un campo sin dato quedo fuera de
         # las diferencias y si no seria indistinguible de uno que si calza.
         veredicto[invima_tiene_datos & matriz_sin_dato[campo]] = VALIDACION_SIN_DATO_LOCAL
+        # Ultimo de la cascada: pisa a coincide/difiere/sin dato. Un
+        # combinado SIEMPRE tiene dato local (es la concatenacion), asi que
+        # no compite con SIN_DATO_LOCAL -- pero se deja al final para que el
+        # orden de esta cascada no dependa de ese detalle.
+        veredicto[matriz_pendiente_gyc[campo]] = VALIDACION_PENDIENTE_GYC
         resultado[f"{campo}{SUFIJO_VALIDACION}"] = veredicto.values
 
     # Aviso TEMPRANO de vencimiento. Todo lo demas mira hacia atras ("esto ya

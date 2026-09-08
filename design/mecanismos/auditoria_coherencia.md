@@ -89,6 +89,38 @@ Un campo vacío en Gemma Net (`""`, `-999`, código `1` = "SIN INFORMACION")
 no "difiere": no hay con qué comparar. Esa ausencia sí cuenta, pero en la
 dimensión de **completitud** (#4), no aquí — ver `_sin_dato_local()`.
 
+### 3.5. Medicamento combinado: `DESCRIPCION` / `PRINCIPIO_ACTIVO` a Garantía y Calidad (línea ~2186)
+
+```python
+pendiente_gyc_por_campo = _campos_en_pendiente_gyc(
+    combinado["_CLAVE_CRUCE_INVIMA"],
+    {"DESCRIPCION": ..., "PRINCIPIO_ACTIVO": ...},
+    df_invima,          # el Vigentes CRUDO, ANTES del drop_duplicates
+)
+matriz_diferencias = matriz_diferencias & ~matriz_pendiente_gyc
+```
+
+INVIMA publica el combinado como **N filas** (una por principio activo); la
+plataforma Gemma Net lo guarda en **1 fila** con esos textos pegados. El merge
+se quedó con la primera fila de INVIMA, así que comparar campo a campo no dice
+nada. `_campos_en_pendiente_gyc()` marca un campo cuando pasan **las dos**:
+
+1. `df_invima["CODIGO_INTERNO"]` (crudo, sin deduplicar) tiene **>1 fila** para
+   esa clave de cruce.
+2. El valor local, normalizado, contiene como subcadena el texto normalizado
+   de **≥2** de esas filas (`_bloques_distintos_en()` descarta el bloque que
+   es subcadena de otro más largo — "IBUPROFENO" dentro de "IBUPROFENO
+   ARGININA" no es un segundo principio activo).
+
+Solo `DESCRIPCION` y `PRINCIPIO_ACTIVO` (`_CAMPOS_COMBINADO_GYC`): el resto de
+campos es idéntico para todos los principios activos del combinado. El
+veredicto `VALIDACION_PENDIENTE_GYC` se asigna **al final** de la cascada de
+`{campo}_VALIDACION` (§8), y `matriz_pendiente_gyc` se suma a
+`sin_dato_en_ambos` para sacar el campo del denominador de `PORCENTAJE_CALIDAD`
+(§5). Se expone aparte en `CAMPOS_PENDIENTE_GYC`. `ESTADO_COHERENCIA` **no** se
+tocó (decisión del usuario: "solo los campos afectados"). Ver
+`reglas_negocio.md` §4.
+
 ## 4. Similitud: `token_set_ratio`, vectorizado (línea 1010, `similitud_de_campo`)
 
 ```python
@@ -112,13 +144,14 @@ y con qué urgencia.
 
 ## 5. `PORCENTAJE_CALIDAD`: el denominador es por fila (línea 2200)
 
-Tres categorías por campo, no dos:
+Cuatro categorías por campo:
 
 | Categoría | Condición | ¿Entra al denominador? | ¿Cuenta como fallo? |
 |---|---|---|---|
 | Comparable | ambos lados tienen dato | Sí | Solo si difiere |
 | `sin_dato_en_ambos` | ninguna fuente lo trae | **No** | — |
 | `sin_dato_solo_local` | Gemma Net vacío, INVIMA **sí** lo trae | Sí | **Sí, siempre** |
+| `matriz_pendiente_gyc` | medicamento combinado (ver §3.5) — solo `DESCRIPCION` / `PRINCIPIO_ACTIVO` | **No** (se le agrega a `sin_dato_en_ambos`) | — |
 
 ```python
 campos_comparables_fila = len(matriz_diferencias.columns) - sin_dato_en_ambos.sum(axis=1)
@@ -216,14 +249,17 @@ veredicto = SIN_COMPARAR (por defecto)
 veredicto[invima_tiene_datos & ~matriz_diferencias[campo]] = COINCIDE
 veredicto[invima_tiene_datos & matriz_diferencias[campo]]  = DIFIERE
 veredicto[invima_tiene_datos & matriz_sin_dato[campo]]     = SIN_DATO_LOCAL   # ¡al final!
+veredicto[matriz_pendiente_gyc[campo]]                     = PENDIENTE_GYC    # más al final (§3.5)
 resultado[f"{campo}_VALIDACION"] = veredicto.values
 ```
 
-**El orden de las tres asignaciones importa.** `SIN_DATO_LOCAL` se asigna
-**último**, a propósito: como `matriz_diferencias` ya excluyó "sin dato" de
-las diferencias (paso 3), sin esta tercera línea esas celdas quedarían
-indistinguibles de `COINCIDE`. Es la misma regla del §3 aplicada al trío que
-ve la UI.
+**El orden de las asignaciones importa.** `SIN_DATO_LOCAL` se asigna
+**último de las tres primeras**, a propósito: como `matriz_diferencias` ya
+excluyó "sin dato" de las diferencias (paso 3), sin esa línea esas celdas
+quedarían indistinguibles de `COINCIDE`. Es la misma regla del §3 aplicada al
+trío que ve la UI. `PENDIENTE_GYC` (§3.5) va **después** de todas: un
+combinado siempre tiene dato local, así que no compite con `SIN_DATO_LOCAL`,
+pero se deja al final para que el orden no dependa de ese detalle.
 
 **La UI nunca recalcula este veredicto.** Lee `<CAMPO>_GEMANET` /
 `_INVIMA` / `_VALIDACION` directo. Reimplementar la comparación en TypeScript
@@ -245,6 +281,8 @@ VALIDACION_COINCIDE       = "coincide"
 VALIDACION_DIFIERE        = "difiere"
 VALIDACION_SIN_COMPARAR   = "sin comparar"
 VALIDACION_SIN_DATO_LOCAL = "sin dato en Gemma Net"
+VALIDACION_PENDIENTE_GYC  = "pendiente de decision - Garantia y Calidad"   # §3.5, solo DESCRIPCION/PRINCIPIO_ACTIVO
+_CAMPOS_COMBINADO_GYC     = ("DESCRIPCION", "PRINCIPIO_ACTIVO")
 ```
 
 ## Dónde seguir leyendo desde acá

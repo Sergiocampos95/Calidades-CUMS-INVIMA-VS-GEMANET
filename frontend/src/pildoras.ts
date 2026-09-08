@@ -195,6 +195,11 @@ const ETIQUETA_VALIDACION: Record<string, string> = {
   difiere: "No coincide / Actualizar campo",
   "sin comparar": "Sin comparar",
   "sin dato en Gemma Net": "Sin dato en Gemma Net",
+  // Medicamento combinado: Gemma Net guardo en una fila lo que INVIMA
+  // publica como varias (una por principio activo). No se corrige campo a
+  // campo -- lo revisa Garantia y Calidad. Ver VALIDACION_PENDIENTE_GYC en
+  // coherencia_invima.py.
+  "pendiente de decision - Garantia y Calidad": "Pendiente de decisión — Garantía y Calidad",
 };
 
 const TIPO_POR_VALIDACION: Record<string, string> = {
@@ -202,6 +207,7 @@ const TIPO_POR_VALIDACION: Record<string, string> = {
   difiere: "danger",
   "sin comparar": "neutro",
   "sin dato en Gemma Net": "warn",
+  "pendiente de decision - Garantia y Calidad": "warn",
 };
 
 export function pildoraValidacion(valor: unknown): string {
