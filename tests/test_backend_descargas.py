@@ -248,7 +248,7 @@ def test_descarga_calidad_en_xlsx_devuelve_content_type_y_datos_legibles(tmp_pat
         app.dependency_overrides.clear()
 
 
-def test_descarga_calidad_en_csv_lleva_bom_utf8_y_separador_coma(tmp_path):
+def test_descarga_calidad_en_csv_lleva_bom_utf8_y_separador_pipe(tmp_path):
     """Sin el BOM (utf-8-sig), Excel en Windows abre el CSV interpretando
     cada tilde mal -- este equipo abre todo en Excel (regla del proyecto). Si
     un refactor cambiara a `.encode("utf-8")` a secas, nadie lo nota hasta
@@ -266,20 +266,20 @@ def test_descarga_calidad_en_csv_lleva_bom_utf8_y_separador_coma(tmp_path):
         assert r.content.startswith(b"\xef\xbb\xbf")
 
         primera_linea = r.content.split(b"\n", 1)[0]
-        assert b"," in primera_linea
+        assert b"|" in primera_linea
         assert b"\t" not in primera_linea
 
-        tabla = pd.read_csv(io.BytesIO(r.content), sep=",", encoding="utf-8-sig")
+        tabla = pd.read_csv(io.BytesIO(r.content), sep="|", encoding="utf-8-sig")
         assert tabla.loc[0, "DESCRIPCION"] == "ACETAMINOFÉN 500MG SOLUCIÓN"
     finally:
         app.dependency_overrides.clear()
 
 
-def test_descarga_calidad_en_txt_lleva_bom_utf8_y_separador_tab(tmp_path):
-    """El TAB (en vez de coma) evita que una coma dentro de un valor
-    (ej. DESCRIPCION) parta una columna de mas al pegar en otra hoja de
-    calculo -- por eso .txt no es simplemente el mismo .csv con otra
-    extension, y merece su propia prueba del separador."""
+def test_descarga_calidad_en_txt_lleva_bom_utf8_y_separador_pipe(tmp_path):
+    """El .txt lleva el MISMO pipe que el .csv (DELIMITADOR_EXPORTACION), no
+    un separador propio: son el mismo contenido con otra extension, para quien
+    prefiere abrirlo como texto plano. Antes llevaba TAB, y mantener dos
+    separadores distintos obligaba a acordarse de cual traia cada archivo."""
     cliente, carpeta = _cliente(tmp_path)
     try:
         escribir_snapshot({"auditoria": _auditoria_una_diferencia_con_tilde()}, carpeta=carpeta)
@@ -293,9 +293,9 @@ def test_descarga_calidad_en_txt_lleva_bom_utf8_y_separador_tab(tmp_path):
         assert r.content.startswith(b"\xef\xbb\xbf")
 
         primera_linea = r.content.split(b"\n", 1)[0]
-        assert b"\t" in primera_linea
+        assert b"|" in primera_linea
 
-        tabla = pd.read_csv(io.BytesIO(r.content), sep="\t", encoding="utf-8-sig")
+        tabla = pd.read_csv(io.BytesIO(r.content), sep="|", encoding="utf-8-sig")
         assert tabla.loc[0, "DESCRIPCION"] == "ACETAMINOFÉN 500MG SOLUCIÓN"
     finally:
         app.dependency_overrides.clear()
@@ -336,5 +336,49 @@ def test_descargar_calidad_con_formato_no_reconocido_da_400_no_500(tmp_path):
             "/descargas/calidad/Diferencia de estado o campos", params={"formato": "pdf"}
         )
         assert r.status_code == 400
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_una_coma_dentro_de_un_valor_no_corre_las_columnas(tmp_path):
+    """La razon del cambio de separador (pedido del usuario, 2026-09-07).
+
+    Medido sobre el snapshot real de 199.613 filas: 231.410 celdas de texto
+    CONTIENEN una coma (DESCRIPCION, VIGENCIA_NO_CONFIRMABLE y
+    DETALLE_VIGENCIA_INVIMA sobre todo) contra 26 que contienen un pipe. Con
+    coma de separador, `to_csv` entrecomillaba y el archivo nunca estaba mal
+    formado -- pero cualquiera que lo abriera con un split ingenuo o con el
+    importador de Excel mal configurado veia las columnas corridas.
+
+    Se comprueba con un split CRUDO por el separador, no con `read_csv`:
+    read_csv respeta las comillas y por tanto pasaria igual con el separador
+    viejo, que es justo lo que esta prueba tiene que distinguir.
+    """
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        df = _auditoria_una_diferencia_con_tilde()
+        df.loc[0, "DESCRIPCION"] = "ACETAMINOFEN 500MG, TABLETA, CAJA X 10"
+        escribir_snapshot({"auditoria": df}, carpeta=carpeta)
+
+        for formato in ("csv", "txt"):
+            r = cliente.get(
+                "/descargas/calidad/Diferencia de estado o campos",
+                params={"formato": formato, "seccion": "campo:CONCENTRACION"},
+            )
+            assert r.status_code == 200
+            texto = r.content.decode("utf-8-sig")
+            encabezado, primera_fila = texto.splitlines()[0], texto.splitlines()[1]
+
+            columnas_encabezado = encabezado.split("|")
+            # Sin esto la prueba es VACUA: con otro separador el split por
+            # pipe da 1 campo en las dos lineas y la igualdad de abajo se
+            # cumple sola. Detectado mutando DELIMITADOR_EXPORTACION a coma,
+            # que dejaba pasar la version anterior de este test.
+            assert len(columnas_encabezado) > 1, f"{formato}: no viene separado por pipe"
+            assert len(primera_fila.split("|")) == len(columnas_encabezado), (
+                f"{formato}: la fila no tiene las mismas columnas que el encabezado"
+            )
+            # Y la descripcion viaja entera, con sus dos comas adentro.
+            assert "ACETAMINOFEN 500MG, TABLETA, CAJA X 10" in texto
     finally:
         app.dependency_overrides.clear()

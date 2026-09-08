@@ -25,7 +25,7 @@ import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Response
 
 from backend.app.dependencies import carpeta_snapshots
-from backend.app.exportar import bytes_desde_escritor
+from backend.app.exportar import DELIMITADOR_EXPORTACION, bytes_desde_escritor
 from backend.app.routers.calidades import tabla_calidad_filtrada
 from gemma_cum_loader.exportacion.cargue import generar_excel_cargue
 from gemma_cum_loader.exportacion.estructura_cargue import (
@@ -170,12 +170,10 @@ def descargar_calidad(
         contenido = bytes_desde_escritor(lambda ruta: tabla.to_excel(ruta, index=False))
         return _adjunto(f"{nombre_archivo_base}.xlsx", contenido, MEDIA_XLSX)
 
-    separador = "," if formato == "csv" else "\t"
-    # utf-8-sig (BOM): sin el BOM, Excel en Windows abre el CSV interpretando
-    # cada tilde mal -- este equipo abre todo en Excel (regla del proyecto).
-    # El TAB del .txt es para pegar directo en otra hoja de calculo sin que
-    # una coma dentro de un valor (ej. DESCRIPCION) parta una columna de mas.
-    contenido = tabla.to_csv(index=False, sep=separador).encode("utf-8-sig")
+    # utf-8-sig (BOM): sin el BOM, Excel en Windows abre el archivo
+    # interpretando cada tilde mal -- este equipo abre todo en Excel (regla del
+    # proyecto).
+    contenido = tabla.to_csv(index=False, sep=DELIMITADOR_EXPORTACION).encode("utf-8-sig")
     media = MEDIA_CSV if formato == "csv" else MEDIA_TXT
     extension = "csv" if formato == "csv" else "txt"
     return _adjunto(f"{nombre_archivo_base}.{extension}", contenido, media)
