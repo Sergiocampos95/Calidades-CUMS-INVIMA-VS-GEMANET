@@ -70,7 +70,12 @@ from worker.tareas import ejecutar_refresco
 from worker.estado import ESTADO_OK
 from worker.almacen_snapshots import desfases_de_esquema
 
-estado = ejecutar_refresco(ruta_estado=Path('data_runtime/estado.sqlite3'))
+# SIN ruta_estado explicita: el defecto de worker/estado.py es
+# 'estado_worker.sqlite3', y es el que lee el backend (/salud y
+# /refrescar/progreso). Apuntar a 'estado.sqlite3' escribia el resultado en un
+# archivo que NADIE consulta: el refresco corria bien pero la pantalla seguia
+# diciendo "hace N min" de la corrida anterior, sin avisar de nada.
+estado = ejecutar_refresco()
 if estado.estado != ESTADO_OK:
     print('[ERROR] Refresco fallido: ' + (estado.detalle_error or 'sin detalle'))
     sys.exit(1)
@@ -101,5 +106,17 @@ if (Test-Puerto 5173) {
 Write-Host ""
 Write-Host "Backend  -> http://localhost:8000" -ForegroundColor Green
 Write-Host "Frontend -> http://localhost:5173  (recarga con Ctrl+F5)" -ForegroundColor Green
+
+# Este script NO arranca el worker a proposito: el worker refresca apenas
+# arranca, y eso contradiria a -SinRefresco. Pero sin worker el boton
+# "Actualizar ahora" no tiene quien atienda la solicitud, asi que se avisa en
+# vez de dejar que el usuario lo descubra al hacer clic (defecto reportado el
+# 2026-09-07: el boton quedaba pidiendo un refresco que nadie iba a correr).
+$hayWorker = @(Get-CimInstance Win32_Process -Filter "Name='python.exe'" -ErrorAction SilentlyContinue |
+  Where-Object { $_.CommandLine -match 'worker\.refresco' }).Count -gt 0
+if (-not $hayWorker) {
+  Write-Host "Worker   -> NO esta corriendo: el boton 'Actualizar ahora' no va a funcionar." -ForegroundColor Yellow
+  Write-Host "            Arrancalo aparte con .\reinicia_worker.ps1 si lo necesitas." -ForegroundColor DarkYellow
+}
 Write-Host ""
 python -m uvicorn backend.app.main:app --reload --port 8000

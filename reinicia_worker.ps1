@@ -23,5 +23,12 @@ Write-Host "Limpiando cache..." -ForegroundColor Yellow
 Get-ChildItem -Path . -Recurse -Directory -Filter __pycache__ -Force | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
 Write-Host "Iniciando worker..." -ForegroundColor Green
-Set-Location "c:\Users\TECNOLGO TIC\Documents\gemma-cum-loader"
-& python -m worker.refresco
+Set-Location $PSScriptRoot
+
+# El python del venv por ruta, no el del PATH: estos scripts no activan el
+# venv, asi que un `python` pelado toma el del sistema y revienta con
+# "No module named 'pandas'" -- pasa cada vez que se lanza desde una consola
+# donde el venv no estaba activado.
+$python = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
+if (-not (Test-Path $python)) { $python = "python" }
+& $python -m worker.refresco

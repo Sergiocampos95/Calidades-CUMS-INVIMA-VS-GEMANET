@@ -36,10 +36,13 @@ from datetime import datetime
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 
+from gemma_cum_loader.ingesta.fuente_invima import FUENTE_DEFECTO, lector_para_fuente
 from worker.estado import (
     ESTADO_ERROR,
+    fuente_refresco,
     hay_solicitud_pendiente,
     limpiar_solicitud_pendiente,
+    registrar_latido_worker,
 )
 from worker.tareas import ejecutar_refresco
 
@@ -61,8 +64,15 @@ _log = logging.getLogger("worker.refresco")
 
 
 def _ciclo() -> None:
-    _log.info("Arrancando refresco...")
-    evento = ejecutar_refresco()
+    # La fuente la elige quien pide el refresco desde la UI (POST /refrescar
+    # ?fuente=...) y queda anotada en `control`. El ciclo PERIODICO la lee
+    # igual, a proposito: si alguien puso la auditoria sobre los listados de
+    # archivo para explicar unas cifras, que el refresco automatico de 50
+    # minutos se las cambie por las de la API sin avisar seria justo el
+    # cambio silencioso que hace imposible sostener una explicacion.
+    fuente = fuente_refresco(defecto=FUENTE_DEFECTO)
+    _log.info("Arrancando refresco (fuente de INVIMA: %s)...", fuente)
+    evento = ejecutar_refresco(lector_invima_api=lector_para_fuente(fuente))
     if evento.estado == ESTADO_ERROR:
         _log.error(
             "Refresco fallido en %.1fs: %s", evento.duracion_segundos, evento.detalle_error
@@ -81,6 +91,10 @@ def _vigilar_solicitud_manual(scheduler: BlockingScheduler) -> None:
     sigue protegiendo contra que esto se solape con una corrida ya en
     curso -- es el MISMO job, apscheduler simplemente no dispara una
     segunda instancia por encima."""
+    # Late SIEMPRE, haya solicitud o no: es lo que le permite al backend
+    # distinguir "worker trabajando" de "worker caido" y no aceptar un boton
+    # que nadie va a atender (ver `registrar_latido_worker`).
+    registrar_latido_worker()
     if hay_solicitud_pendiente():
         limpiar_solicitud_pendiente()
         _log.info("Solicitud de refresco manual detectada -- adelantando la corrida.")
@@ -92,11 +106,21 @@ def _vigilar_solicitud_manual(scheduler: BlockingScheduler) -> None:
 
 def main() -> None:
     scheduler = BlockingScheduler()
-    # Sin `start_date`: el trigger de intervalo de apscheduler dispara la
-    # PRIMERA corrida de inmediato (start_date por defecto es "ahora") y
-    # despues cada INTERVALO_MINUTOS -- exactamente lo que hace falta: un
-    # proceso reiniciado (deploy, crash) no se queda hasta 50 min sin
-    # snapshot nuevo aunque los datos de origen ya hayan cambiado.
+    # `next_run_time=ahora` es OBLIGATORIO para que la primera corrida sea
+    # inmediata. El comentario que habia aca afirmaba que apscheduler ya lo
+    # hacia solo ("start_date por defecto es ahora"), y es FALSO: el
+    # IntervalTrigger sin `start_date` arranca en `ahora + intervalo`, o sea
+    # que un worker recien levantado se quedaba 50 MINUTOS sin refrescar.
+    #
+    # Verificado el 2026-09-07: worker arrancado, el job de vigilancia (5 s)
+    # corriendo una y otra vez en el log, y `_ciclo` sin ejecutarse ni una
+    # vez. No se habia notado porque en la practica siempre se pulsaba
+    # "Actualizar ahora" enseguida, y ESO si adelanta el job
+    # (`_vigilar_solicitud_manual` -> modify_job), tapando el sintoma.
+    #
+    # Importa justo cuando mas duele: un proceso reiniciado (deploy, crash,
+    # corte) no debe quedarse casi una hora sirviendo el snapshot viejo, que
+    # es exactamente lo que el intervalo venia a evitar.
     scheduler.add_job(
         _ciclo,
         "interval",
@@ -104,6 +128,7 @@ def main() -> None:
         max_instances=1,
         coalesce=True,
         id=ID_JOB_PRINCIPAL,
+        next_run_time=datetime.now(),
     )
     scheduler.add_job(
         _vigilar_solicitud_manual,

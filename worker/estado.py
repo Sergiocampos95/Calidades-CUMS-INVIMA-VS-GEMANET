@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
@@ -230,3 +231,92 @@ def limpiar_solicitud_pendiente(ruta: Path | None = None) -> None:
         con.commit()
     finally:
         con.close()
+
+
+def guardar_fuente_refresco(fuente: str, ruta: Path | None = None) -> None:
+    """Deja anotado de que fuente (api / archivos) debe leer INVIMA el proximo
+    refresco. Viaja por la misma tabla `control` que la solicitud, porque el
+    backend y el worker son procesos distintos y esa es la unica via que hay
+    entre ellos."""
+    ruta = ruta or RUTA_ESTADO_DEFECTO
+    con = _conectar(ruta)
+    try:
+        con.execute(
+            "INSERT INTO control (clave, valor) VALUES ('fuente_refresco', ?) "
+            "ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor",
+            (fuente,),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+
+def fuente_refresco(ruta: Path | None = None, defecto: str = "api") -> str:
+    """La fuente anotada, o `defecto` si nadie eligio.
+
+    El defecto lo pone el llamador (worker/refresco.py pasa FUENTE_DEFECTO) en
+    vez de importarse de `ingesta/`: `worker/estado.py` es la capa de estado y
+    no debe conocer el vocabulario de INVIMA."""
+    ruta = ruta or RUTA_ESTADO_DEFECTO
+    if not ruta.is_file():
+        return defecto
+    con = _conectar(ruta)
+    try:
+        fila = con.execute("SELECT valor FROM control WHERE clave = 'fuente_refresco'").fetchone()
+    finally:
+        con.close()
+    return fila[0] if fila is not None and fila[0] else defecto
+
+
+# Cuantos segundos sin latido hacen falta para dar el worker por caido. El
+# worker late cada INTERVALO_VIGILANCIA_SEGUNDOS (5 s), asi que 60 s son 12
+# latidos perdidos: suficiente para no dar falsos negativos si la maquina se
+# atraganta un momento, y corto para que el usuario se entere en el acto.
+MARGEN_LATIDO_SEGUNDOS = 60
+
+
+def registrar_latido_worker(ruta: Path | None = None) -> None:
+    """Marca "el worker sigue vivo", una vez por ciclo de vigilancia.
+
+    Existe porque POST /refrescar solo DEJA UNA SOLICITUD: quien la ejecuta es
+    el proceso worker. Sin latido, el backend no tiene forma de distinguir
+    "worker trabajando" de "worker caido", y responde 202 Accepted a un boton
+    que no va a hacer nada -- el usuario se queda esperando un refresco que
+    nadie va a correr. Es exactamente la suposicion silenciosa que el proyecto
+    prohibe, y fue el defecto que reporto el usuario (2026-09-07)."""
+    ruta = ruta or RUTA_ESTADO_DEFECTO
+    con = _conectar(ruta)
+    try:
+        con.execute(
+            "INSERT INTO control (clave, valor) VALUES ('latido_worker', ?) "
+            "ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor",
+            (datetime.now(UTC).isoformat(),),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+
+def worker_vivo(ruta: Path | None = None, margen_segundos: int = MARGEN_LATIDO_SEGUNDOS) -> bool:
+    """True si el worker latio hace menos de `margen_segundos`.
+
+    Degrada a False ante cualquier duda (sin archivo, sin fila, timestamp
+    ilegible): decir "no hay worker" de mas hace que el usuario revise, decir
+    "si hay" de mas lo deja esperando para siempre."""
+    ruta = ruta or RUTA_ESTADO_DEFECTO
+    if not ruta.is_file():
+        return False
+    con = _conectar(ruta)
+    try:
+        fila = con.execute("SELECT valor FROM control WHERE clave = 'latido_worker'").fetchone()
+    finally:
+        con.close()
+    if fila is None:
+        return False
+    try:
+        ultimo = datetime.fromisoformat(fila[0])
+    except (TypeError, ValueError):
+        return False
+    if ultimo.tzinfo is None:
+        ultimo = ultimo.replace(tzinfo=UTC)
+    return (datetime.now(UTC) - ultimo).total_seconds() < margen_segundos
