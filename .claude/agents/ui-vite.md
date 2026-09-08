@@ -89,6 +89,10 @@ Mismo criterio para cualquier "vista A necesita que pase algo en vista B".
 
 ## Reinicio de procesos -- hacelo vos, no lo asumas
 
+Version mas completa de esto (mas incidentes, mas mitigaciones) en
+`design/operacion.md` -- lo de abajo es el resumen que hace falta para
+trabajar sin abrir otro archivo.
+
 Windows + `--reload` de uvicorn en esta maquina **no es confiable**: puede
 loguear "Reloading..." y seguir sirviendo codigo viejo, y procesos hijos de
 multiprocessing pueden quedar huerfanos sosteniendo el puerto tras un

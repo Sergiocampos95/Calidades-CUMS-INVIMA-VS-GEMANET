@@ -7,7 +7,7 @@ El `README.md` es la documentacion funcional completa y esta al dia: leelo antes
 de tocar logica de negocio. Este archivo solo recoge lo que un agente necesita
 para no romper convenciones.
 
-Tres documentos mas, en `design/`, que evitan re-derivar lo ya decidido.
+Cuatro documentos mas, en `design/`, que evitan re-derivar lo ya decidido.
 Responden preguntas DISTINTAS -- confundirlas es como una sesion (2026-09-09)
 tuvo que releer ~150 lineas sueltas de codigo para explicar como se calcula
 el veredicto de auditoria, porque esa mecanica no estaba en ningun lado:
@@ -27,6 +27,12 @@ el veredicto de auditoria, porque esa mecanica no estaba en ningun lado:
   (`auditar_coherencia()` completo). Se agrega un archivo nuevo cuando una
   sesion tenga que releer codigo fuente para explicar un mecanismo que no
   esta documentado -- esa relectura es la senal de que falta el archivo.
+- **`design/operacion.md`** — el COMO SE OPERA: cuando commitear, como
+  arrancar/reiniciar cada pieza, y una tabla de sintoma -> causa -> mitigacion
+  para los fallos ya vistos (proceso huerfano de multiprocessing sosteniendo
+  un puerto, `--reload` sirviendo codigo viejo, `python` sin venv, Vite
+  duplicado en 5174). Consultalo ANTES de reportar un fallo de entorno como
+  nuevo -- varios ya se midieron y tienen mitigacion escrita.
 
 ## Los dos flujos (no confundirlos)
 
