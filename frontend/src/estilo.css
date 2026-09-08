@@ -158,7 +158,19 @@ button, select, input { font-family: inherit; }
   backdrop-filter: blur(8px); border-bottom: 1px solid var(--border);
 }
 .miga { display: flex; flex-direction: column; gap: 2px; min-width: 0; margin-right: auto; }
-.miga__ruta { font-size: 0.72rem; color: var(--text-faint); font-weight: 600; letter-spacing: 0.02em; }
+.miga__ruta { font-size: 0.72rem; color: var(--text-faint); font-weight: 600; letter-spacing: 0.02em; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.miga__sep { opacity: 0.55; }
+.miga__grupo, .miga__actual { color: var(--text-faint); }
+/* Botón, no <a>: la app es una sola página y navega por JS. Se despoja del
+   aspecto de botón para que lea como migaja, pero sigue siendo enfocable con
+   teclado, que un <span> con onclick no sería. */
+.miga__enlace {
+  background: none; border: none; padding: 0; cursor: pointer;
+  font: inherit; letter-spacing: inherit; color: var(--text-muted);
+  text-decoration: underline; text-underline-offset: 2px;
+  text-decoration-color: transparent; transition: color 0.15s ease, text-decoration-color 0.15s ease;
+}
+.miga__enlace:hover { color: var(--accent); text-decoration-color: currentColor; }
 .miga__titulo { font-size: 1.28rem; font-weight: 800; letter-spacing: -0.015em; }
 
 .refresco { display: flex; align-items: center; gap: 10px; padding: 6px 12px 6px 6px; border-radius: var(--radio-pill); background: var(--surface-2); border: 1px solid var(--border); flex-shrink: 0; }
@@ -536,6 +548,33 @@ tbody tr:hover { background: var(--accent-soft); }
 .btn--suave { background: var(--accent-soft); color: var(--accent); }
 .btn--suave:hover { background: var(--accent); color: #fff; }
 .btn[disabled] { opacity: 0.45; cursor: not-allowed; }
+
+/* Eleccion de fuente al pulsar "Actualizar ahora". Se pregunta cada vez en
+   vez de dejar un selector con memoria: las dos fuentes dan cifras muy
+   distintas y el snapshot se ve igual de sano con cualquiera de las dos, asi
+   que la decision tiene que ser consciente (ver refresco-manual.ts). */
+.eleccion-fuente { display: flex; gap: 10px; flex-wrap: wrap; margin: 4px 0 8px; }
+.eleccion-fuente__opcion {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  text-align: left;
+  flex: 1 1 260px;
+  padding: 10px 12px;
+  line-height: 1.35;
+}
+.eleccion-fuente__opcion span { font-size: 0.72rem; opacity: 0.75; font-weight: 400; }
+.eleccion-fuente__cancelar {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
 
 /* ============================= VARIOS ============================= */
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }

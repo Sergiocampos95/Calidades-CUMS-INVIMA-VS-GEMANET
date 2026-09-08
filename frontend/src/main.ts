@@ -144,12 +144,43 @@ function pintarSubnav(): void {
   );
 }
 
+/** El rastro completo "grupo › sección › sub-vista" al lado de "← Volver".
+ *
+ * Antes esta linea mostraba SOLO el grupo ("Candidatos para cargue"), asi que
+ * desde una vista de tercer nivel no se veia por donde se habia entrado ni se
+ * podia subir un escalon sin buscar la sección en el riel. "Volver" deshace el
+ * ultimo salto; las migajas dicen DONDE estás -- son cosas distintas y por eso
+ * conviven (pedido del usuario, 2026-09-08).
+ *
+ * El grupo no es navegable a proposito: es una etiqueta de agrupación del
+ * riel, no una pantalla. La sección sí, y solo cuando lleva a otro sitio.
+ */
+function pintarMigajas(): void {
+  const contenedor = document.getElementById("miga-ruta");
+  if (!contenedor) return;
+  const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] as string);
+  const separador = `<span class="miga__sep" aria-hidden="true">›</span>`;
+
+  const partes = [`<span class="miga__grupo">${esc(seccionActual.grupo)}</span>`];
+  // Con una sola sub-vista, sección y título son lo mismo: repetirlo seria
+  // ruido ("Consultar INVIMA › Consultar INVIMA").
+  if (seccionActual.sub.length > 1) {
+    const enLaPrimera = subActual.id === seccionActual.sub[0].id;
+    partes.push(
+      enLaPrimera
+        ? `<span class="miga__actual">${esc(seccionActual.etiqueta)}</span>`
+        : `<button type="button" class="miga__enlace" data-ir-seccion="${esc(seccionActual.id)}">${esc(seccionActual.etiqueta)}</button>`,
+    );
+  }
+  contenedor.innerHTML = partes.join(separador);
+}
+
 function render(): void {
   const botonVolver = document.getElementById("boton-volver");
   // Se esconde en vez de deshabilitarse: un boton apagado en la topbar de
   // arranque solo agrega ruido, no informa de nada.
   if (botonVolver) botonVolver.classList.toggle("oculto", historial.length === 0);
-  document.getElementById("miga-ruta")!.textContent = seccionActual.grupo;
+  pintarMigajas();
   document.getElementById("miga-titulo")!.textContent = seccionActual.sub.length > 1 ? subActual.etiqueta : seccionActual.etiqueta;
   pintarRail();
   pintarSubnav();
@@ -187,6 +218,13 @@ function inicializarRefrescoManual(): void {
 }
 
 document.getElementById("boton-volver")?.addEventListener("click", volver);
+
+// Delegado: `pintarMigajas` rehace su innerHTML en cada render, asi que un
+// listener por boton se perderia en el primer salto.
+document.getElementById("miga-ruta")?.addEventListener("click", (evento) => {
+  const enlace = (evento.target as HTMLElement).closest<HTMLElement>("[data-ir-seccion]");
+  if (enlace?.dataset.irSeccion) navegarA(enlace.dataset.irSeccion);
+});
 
 // Alt+← es el atajo que ya usa el navegador para "atras"; aqui la app no
 // toca el historial del navegador (es una sola pagina), asi que se replica
