@@ -267,9 +267,14 @@ Copilot: un cambio inesperado en el arbol es propio, no de otra herramienta.
   vigente: es la memoria en una linea de por que se hizo cada tanda, sin
   abrir el log de git. Comando: `/bitacora`.
 - Los planes de `.ai/planes/` quedan como HISTORIA de tareas ya ejecutadas.
-  No se crean planes nuevos con dueno por paso; la sesion trabaja un solo
-  problema (ver arriba) y lo cierra.
-- `AGENTS.md` en la raiz y `.github/copilot-instructions.md` /
-  `.github/instructions/*.instructions.md` siguen en el arbol apuntando a
-  este archivo. Ya no cumplen una funcion en el flujo de trabajo; si estorban,
-  se borran en una tanda aparte.
+  **No se editan**: si un plan viejo dice algo que hoy es falso, lo que vale
+  es `design/reglas_negocio.md`. Varios mencionan a Copilot y el reparto de
+  pasos, y es correcto: asi se trabajo en ese momento.
+- El andamiaje de Copilot se BORRO el 2026-09-08, ya sin funcion: `AGENTS.md`,
+  `.github/copilot-instructions.md`, `.github/instructions/`,
+  `.github/prompts/`, `.ai/planes/PLANTILLA.md` (llevaba un dueno por paso) y
+  los comandos `/plan-equipo` y `/tomar-paso`. Todo esta en el historial de
+  git si alguna vez hace falta.
+- Comandos que SIGUEN vigentes: `/bitacora` y `/revisar-reglas`.
+- `.claude/agents/` y `.claude/AGENTES.md` no tienen nada que ver con esto:
+  son los subagentes de Claude Code y siguen en uso.

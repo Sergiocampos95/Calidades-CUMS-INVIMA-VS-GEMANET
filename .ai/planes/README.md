@@ -1,96 +1,50 @@
-# Planes compartidos — como trabajan Claude Code y Copilot sobre el mismo repo
+# Planes — historia de las tareas grandes
 
-Un plan es **un archivo markdown por tarea** en esta carpeta. Es el unico
-lugar donde las dos herramientas se ponen de acuerdo: quien hace que, en que
-orden, y que archivo esta tomado ahora mismo.
+Un plan es un archivo markdown por tarea. Sirve para no perder el hilo cuando
+un cambio toca varios modulos y no cabe en una sola pasada.
 
-Se versiona en git a proposito. Es barato, se lee en 20 segundos y sobrevive a
-que cualquiera de las dos ventanas se cierre.
+## Que cambio (2026-09-08)
 
-## El reparto
+Esta carpeta nacio para coordinar a **Claude Code y Copilot** trabajando sobre
+el mismo repo: quien hace que paso, en que orden, y que archivo esta tomado
+ahora mismo. Ese reparto ya no existe -- **Claude Code es el unico agente que
+trabaja este repositorio**.
 
-**Claude Code decide y verifica. Copilot acelera dentro de una decision ya
-tomada.**
+Con eso se fueron `PLANTILLA.md` (llevaba un dueno por paso), los comandos
+`/plan-equipo` y `/tomar-paso`, y el andamiaje de Copilot (`AGENTS.md`,
+`.github/copilot-instructions.md`, `.github/instructions/`, `.github/prompts/`).
+Todo esta en el historial de git si alguna vez hace falta.
 
-| Trabajo | Dueno | Por que |
-|---|---|---|
-| Disenar un cambio que toca varios modulos | **Claude Code** (`arquitecto`) | Ve el repo completo y no edita mientras piensa |
-| Reglas de negocio nuevas, cascada del resolver, auditoria | **Claude Code** (`implementador`) | El hook de pytest no lo deja terminar en rojo |
-| Suite de pruebas de codigo nuevo | **Claude Code** (`pruebas`) | Escribe el test del bug antes del arreglo |
-| Cazar bugs y violaciones de reglas antes de un commit | **Claude Code** (`revisor`) | Solo lee: sus hallazgos se discuten, no se tapan |
-| Preguntas sobre los datos, INVIMA, Socrata | **Claude Code** (`dominio-invima`) | Puede consultar los datasets y citar evidencia |
-| Iterar la UI de Streamlit con la app corriendo | **Copilot** | El usuario ve el efecto de cada cambio al instante |
-| Explicar codigo seleccionado, dudas puntuales | **Copilot** | Ya tiene el contexto del editor abierto |
-| Completado inline, docstrings, renombres, boilerplate | **Copilot** | Volumen alto, riesgo bajo, cero decisiones |
-| Un caso mas en una parametrizacion de test existente | **Copilot** | El contrato ya esta fijado |
-| Leer un traceback de la terminal y proponer el arreglo | **Copilot** | Ve la terminal integrada |
-| Mensaje de commit | **Copilot** | Ve el diff staged sin pedir nada |
+## Los planes que hay aca son HISTORIA
 
-Casos de frontera, resueltos de una vez:
+Documentan tareas ya ejecutadas y por que se hicieron asi. **No se editan**: si
+un plan viejo dice algo que hoy es falso, lo que vale es
+`design/reglas_negocio.md`, que se mantiene al dia.
 
-- **UI que necesita una regla nueva:** la regla la escribe Claude Code en
-  `src/`; Copilot solo la muestra. Nunca al reves.
-- **Bug reportado:** Claude Code escribe el test que lo reproduce; despues
-  cualquiera de los dos puede arreglarlo, pero el arreglo tiene que poner ese
-  test en verde.
-- **Copilot recibe algo del lado de Claude Code:** lo dice y propone el plan;
-  no improvisa la implementacion.
+Varios mencionan a Copilot y el reparto de pasos. Es correcto: asi se trabajo
+en ese momento.
 
-## En paralelo, sin pisarse
+## Como se trabaja ahora
 
-Se puede trabajar a la vez cuando los archivos no se solapan. Las dos
-combinaciones que rinden:
+**Una sesion, un problema.** Es la regla que reemplaza al plan compartido, y
+nacio de una sesion que empezo en una tabla de priorizacion y termino tocando
+delimitadores, fechas centinela, el worker, el boton de actualizar y la
+definicion de CUM. Cada salto fue razonable por separado; el conjunto quedo
+imposible de revisar y rompio cosas que ya estaban bien.
 
-- Claude Code en `src/` + Copilot en `ui_revision/` sobre la misma feature.
-- Claude Code disenando o investigando datos + Copilot cerrando docstrings y
-  tests de relleno en modulos ya estables.
+Antes de tocar logica de negocio, leer:
 
-**Nunca a la vez:** los dos sobre el mismo archivo, ni `implementador` y una
-sesion de Copilot sobre el mismo modulo mientras la firma todavia cambia.
+1. `CLAUDE.md` -- convenciones y flujo de trabajo.
+2. `design/reglas_negocio.md` -- que significan los datos y por que. Incluye
+   las reglas que ya se probaron y se REVIRTIERON, para no reproponerlas.
+3. `design/mapa_del_proyecto.md` -- donde vive cada cosa.
 
-## El protocolo anticolision — tres marcas
+Al cerrar: commit con el porque en el mensaje, y una entrada en
+`.ai/bitacora.jsonl` (comando `/bitacora`).
 
-Cada paso del plan lleva un estado y un dueno:
+## Cuando SI escribir un plan nuevo
 
-| Marca | Significa |
-|---|---|
-| `[ ]` | Pendiente, libre |
-| `[~]` | **Tomado ahora mismo.** No lo toques ni abras sus archivos para editarlos |
-| `[x]` | Terminado |
-
-Reglas:
-
-1. **Antes de escribir la primera linea**, marca tu paso `[~]` con tu nombre y
-   guarda el archivo del plan. Esa marca es el candado.
-2. Si un paso esta `[~]` a nombre de la otra herramienta, **no toques sus
-   archivos**. Toma otro paso libre o espera.
-3. Al terminar, marca `[x]` y anota en `## Decisiones` cualquier cosa que el
-   siguiente necesite saber.
-4. Si te bloqueas, deja el paso en `[~]` y escribe la razon en `## Abierto`.
-   Un paso abandonado en `[~]` sin nota es lo unico que rompe este sistema.
-
-## Ciclo de vida
-
-```
-   crear el plan            tomar un paso          cerrar
-        |                        |                    |
-   Claude Code /            cualquiera de los     el que hizo
-   Copilot escribe    ->    dos, marcando [~]  -> el ultimo paso:
-   .ai/planes/<slug>.md     y luego [x]           Estado: terminado
-                                                  + linea en bitacora.jsonl
-```
-
-Un plan terminado se queda aqui. Es el registro de por que el codigo quedo
-como quedo, con mas detalle que la bitacora y menos ruido que el diff.
-
-## Como se crea uno
-
-- En Claude Code: `/plan-equipo <descripcion de la tarea>`
-- En Copilot Chat: `/plan` (prompt file en `.github/prompts/`)
-- A mano: copia `PLANTILLA.md` a `<slug>.md`
-
-## Cuando NO hace falta un plan
-
-Un archivo, un cambio obvio, sin decision de diseno. Ahi el plan cuesta mas de
-lo que ahorra: hazlo y, si fue no trivial, deja la linea en
-`.ai/bitacora.jsonl`.
+Solo si la tarea no cabe en una sesion y hay que retomarla despues. En ese caso
+el plan es una nota para uno mismo -- objetivo, pasos, que quedo verificado --
+no un contrato entre herramientas. Si cabe en una sesion, no hace falta: el
+mensaje de commit y la bitacora ya dejan la trazabilidad.

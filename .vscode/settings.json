@@ -17,38 +17,15 @@
   // Barras normales: con barras invertidas sin escapar esto era JSON invalido
   // y VS Code caia al interprete global en vez de al del proyecto.
   "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
-  "python.analysis.exclude": ["**/.venv/**", "**/data/**"],
+  "python.analysis.exclude": ["**/.venv/**", "**/data/**"]
 
-  // --- Trabajo en equipo con Claude Code -------------------------------
-  // El reparto y el protocolo estan en .ai/planes/README.md.
-
-  // Copilot Chat lee .github/copilot-instructions.md en cada peticion.
-  "github.copilot.chat.codeGeneration.useInstructionFiles": true,
-
-  // Reglas por carpeta (applyTo): src/, tests/ y ui_revision/ tienen
-  // restricciones distintas y se aplican solas segun el archivo abierto.
-  "chat.instructionsFilesLocations": {
-    ".github/instructions": true
-  },
-
-  // Prompts reutilizables: /plan, /tomar-paso, /revisar-reglas, /bitacora.
-  "chat.promptFiles": true,
-  "chat.promptFilesLocations": {
-    ".github/prompts": true
-  },
-
-  // AGENTS.md de la raiz, el mismo puente que usa Copilot CLI.
-  "chat.useAgentsMdFile": true,
-
-  "github.copilot.chat.commitMessageGeneration.instructions": [
-    {
-      "text": "Mensaje en espanol sin tildes, imperativo, primera linea de 72 caracteres o menos. El cuerpo explica el porque, no el que. Termina siempre con el trailer 'Agente: Copilot Chat (VS Code)' en su propia linea."
-    }
-  ],
-
-  "github.copilot.chat.reviewSelection.instructions": [
-    {
-      "text": "Revisa contra las reglas duras de .github/copilot-instructions.md: nada de fusionar filas con CODIGO_INTERNO duplicado, cero red o IA en la cascada de catalogos/resolver.py, lo ambiguo va a cuarentena, -999 es centinela y no numero, PORCENTAJE_CALIDAD vacio no es 0 %, nada de leer data/ en tests, y codigo fuente ASCII sin tildes. Piensa a escala de 200.000 filas: senala cualquier operacion fila a fila."
-    }
-  ]
+  // --- Copilot: configuracion RETIRADA (2026-09-08) --------------------
+  // Ya no hay trabajo en equipo con Copilot: Claude Code es el unico agente
+  // de este repo. Se borraron .github/copilot-instructions.md,
+  // .github/instructions/, .github/prompts/ y AGENTS.md, asi que los ajustes
+  // que apuntaban ahi quedaban colgando de archivos inexistentes.
+  //
+  // Las reglas duras que vivian en esas instrucciones NO se perdieron: estan
+  // en CLAUDE.md y, con la medicion que las justifica, en
+  // design/reglas_negocio.md.
 }
