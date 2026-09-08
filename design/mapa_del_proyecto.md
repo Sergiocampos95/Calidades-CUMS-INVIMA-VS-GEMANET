@@ -61,6 +61,7 @@ Sin dependencias de web ni de UI. Es la parte que se puede probar sola.
 | Los 5 niveles de prioridad | `clasificar_prioridad_accion()`, `PRIORIDAD_*` |
 | Qué se audita y qué se ignora | `filtrar_universo_auditable()` |
 | Clasificación de hallazgos | `_clasificar_naturaleza_hallazgo()`, `NATURALEZA_*` |
+| Veredicto de exactitud (`ESTADO_COHERENCIA`, `PORCENTAJE_CALIDAD`, el trío `_GEMANET/_INVIMA/_VALIDACION`) | `auditar_coherencia()` — mecanismo completo, verificado línea por línea, en [`mecanismos/auditoria_coherencia.md`](mecanismos/auditoria_coherencia.md) |
 
 ### El resto
 

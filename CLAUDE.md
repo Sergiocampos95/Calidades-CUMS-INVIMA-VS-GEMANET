@@ -7,16 +7,26 @@ El `README.md` es la documentacion funcional completa y esta al dia: leelo antes
 de tocar logica de negocio. Este archivo solo recoge lo que un agente necesita
 para no romper convenciones.
 
-Dos documentos mas, en `design/`, que evitan re-derivar lo ya decidido:
+Tres documentos mas, en `design/`, que evitan re-derivar lo ya decidido.
+Responden preguntas DISTINTAS -- confundirlas es como una sesion (2026-09-09)
+tuvo que releer ~150 lineas sueltas de codigo para explicar como se calcula
+el veredicto de auditoria, porque esa mecanica no estaba en ningun lado:
 
-- **`design/reglas_negocio.md`** — cada regla que el sistema aplica sobre los
-  datos, con la medicion que la justifica y la fecha en que se decidio.
-  Consultalo ANTES de cambiar un umbral, un filtro, una cascada o un
-  veredicto. Incluye las reglas que ya se probaron y se REVIRTIERON, para no
-  volver a proponerlas.
-- **`design/mapa_del_proyecto.md`** — donde vive cada cosa, el ciclo de vida
-  del dato (fuentes -> worker -> snapshot -> backend -> frontend) y la tabla
-  "quiero cambiar X, toco Y".
+- **`design/reglas_negocio.md`** — el QUE y el POR QUE: cada regla que el
+  sistema aplica sobre los datos, con la medicion que la justifica y la fecha
+  en que se decidio. Consultalo ANTES de cambiar un umbral, un filtro o un
+  veredicto. Incluye las reglas que ya se probaron y se REVIRTIERON.
+- **`design/mapa_del_proyecto.md`** — el DONDE: donde vive cada cosa, el ciclo
+  de vida del dato (fuentes -> worker -> snapshot -> backend -> frontend) y la
+  tabla "quiero cambiar X, toco Y".
+- **`design/mecanismos/`** — el COMO: para los modulos mas densos, el
+  mecanismo interno verificado linea por linea contra el codigo -- que formula
+  exacta arma cada columna, en que orden, y por que ese orden importa. No es
+  un resumen de `reglas_negocio.md`: es lo que hace falta leer para TOCAR la
+  logica sin romperla. Hoy: `auditoria_coherencia.md`
+  (`auditar_coherencia()` completo). Se agrega un archivo nuevo cuando una
+  sesion tenga que releer codigo fuente para explicar un mecanismo que no
+  esta documentado -- esa relectura es la senal de que falta el archivo.
 
 ## Los dos flujos (no confundirlos)
 
