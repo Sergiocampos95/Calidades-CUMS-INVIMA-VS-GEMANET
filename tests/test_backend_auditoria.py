@@ -108,52 +108,61 @@ def _fila_auditable(codigo_interno, **overrides):
         "ACTIVO": "Si",
         "TIPO_CODIGO_INTERNO": "cum",
         "ESTADO_LISTADO_INVIMA": "vigente",
+        # El veredicto de vigencia, del que sale PRIORIDAD_ACCION.
+        "ESTADO_CUM_INVIMA": "Activo",
     }
     base.update(overrides)
     return base
 
 
-def test_resumen_auditoria_cuenta_por_estado_coherencia(tmp_path):
+def test_resumen_auditoria_cuenta_por_prioridad(tmp_path):
     cliente, carpeta = _cliente(tmp_path)
     try:
         df = pd.DataFrame(
             [
                 _fila_auditable("1-1", ESTADO_COHERENCIA="correcto"),
                 _fila_auditable("2-2", ESTADO_COHERENCIA="correcto"),
-                _fila_auditable("3-3", ESTADO_COHERENCIA="con_diferencias"),
+                # INVIMA lo declara Inactivo y aqui sigue activo: nivel 1.
+                _fila_auditable(
+                    "3-3", ESTADO_COHERENCIA="con_diferencias", ESTADO_CUM_INVIMA="Inactivo"
+                ),
             ]
         )
         escribir_snapshot({"auditoria": df}, carpeta=carpeta)
 
         r = cliente.get("/auditoria/resumen")
-        assert r.json() == {"correcto": 2, "con_diferencias": 1}
+        assert r.json() == {"5_informativo": 2, "1_critico": 1}
     finally:
         app.dependency_overrides.clear()
 
 
-def test_resumen_auditoria_filtra_inactivos_salvo_la_excepcion_vigente(tmp_path):
-    """Bug real (2026-09-01): el docstring de /resumen decia que el
-    snapshot "auditoria" ya llegaba filtrado al universo auditable desde
-    `pipeline.py` -- pero ese filtro se saco de ahi (para que
-    /auditoria/dimensiones pueda ver el universo COMPLETO, ver
-    pipeline.py) y el router nunca compenso. Resultado medido en
-    produccion: "Vencido en INVIMA" mostraba 50.039 en vez de los 371
-    activos reales. El router debe filtrar el mismo universo auditable que
-    ya usan las calidades (`filtrar_universo_auditable`): activos, mas la
-    unica excepcion (inactivo en Gemma Net pero INVIMA lo declara vigente)."""
+def test_resumen_auditoria_suma_exactamente_el_total_de_la_tabla(tmp_path):
+    """Bug real reportado por el usuario (2026-09-07) comparando las dos
+    pantallas: la tarjeta "Vencido en INVIMA" decia 540 y al abrirla la tabla
+    mostraba 360.
+
+    La causa era que /resumen contaba sobre `_tabla_auditoria` (universo
+    auditable, que CONSERVA la excepcion de inactivo-aqui/vigente-en-INVIMA) y
+    GET /auditoria sobre los activos, que la descarta. La diferencia exacta
+    entre las dos cifras era esa excepcion.
+
+    La invariante que cierra el bug para siempre no es "cuantas filas da cada
+    endpoint" sino que la SUMA de las tarjetas sea el total de la tabla: si
+    vuelven a divergir, este test falla sin importar por que criterio."""
     cliente, carpeta = _cliente(tmp_path)
     try:
         df = pd.DataFrame(
             [
                 _fila_auditable("1-1", ESTADO_COHERENCIA="correcto", ACTIVO="Si"),
-                # Inactivo y SIN correspondencia vigente en INVIMA -- debe
-                # descartarse, es el caso que el bug dejaba pasar.
+                # Inactivo y sin vigencia en INVIMA: fuera del universo auditable.
                 _fila_auditable(
                     "2-2", ESTADO_COHERENCIA="con_diferencias", ACTIVO="No",
-                    ESTADO_LISTADO_INVIMA="vencido",
+                    ESTADO_LISTADO_INVIMA="vencido", ESTADO_CUM_INVIMA="Inactivo",
                 ),
-                # Inactivo pero INVIMA SI lo declara vigente -- la unica
-                # excepcion, debe contarse igual.
+                # Inactivo pero vigente en INVIMA: `filtrar_universo_auditable`
+                # lo CONSERVA, y esta vista igual no debe contarlo -- es una
+                # lista de trabajo y un inactivo no es una accion pendiente.
+                # Contarlo en la tarjeta y no en la tabla era el bug.
                 _fila_auditable(
                     "3-3", ESTADO_COHERENCIA="con_diferencias", ACTIVO="No",
                     ESTADO_LISTADO_INVIMA="vigente",
@@ -162,7 +171,74 @@ def test_resumen_auditoria_filtra_inactivos_salvo_la_excepcion_vigente(tmp_path)
         )
         escribir_snapshot({"auditoria": df}, carpeta=carpeta)
 
-        r = cliente.get("/auditoria/resumen")
-        assert r.json() == {"correcto": 1, "con_diferencias": 1}
+        resumen = cliente.get("/auditoria/resumen").json()
+        total_tabla = cliente.get("/auditoria").json()["total"]
+
+        assert sum(resumen.values()) == total_tabla
+        assert resumen == {"5_informativo": 1}
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_auditoria_filtra_por_nivel_de_prioridad(tmp_path):
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        df = pd.DataFrame(
+            [
+                _fila_auditable("1-1", ESTADO_COHERENCIA="correcto"),
+                _fila_auditable(
+                    "2-2", ESTADO_COHERENCIA="con_diferencias", ESTADO_CUM_INVIMA="Inactivo"
+                ),
+            ]
+        )
+        escribir_snapshot({"auditoria": df}, carpeta=carpeta)
+
+        pagina = cliente.get("/auditoria", params={"prioridad": "1_critico"}).json()
+        assert pagina["total"] == 1
+        assert pagina["filas"][0]["CODIGO_INTERNO"] == "2-2"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_auditoria_recorta_las_columnas_que_viajan_sin_afectar_la_busqueda(tmp_path):
+    """El recorte es de SERIALIZACION, no de filtrado: buscar por un campo que
+    no viaja debe seguir encontrando la fila. Si el recorte se aplicara antes
+    de `paginar`, la busqueda libre (que mira todas las columnas a proposito)
+    dejaria de ver ese campo y la fila desapareceria."""
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        df = pd.DataFrame(
+            [
+                _fila_auditable("1-1", DESCRIPCION="AMOXICILINA", PRINCIPIO_ACTIVO="AMOXICILINA"),
+                _fila_auditable("2-2", DESCRIPCION="IBUPROFENO", PRINCIPIO_ACTIVO="IBUPROFENO"),
+            ]
+        )
+        escribir_snapshot({"auditoria": df}, carpeta=carpeta)
+
+        pedidas = "CODIGO_INTERNO,DESCRIPCION"
+        pagina = cliente.get(
+            "/auditoria", params={"columnas": pedidas, "q": "IBUPROFENO"}
+        ).json()
+
+        assert pagina["total"] == 1, "la busqueda debe ver PRINCIPIO_ACTIVO aunque no viaje"
+        assert list(pagina["filas"][0].keys()) == ["CODIGO_INTERNO", "DESCRIPCION"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_auditoria_ignora_columnas_inexistentes_en_vez_de_reventar(tmp_path):
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        escribir_snapshot({"auditoria": pd.DataFrame([_fila_auditable("1-1")])}, carpeta=carpeta)
+
+        pagina = cliente.get(
+            "/auditoria", params={"columnas": "CODIGO_INTERNO,NO_EXISTE"}
+        ).json()
+        assert list(pagina["filas"][0].keys()) == ["CODIGO_INTERNO"]
+
+        # Ninguna valida: se sirve la tabla completa en vez de una tabla sin
+        # columnas, que en pantalla es indistinguible de "no hay datos".
+        completa = cliente.get("/auditoria", params={"columnas": "NADA,TAMPOCO"}).json()
+        assert "CODIGO_INTERNO" in completa["filas"][0]
     finally:
         app.dependency_overrides.clear()

@@ -11,7 +11,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from backend.app.dependencies import carpeta_snapshots
 from backend.app.paginacion import paginar, valores_distintos
 from backend.app.schemas import LIMITE_PREVISUALIZACION_DEFECTO, PaginaTabla
-from gemma_cum_loader.auditoria.coherencia_invima import filtrar_universo_auditable
+from gemma_cum_loader.auditoria.coherencia_invima import (
+    clasificar_prioridad_accion,
+    filtrar_universo_auditable,
+)
 from worker.almacen_snapshots import leer_tabla
 
 router = APIRouter(prefix="/auditoria", tags=["auditoria"])
@@ -45,10 +48,40 @@ def _tabla_auditoria(carpeta: Path):
     return filtrar_universo_auditable(df)
 
 
+def _priorizables(carpeta: Path):
+    """El universo auditable recortado a los ACTIVOS, con `PRIORIDAD_ACCION`.
+
+    UN SOLO lugar aplica este recorte, y no cada endpoint por su cuenta, por
+    un bug que reporto el usuario (2026-09-07): las tarjetas de "Priorizar lo
+    que requiere accion" contaban sobre `_tabla_auditoria` (64.466 filas) y la
+    tabla de abajo sobre los activos (55.572), asi que la tarjeta prometia
+    "Vencido en INVIMA: 540" y al abrirla salian 360. La diferencia exacta era
+    la excepcion de inactivo-aqui/vigente-en-INVIMA, que `_tabla_auditoria`
+    conserva a proposito y esta vista no debe mostrar.
+
+    Los inactivos no van aca ni siquiera con esa excepcion -- pedido del
+    usuario (2026-09-01): "aqui tambien se deben de eliminar los estados
+    inactivos". La excepcion no se pierde: tiene su propia calidad dedicada,
+    que es donde se revisa a proposito. Un inactivo no es una accion
+    pendiente: ya esta fuera de circulacion.
+    """
+    df = _tabla_auditoria(carpeta)
+    if "ACTIVO" in df.columns:
+        df = df[df["ACTIVO"].fillna("").astype(str).str.strip().str.upper().eq("SI")]
+    # Se calcula aca y no solo en el snapshot para que un snapshot anterior a
+    # la columna siga sirviendo la vista en vez de mostrarla vacia. Es la
+    # MISMA funcion que usa `auditar_coherencia`, asi que no pueden discrepar.
+    if "PRIORIDAD_ACCION" not in df.columns:
+        df = df.assign(PRIORIDAD_ACCION=clasificar_prioridad_accion(df))
+    return df
+
+
 @router.get("", response_model=PaginaTabla)
 def listar_auditoria(
     q: str | None = None,
     estado_coherencia: str | None = None,
+    prioridad: str | None = None,
+    columnas: str | None = None,
     limite: int = LIMITE_PREVISUALIZACION_DEFECTO,
     offset: int = 0,
     todo: bool = False,
@@ -61,19 +94,25 @@ def listar_auditoria(
     (ej. "vencido_en_invima,encontrado_en_otro_estado_invima") -- pedido
     del usuario (2026-08-28): el filtro de un solo estado a la vez no
     alcanzaba, "mas bien seleccion multiple es lo mejor para el caso"."""
-    df = _tabla_auditoria(carpeta)
-    # "Priorizar lo que requiere accion" es una lista de TRABAJO: aca los
-    # inactivos no van, ni siquiera los de la excepcion (inactivo aqui /
-    # vigente en INVIMA) -- pedido del usuario (2026-09-01): "aqui tambien se
-    # deben de eliminar los estados inactivos". Esa excepcion no se pierde:
-    # tiene su propia calidad dedicada ("Inactivo en Gemma Net pero vigente en
-    # INVIMA"), que es donde se revisa a proposito. Un inactivo no es una
-    # accion pendiente: ya esta fuera de circulacion.
-    if "ACTIVO" in df.columns:
-        df = df[df["ACTIVO"].fillna("").astype(str).str.strip().str.upper().eq("SI")]
+    df = _priorizables(carpeta)
     if estado_coherencia and "ESTADO_COHERENCIA" in df.columns:
         valores = [v.strip() for v in estado_coherencia.split(",") if v.strip()]
         df = df[df["ESTADO_COHERENCIA"].isin(valores)]
+    if prioridad and "PRIORIDAD_ACCION" in df.columns:
+        niveles = [v.strip() for v in prioridad.split(",") if v.strip()]
+        df = df[df["PRIORIDAD_ACCION"].isin(niveles)]
+    # El recorte va DESPUES de filtrar, nunca antes: la busqueda libre mira
+    # TODAS las columnas a proposito (ver _buscar_texto_libre), asi que
+    # recortar primero haria que buscar por un campo no visible dejara de
+    # encontrar. Aca solo decide que se SERIALIZA.
+    #
+    # "Priorizar" muestra 6 columnas y el snapshot trae 93: la pagina de 1.000
+    # filas pesaba 2,97 MB para pintar seis. Es opcional porque "Explorar
+    # todos los hallazgos" usa el mismo endpoint y si quiere el ancho completo.
+    if columnas:
+        pedidas = [c.strip() for c in columnas.split(",") if c.strip() in df.columns]
+        if pedidas:
+            df = df[pedidas]
     return paginar(
         df,
         q=q,
@@ -89,21 +128,29 @@ def listar_auditoria(
 @router.get("/valores")
 def valores_columna(columna: str, carpeta: Path = Depends(carpeta_snapshots)) -> list[dict[str, object]]:
     """Los valores distintos de una columna, con conteo -- alimenta el
-    checkbox-list del filtro estilo Excel (pedido del usuario, 2026-08-28)."""
-    return valores_distintos(_tabla_auditoria(carpeta), columna)
+    checkbox-list del filtro estilo Excel (pedido del usuario, 2026-08-28).
+
+    Sobre `_priorizables`, no sobre `_tabla_auditoria`: el filtro debe ofrecer
+    los valores que la tabla PUEDE mostrar. Con el universo sin recortar
+    aparecian opciones que al marcarlas no devolvian ninguna fila."""
+    return valores_distintos(_priorizables(carpeta), columna)
 
 
 @router.get("/resumen")
 def resumen_auditoria(carpeta: Path = Depends(carpeta_snapshots)) -> dict[str, int]:
-    """Conteo por `ESTADO_COHERENCIA` sobre el universo auditable.
+    """Conteo por `PRIORIDAD_ACCION` sobre EXACTAMENTE las filas que sirve
+    `GET /auditoria` -- las tarjetas suman el total de la tabla, siempre.
 
-    El recorte ya lo hace `_tabla_auditoria` (ver su docstring): sin el,
-    "Priorizar lo que requiere accion" mostraba "Vencido en INVIMA: 50.039"
-    en vez de los 371 realmente activos, contradiciendo directamente el
-    pedido de "ignorar totalmente los inactivos". `filtrar_universo_auditable`
-    es el MISMO criterio que aplica cada mascara de `calidades.py`, asi
-    que estas cifras coinciden con la suma de las calidades."""
-    df = _tabla_auditoria(carpeta)
-    if "ESTADO_COHERENCIA" not in df.columns:
+    Antes contaba por `ESTADO_COHERENCIA` y sobre `_tabla_auditoria` (sin el
+    recorte de activos), que es como una tarjeta podia decir 540 y la tabla
+    que abria mostrar 360. Ahora ambas salen de `_priorizables`.
+
+    Las cifras coinciden ademas con las tarjetas de "Entender la calidad del
+    catalogo", que el usuario ya verifico: `clasificar_prioridad_accion` se
+    apoya en el mismo par ESTADO_CUM_INVIMA + ESTADO_LISTADO_INVIMA que las
+    mascaras de `calidades.py` (5.459 "no existe", 16.479 "en renovacion",
+    31.210 "vigencia confirmada")."""
+    df = _priorizables(carpeta)
+    if "PRIORIDAD_ACCION" not in df.columns:
         return {}
-    return df["ESTADO_COHERENCIA"].value_counts().to_dict()
+    return df["PRIORIDAD_ACCION"].value_counts().to_dict()

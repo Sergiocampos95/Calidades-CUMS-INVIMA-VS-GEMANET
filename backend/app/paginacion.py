@@ -107,6 +107,37 @@ def filtrar_tabla(
     return _ordenar(filtrado, ordenar_por, orden_descendente)
 
 
+def _con_fechas_cortas(df: pd.DataFrame) -> pd.DataFrame:
+    """Las columnas de fecha salen como "2026-04-21", no como
+    "2026-04-21T00:00:00.000".
+
+    `to_json(date_format="iso")` expande TODA fecha a fecha+hora, incluidas
+    las que son `datetime.date` puras. Aca no hay ni una hora que mostrar --
+    INVIMA y Gemma Net publican dias de calendario (vigencias, vencimientos),
+    no instantes -- asi que ese sufijo solo ensancha la columna en pantalla y
+    obliga a truncar el dato que si importa: se veia "2010-12-15T00:0...".
+    Reportado por el usuario (2026-09-07).
+
+    Solo toca columnas que de verdad contienen fechas. Las que son TEXTO con
+    una fecha adentro (`universo`/`invima_listados` traen "12/20/1999", el
+    formato crudo de INVIMA) se dejan como estan: reformatearlas seria
+    cambiar el dato, no como se muestra."""
+    columnas_fecha = [
+        c
+        for c in df.columns
+        if pd.api.types.is_datetime64_any_dtype(df[c])
+        or (df[c].dtype == object and pd.api.types.infer_dtype(df[c], skipna=True) == "date")
+    ]
+    if not columnas_fecha:
+        return df
+    # Copia: el DataFrame llega desde el cache compartido entre requests (ver
+    # _CACHE_CALIDADES y leer_tabla) y mutarlo lo contaminaria para todos.
+    salida = df.copy()
+    for columna in columnas_fecha:
+        salida[columna] = pd.to_datetime(salida[columna], errors="coerce").dt.strftime("%Y-%m-%d")
+    return salida
+
+
 def paginar(
     df: pd.DataFrame,
     *,
@@ -132,7 +163,7 @@ def paginar(
     # to_json (no to_dict): convierte NaN a null de forma nativa y los
     # tipos numpy (int64/float64) a tipos JSON validos -- to_dict deja
     # escapar ambos problemas.
-    filas = json.loads(visible.to_json(orient="records", date_format="iso"))
+    filas = json.loads(_con_fechas_cortas(visible).to_json(orient="records", date_format="iso"))
 
     return PaginaTabla(
         total=total,

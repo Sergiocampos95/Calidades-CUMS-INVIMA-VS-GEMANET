@@ -70,8 +70,14 @@ export function obtenerSalud(): Promise<EstadoSalud> {
  * escribe una senal que el worker revisa cada pocos segundos (ver
  * backend/app/routers/refrescar.py). Vuelve de inmediato (202); el avance
  * real se sigue con obtenerProgresoRefresco(). */
-export async function pedirRefresco(): Promise<void> {
-  const respuesta = await fetch(`${BASE_URL}/refrescar`, { method: "POST" });
+/** De donde lee INVIMA el refresco. "api" es el catalogo de hoy (Socrata);
+ * "archivos" son los Excel de listados de `data/`. Dan cifras muy distintas
+ * -- ver src/gemma_cum_loader/ingesta/fuente_invima.py -- y por eso se elige
+ * explicitamente en vez de tener un unico boton. */
+export type FuenteRefresco = "api" | "archivos";
+
+export async function pedirRefresco(fuente: FuenteRefresco = "api"): Promise<void> {
+  const respuesta = await fetch(`${BASE_URL}/refrescar?fuente=${fuente}`, { method: "POST" });
   if (!respuesta.ok) {
     const cuerpo = await respuesta.json().catch(() => null);
     throw new ErrorAPI(cuerpo?.detail ?? `Error ${respuesta.status} pidiendo el refresco`, respuesta.status);
@@ -138,6 +144,12 @@ export function obtenerResumenMetodos(): Promise<ResumenMetodos> {
 
 export interface ParametrosAuditoria extends ParametrosTabla {
   estado_coherencia?: string;
+  /** Uno o varios niveles de PRIORIDAD_ACCION separados por coma
+   * ("1_critico,2_alto"). */
+  prioridad?: string;
+  /** Que columnas serializar, separadas por coma. Recorta solo lo que viaja:
+   * la busqueda y los filtros siguen viendo la tabla entera. */
+  columnas?: string;
 }
 
 export function obtenerAuditoria(parametros: ParametrosAuditoria = {}): Promise<PaginaTabla> {

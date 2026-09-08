@@ -47,6 +47,50 @@ export function etiquetaEstadoCoherencia(valor: string): string {
 
 export const ESTADOS_COHERENCIA = Object.keys(ETIQUETA_ESTADO_COHERENCIA);
 
+// PRIORIDAD_ACCION: los 5 niveles de `clasificar_prioridad_accion` en
+// coherencia_invima.py. El valor crudo lleva prefijo numerico ("1_critico")
+// para que ordenar la columna por texto deje los criticos arriba; la etiqueta
+// que se ve conserva el numero porque "nivel 1" es como se habla de esto.
+const ETIQUETA_PRIORIDAD: Record<string, string> = {
+  "1_critico": "1 · Crítico",
+  "2_alto": "2 · Alto",
+  "3_medio": "3 · Medio",
+  "4_bajo": "4 · Bajo",
+  "5_informativo": "5 · Informativo",
+};
+
+// Que significa cada nivel, para el tooltip de la tarjeta y del selector --
+// el numero solo no dice por que un critico es critico.
+export const AYUDA_PRIORIDAD: Record<string, string> = {
+  "1_critico": "INVIMA marca el CUM como Inactivo y en Gemma Net sigue activo: se puede autorizar sin respaldo sanitario vigente.",
+  "2_alto": "No aparece en ninguno de los 4 listados de INVIMA: no hay contra qué contrastarlo.",
+  "3_medio": "Está en Vencidos u Otros Estados pero el CUM sigue Activo: vigencia temporal mientras se agotan lotes, va a caer.",
+  "4_bajo": "Renovación en curso en INVIMA. Hoy sigue vigente; solo hay que esperar.",
+  "5_informativo": "Vigente en INVIMA y en Gemma Net. Si hay diferencias son de campos, sin riesgo de vigencia.",
+};
+
+const TIPO_POR_PRIORIDAD: Record<string, string> = {
+  "1_critico": "danger",
+  "2_alto": "warn",
+  "3_medio": "acento",
+  "4_bajo": "neutro",
+  "5_informativo": "ok",
+};
+
+export function pildoraPrioridad(valor: unknown): string {
+  const v = String(valor);
+  return pildora(TIPO_POR_PRIORIDAD[v] ?? "neutro", ETIQUETA_PRIORIDAD[v] ?? v);
+}
+
+export function etiquetaPrioridad(valor: string): string {
+  return ETIQUETA_PRIORIDAD[valor] ?? valor;
+}
+
+/** Los 5 niveles en orden de urgencia -- el orden de declaracion del objeto,
+ * que es el que hay que respetar en tarjetas y selector. Alfabeticamente
+ * "2_alto" iria antes que "1_critico", que es exactamente al reves. */
+export const PRIORIDADES = Object.keys(ETIQUETA_PRIORIDAD);
+
 // Proyeccion de ESTADO_COHERENCIA a "en cual de los 4 listados de INVIMA
 // aparece este medicamento" (coherencia_invima.py::_estado_listado_invima) --
 // vocabulario chico y cerrado, se muestra al lado de ACTIVO (Gemma Net) para
@@ -103,6 +147,10 @@ export function pildoraEstadoInvimaUnificado(valor: unknown): string {
 // app_streamlit.py, para que decir "vigente o no" no invente un texto nuevo.
 const ETIQUETA_NOVEDAD_VIGENCIA: Record<string, string> = {
   riesgo_activo_sin_vigencia: "Activo aquí, sin vigencia en INVIMA",
+  // No es riesgo: el CUM sigue Activo en INVIMA aunque el registro este en
+  // Vencidos/Otros Estados -- gracia de lotes (ver NOVEDAD_VIGENCIA_TEMPORAL
+  // en coherencia_invima.py).
+  vigencia_temporal_gracia_lotes: "Vigencia temporal — agotando lotes",
   registro_vencido_en_invima: "Registro vencido en INVIMA",
   revisar_reactivacion: "Inactivo aquí, con registro vivo en INVIMA",
   actualizar_fecha_fin: "Falta la fecha de fin que INVIMA sí tiene",
@@ -112,6 +160,7 @@ const ETIQUETA_NOVEDAD_VIGENCIA: Record<string, string> = {
 
 const TIPO_POR_NOVEDAD_VIGENCIA: Record<string, string> = {
   riesgo_activo_sin_vigencia: "danger",
+  vigencia_temporal_gracia_lotes: "warn",
   registro_vencido_en_invima: "danger",
   revisar_reactivacion: "warn",
   actualizar_fecha_fin: "warn",
@@ -136,7 +185,14 @@ export function pildoraNovedadVigencia(valor: unknown): string {
 // que permite renombrar sin invalidar los snapshots ya escritos.
 const ETIQUETA_VALIDACION: Record<string, string> = {
   coincide: "Coincide",
-  difiere: "Diferente",
+  // "No coincide / Actualizar campo": el veredicto Y la accion en la misma
+  // pildora (pedido del usuario, 2026-09-08). Saber que un campo difiere no
+  // dice que hacer con el, y quien revisa esta tabla lo que necesita es
+  // exactamente eso: copiar el dato oficial de INVIMA a Gemma Net.
+  // Ademas iguala el vocabulario con la tabla de FECHAS de la misma pantalla,
+  // que decia "no coincide" para este mismo concepto mientras esta decia
+  // "Diferente" -- dos palabras para lo mismo, una encima de la otra.
+  difiere: "No coincide / Actualizar campo",
   "sin comparar": "Sin comparar",
   "sin dato en Gemma Net": "Sin dato en Gemma Net",
 };

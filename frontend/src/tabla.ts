@@ -51,8 +51,11 @@ export type FormatoDescarga = "xlsx" | "csv" | "txt";
  * orden y los textos no se dupliquen por vista. */
 const FORMATOS_DESCARGA: { formato: FormatoDescarga; etiqueta: string; titulo: string }[] = [
   { formato: "xlsx", etiqueta: "⤓ Excel", titulo: "Descargar en Excel (.xlsx)" },
-  { formato: "csv", etiqueta: "⤓ CSV", titulo: "Descargar en CSV (separado por comas)" },
-  { formato: "txt", etiqueta: "⤓ TXT", titulo: "Descargar en texto separado por tabulaciones" },
+  // Los dos van separados por PIPE (backend/app/exportar.py:
+  // DELIMITADOR_EXPORTACION). El tooltip lo dice porque el importador de Excel
+  // pregunta por el separador y equivocarlo deja todo en una sola columna.
+  { formato: "csv", etiqueta: "⤓ CSV", titulo: "Descargar en CSV separado por pipe ( | )" },
+  { formato: "txt", etiqueta: "⤓ TXT", titulo: "Descargar en texto separado por pipe ( | )" },
 ];
 
 export interface OpcionesTablaFiltrable {
@@ -475,8 +478,41 @@ export class TablaFiltrable {
    * render itera esto y nunca `opciones.columnas` directo, para que encabezado,
    * colgroup y celdas no se puedan desalinear entre si. */
   private get columnasVisibles(): string[] {
-    if (this.mostrarTecnicas) return this.opciones.columnas;
-    return this.opciones.columnas.filter((c) => !COLUMNAS_TECNICAS.has(c));
+    const columnas = this.columnasDeLaPagina;
+    if (this.mostrarTecnicas) return columnas;
+    return columnas.filter((c) => !COLUMNAS_TECNICAS.has(c));
+  }
+
+  /** Las columnas que la pagina TRAE de verdad, no las que la tabla declaro
+   * al construirse.
+   *
+   * Importa porque el backend recorta columnas cuando hay una seccion
+   * abierta: la calidad "Diferencia de estado o campos" declara 38, pero la
+   * seccion Concentracion devuelve 8. Dibujando `opciones.columnas` salian
+   * las 30 restantes como celdas "—" que igual ocupaban ancho y empujaban a
+   * la derecha lo que si importa -- reportado por el usuario (2026-09-07):
+   * "no se ve el dato pero el campo sigue ahi y pesa". Era justo lo que el
+   * recorte venia a resolver, perdido en la ultima capa.
+   *
+   * Se derivan de la primera fila y no de una lista paralela en el frontend
+   * para que no puedan discrepar: la unica fuente de que columnas tiene una
+   * seccion es `columnas_de_seccion` en el backend. Sin filas todavia
+   * (primera carga, o un filtro sin resultados) se cae a lo declarado, que
+   * es lo que habia antes. */
+  private get columnasDeLaPagina(): string[] {
+    // SOLO con una seccion abierta se confia en lo que trae la fila. Ahi el
+    // backend recorto a proposito (`columnas_de_seccion`) y esas columnas ni
+    // siquiera estan en las declaradas, asi que hay que tomarlas de la fila.
+    //
+    // En el resto NO: endpoints genericos como /auditoria devuelven la tabla
+    // ENTERA del snapshot (~60 columnas: POSOLOGIA, VALOR, REGULADO...) y la
+    // vista declara las 5 que le interesan. Tomar las de la fila ahi vuelca
+    // el snapshot completo en pantalla -- paso el 2026-09-07 al conectar esto
+    // y es justo lo contrario de lo que la vista pide.
+    if (!this.opciones.seccion) return this.opciones.columnas;
+    const fila = this.ultimaPagina?.filas[0];
+    if (!fila) return this.opciones.columnas;
+    return Object.keys(fila);
   }
 
   private onMostrarTecnicas(marcado: boolean): void {
@@ -701,9 +737,11 @@ export class TablaFiltrable {
     }
     this.contenedorDatos.appendChild(leyenda);
 
-    // Solo se ofrece si ESTA tabla trae alguna columna tecnica: una casilla
-    // que no revela nada seria ruido en las tablas que no las tienen.
-    const tecnicasEnTabla = this.opciones.columnas.filter((c) => COLUMNAS_TECNICAS.has(c));
+    // Solo se ofrece si ESTA pagina trae alguna columna tecnica: una casilla
+    // que no revela nada seria ruido. Se mira lo que la pagina trae de
+    // verdad, no lo declarado -- una seccion recortada puede no incluir
+    // CONSULTA_VERIFICACION_SQL, y ahi la casilla no destaparia nada.
+    const tecnicasEnTabla = this.columnasDeLaPagina.filter((c) => COLUMNAS_TECNICAS.has(c));
     if (tecnicasEnTabla.length > 0) {
       const etiquetaTecnicas = document.createElement("label");
       etiquetaTecnicas.className = "tabla-filtrable__casilla";

@@ -12,13 +12,17 @@ import {
 } from "../api";
 import { cabeceraConDescarga } from "../descargas";
 import {
+  AYUDA_PRIORIDAD,
   ESTADOS_COHERENCIA,
+  PRIORIDADES,
   etiquetaEstadoCoherencia,
+  etiquetaPrioridad,
   pildoraEstadoCadena,
   pildoraEstadoCoherencia,
   pildoraEstadoInvimaUnificado,
   pildoraEstadoListadoInvima,
   pildoraNovedadVigencia,
+  pildoraPrioridad,
   pildoraValidacion,
 } from "../pildoras";
 import { SelectorMultiple } from "../selector-multiple";
@@ -31,6 +35,7 @@ import type { CalidadResumen, EslabonResumen, SeccionCalidad } from "../tipos";
 // al de INVIMA en la misma fila, no en pantallas separadas.
 const ETIQUETAS_ACTIVO_VS_INVIMA = {
   ACTIVO: "Activo Gemma Net",
+  PRIORIDAD_ACCION: "Prioridad",
   // ESTADO_CUM_INVIMA es la vigencia REAL que declara INVIMA; el listado solo
   // dice en cual de los 4 archivos aparece el registro. Rotularlos distinto
   // evita leer la ubicacion como si fuera el veredicto.
@@ -58,6 +63,7 @@ const FORMATEADOR_ESTADO = (columna: string, valor: unknown) => {
   if (columna === "ESTADO_COHERENCIA") return pildoraEstadoCoherencia(valor);
   if (columna === "ESTADO_LISTADO_INVIMA") return pildoraEstadoListadoInvima(valor);
   if (columna === "ESTADO_INVIMA") return pildoraEstadoInvimaUnificado(valor);
+  if (columna === "PRIORIDAD_ACCION") return pildoraPrioridad(valor);
   return null;
 };
 
@@ -124,35 +130,57 @@ function selectorEstado(): SelectorMultiple {
   );
 }
 
+function selectorPrioridad(): SelectorMultiple {
+  return new SelectorMultiple(
+    PRIORIDADES.map((p) => ({ valor: p, etiqueta: etiquetaPrioridad(p) })),
+    "Todos los niveles",
+  );
+}
+
 export async function montarAuditPriorizar(contenedor: HTMLElement): Promise<void> {
-  contenedor.innerHTML = `<p class="vista__intro">Priorizá una acción: cada tarjeta es un estado de coherencia con Gemma Net, de mayor a menor riesgo.</p>`;
+  contenedor.innerHTML = `<p class="vista__intro">Priorizá una acción: cada medicamento activo lleva un nivel de riesgo, del 1 (crítico) al 5 (informativo). Los niveles suman el total de la tabla.</p>`;
   const tarjetas = document.createElement("div");
   contenedor.appendChild(tarjetas);
   try {
     const resumen = await obtenerResumenAuditoria();
     renderTarjetas(
       tarjetas,
-      [
-        { clave: "vencido_en_invima", etiqueta: "Vencido en INVIMA" },
-        { clave: "encontrado_en_otro_estado_invima", etiqueta: "En otro estado en INVIMA" },
-        { clave: "en_tramite_renovacion_invima", etiqueta: "En trámite de renovación" },
-        { clave: "con_diferencias", etiqueta: "Con algún campo distinto al de INVIMA" },
-      ],
+      PRIORIDADES.map((p) => ({ clave: p, etiqueta: etiquetaPrioridad(p), ayuda: AYUDA_PRIORIDAD[p] })),
       resumen,
     );
   } catch (error) {
     tarjetas.innerHTML = `<p class="aviso aviso--error">${error instanceof Error ? error.message : String(error)}</p>`;
   }
 
-  const select = selectorEstado();
+  const select = selectorPrioridad();
   const seccionTabla = document.createElement("div");
   contenedor.appendChild(seccionTabla);
+  // Seis columnas, no las 92 del snapshot -- pedido del usuario (2026-09-07):
+  // "tanta cantidad de informacion por tantos medicamentos te muestra tanto
+  // que no ves nada". PRIORIDAD_ACCION reemplaza a ESTADO_COHERENCIA: dice lo
+  // mismo pero ordenado por urgencia, y ESTADO_CUM_INVIMA + ESTADO_LISTADO
+  // dejan ver de donde sale el nivel (el veredicto y donde se encontro).
+  const COLUMNAS_PRIORIZAR = [
+    "CODIGO_INTERNO",
+    "DESCRIPCION",
+    "PRIORIDAD_ACCION",
+    "ACTIVO",
+    "ESTADO_CUM_INVIMA",
+    "ESTADO_LISTADO_INVIMA",
+  ];
   new TablaFiltrable(seccionTabla, {
-    columnas: ["CODIGO_INTERNO", "DESCRIPCION", "ESTADO_COHERENCIA", "ACTIVO", "ESTADO_LISTADO_INVIMA"],
+    columnas: COLUMNAS_PRIORIZAR,
     controlesExtra: select.elemento,
     formatearCelda: FORMATEADOR_ESTADO,
     etiquetasColumna: ETIQUETAS_ACTIVO_VS_INVIMA,
-    cargarPagina: (p) => obtenerAuditoria({ ...p, estado_coherencia: select.valores().join(",") || undefined }),
+    // `columnas` recorta lo que VIAJA: sin el, cada pagina traia las 93
+    // columnas del snapshot (2,97 MB) para pintar estas seis.
+    cargarPagina: (p) =>
+      obtenerAuditoria({
+        ...p,
+        prioridad: select.valores().join(",") || undefined,
+        columnas: COLUMNAS_PRIORIZAR.join(","),
+      }),
     obtenerValoresColumna: (columna) => obtenerValoresColumna("/auditoria/valores", columna),
   });
 }
