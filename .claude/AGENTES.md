@@ -105,11 +105,12 @@ produccion y volcarlos al transcript no ayuda a nadie. Para investigarlos se
 usa Python y se citan **conteos y porcentajes, no filas** — que es justo lo que
 pide la regla del proyecto.
 
-### Los dos hooks
+### Los cuatro hooks
 
-**`hooks/ruff_post_edit.py`** (PostToolUse) — despues de cada edicion de un
-`.py` pasa `ruff check --select E9,F --fix`. Lo autocorregible se arregla solo;
-lo que queda vuelve al agente para que lo corrija en el mismo turno.
+**`hooks/ruff_post_edit.py`** (PostToolUse, matcher `Write|Edit`) — despues de
+cada edicion de un `.py` pasa `ruff check --select E9,F --fix`. Lo
+autocorregible se arregla solo; lo que queda vuelve al agente para que lo
+corrija en el mismo turno.
 
 Usa `E9,F` (errores reales) y **no** las reglas por defecto de ruff. Medido el
 2026-08-19 con ruff 0.16.3: el proyecto esta limpio en `E9,F` pero arrastra 26
@@ -127,8 +128,32 @@ arregle. Dos topes deliberados:
 - **Se rinde tras 3 bloqueos seguidos** y avisa al usuario. Un hook Stop sin
   tope se convierte en un bucle.
 
-Ambos fallan hacia el lado seguro: si ruff o pytest no pueden correr, el hook
-sale en silencio y no tumba el trabajo del agente.
+**`hooks/marcar_lectura_docs.py`** (PostToolUse, matcher `Read`) +
+**`hooks/recordar_docs_negocio.py`** (PostToolUse, matcher `Write|Edit`) —
+el par que mantiene `design/` alineado con el codigo sin depender de que el
+modelo se acuerde (pedido del usuario, 2026-09-09: "que este modelo de
+desarrollo se siga alimentando con el pasar del tiempo"). El primero marca,
+por sesion, que documentos de `design/` se leyeron; el segundo avisa por dos
+vias independientes cuando se edita un modulo de `MODULOS_SENSIBLES`
+(hoy: `coherencia_invima.py`, `calidades.py`):
+
+- **No se leyo el documento esta sesion** -- avisa una vez, se calla despues
+  de la primera lectura marcada.
+- **El documento quedo mas viejo que el codigo** (fecha de modificacion del
+  archivo fuente posterior a la de su `design/mecanismos/*.md`) -- avisa en
+  CADA edicion, sin importar la sesion, hasta que alguien vuelva a guardar
+  el documento. Es la senal objetiva que sobrevive al cierre del chat.
+
+Extender el alcance a un modulo nuevo es agregar una fila a
+`MODULOS_SENSIBLES` -- el mismo gesto que crear su archivo en
+`design/mecanismos/`.
+
+Los cuatro fallan hacia el lado seguro: si ruff, pytest, o la lectura/escritura
+de estado no pueden correr, el hook sale en silencio y no tumba el trabajo del
+agente. Ninguno BLOQUEA una edicion (`PreToolUse` con esquema de bloqueo no
+esta verificado en esta version) -- los dos ultimos avisan via
+`hookSpecificOutput.additionalContext`, el mismo canal ya probado en
+`ruff_post_edit.py`.
 
 Para revisarlos o desactivarlos: `/hooks`.
 

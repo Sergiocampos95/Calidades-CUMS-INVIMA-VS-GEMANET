@@ -293,7 +293,18 @@ Copilot: un cambio inesperado en el arbol es propio, no de otra herramienta.
 - `.ai/bitacora.jsonl` es un registro append-only de cambios no triviales
   (agente, fecha, resumen, archivos). Formato en `.ai/README.md`. Sigue
   vigente: es la memoria en una linea de por que se hizo cada tanda, sin
-  abrir el log de git. Comando: `/bitacora`.
+  abrir el log de git. **Comando: `/bitacora` -- correlo SIEMPRE al cerrar
+  una sesion que toco codigo**, no solo cuando el cambio parezca grande. Ya
+  no es solo un registro: verifica que `design/reglas_negocio.md` y
+  `design/mecanismos/` queden alineados con lo que se cambio (actualizarlos
+  ahi mismo, o decir explicitamente por que no hacia falta), revisa si la
+  memoria persistente necesita la misma correccion, y recuerda subir los
+  commits pendientes. Es el cierre del ciclo de sostenibilidad: los hooks
+  de `.claude/hooks/` (documentados en `.claude/AGENTES.md`) avisan EN VIVO,
+  durante la edicion, si se toco un modulo sensible sin leer su documento o
+  si el documento quedo mas viejo que el codigo; `/bitacora` es el punto
+  donde esa alineacion se resuelve antes de que la sesion termine, en vez de
+  quedar como un aviso que nadie atendio.
 - Los planes de `.ai/planes/` quedan como HISTORIA de tareas ya ejecutadas.
   **No se editan**: si un plan viejo dice algo que hoy es falso, lo que vale
   es `design/reglas_negocio.md`. Varios mencionan a Copilot y el reparto de
