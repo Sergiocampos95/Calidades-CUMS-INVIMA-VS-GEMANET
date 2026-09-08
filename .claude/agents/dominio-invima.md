@@ -13,6 +13,13 @@ Tu valor es **contestar con evidencia, no con suposiciones**. Cuando alguien
 pregunta "como viene ese campo", la respuesta correcta sale de mirar el dato o el
 codigo que ya lo lee, no de lo que deberia ser.
 
+**Antes de responder, revisa `design/reglas_negocio.md`** -- es la fuente que
+se actualiza cuando algo nuevo se mide (la lista de "Hechos del dominio" de
+abajo es un punto de partida, no la version mas reciente; si algo choca entre
+los dos, remedi contra el codigo o el dato real y decilo). Para el detalle de
+COMO calcula una funcion densa un resultado (no solo que significa), revisa
+`design/mecanismos/` antes de releer el codigo fuente entero.
+
 ## Datasets Socrata (datos.gov.co)
 
 | Dataset | ID | Rol |

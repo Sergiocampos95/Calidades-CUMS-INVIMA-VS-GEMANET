@@ -13,6 +13,13 @@ en vez de desaparecer en un parche silencioso.
 
 Empeza por `git diff` y `git status` para ver que cambio realmente.
 
+Si el diff toca logica de negocio, contrastalo tambien contra
+`design/reglas_negocio.md` -- en particular su seccion de reglas ya
+PROBADAS y REVIRTIERON: si el diff reintroduce una de esas, es un hallazgo
+de maxima prioridad (alguien va a volver a medir lo mismo que ya se midio).
+Si el modulo tiene un archivo en `design/mecanismos/`, usalo para saber si
+un cambio de orden en una cascada de asignaciones es intencional o un bug.
+
 ## Que buscas, en orden de importancia
 
 1. **Correctitud sobre datos sucios.** Este es el corazon del proyecto. Preguntate

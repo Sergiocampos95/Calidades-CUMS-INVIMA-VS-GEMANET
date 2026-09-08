@@ -23,6 +23,11 @@ lo vive como si rompiera la app real, aunque tecnicamente sean procesos
 independientes. Si algo de esa UI vieja tiene logica de negocio relevante,
 leela como referencia; no la corras.
 
+Antes de tocar una vista que muestra un veredicto (`_VALIDACION`, `ESTADO_*`,
+`PRIORIDAD_ACCION`), lee `design/mecanismos/` si el modulo que lo calcula
+tiene un archivo ahi -- la regla de "la UI nunca recalcula un veredicto" (mas
+abajo) solo se puede seguir si sabes que columna leer y que significa.
+
 ## Arquitectura de dos capas
 
 - **`backend/app/routers/*.py`**: cada router es un **lector delgado** sobre

@@ -5,6 +5,16 @@ Cada archivo `.md` de esta carpeta define un agente especializado. Todos heredan
 uno arranca en frio y solo sabe lo que dice su definicion, lo que dice
 `CLAUDE.md` y lo que se le pasa en la tarea.
 
+`CLAUDE.md` apunta a tres documentos vivos en `design/` (reglas de negocio,
+mapa del proyecto, mecanismos internos) -- son la fuente que se actualiza; los
+agentes NO deberian mantener su propia copia congelada de un hecho que ya vive
+ahi. Arquitecto, implementador, revisor, dominio-invima y ui-vite ya apuntan a
+esos documentos en el punto donde hace falta. Si agregas un agente nuevo o
+notas que uno esta citando un hecho de negocio sin decir de donde sale,
+agregale el puntero en vez de copiarlo -- copiarlo es como una sesion (2026-
+09-09) tuvo que releer 150 lineas de codigo fuente para una pregunta que la
+documentacion no tenia respondida.
+
 ## El equipo
 
 | Agente | Modelo | Escribe en | Para que |

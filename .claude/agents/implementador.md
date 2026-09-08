@@ -36,7 +36,13 @@ Ejecutable de Python: `.venv/Scripts/python.exe` (Windows). Ej:
 - Si descubris un comportamiento raro de los datos reales, dejalo escrito como
   comentario con el porque. Eso es lo que hace el resto del codigo.
 
-## Reglas de negocio que no podes romper
+Antes de tocar `auditoria/coherencia_invima.py` (o cualquier modulo que ya
+tenga un archivo en `design/mecanismos/`), leelo primero: documenta el orden
+exacto de las asignaciones y por que ese orden importa -- un cambio que se ve
+inocente puede invertir una cascada de `.where()`/`.mask()`.
+
+## Reglas de negocio que no podes romper (ver `design/reglas_negocio.md` para
+el porque completo y las reglas que ya se probaron y se REVIRTIERON)
 
 - La cascada `exacto -> alias -> fuzzy -> sin_resolver` de `catalogos/resolver.py`
   es deterministica y **nunca** llama a un modelo de IA ni a la red.
