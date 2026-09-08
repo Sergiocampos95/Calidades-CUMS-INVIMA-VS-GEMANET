@@ -8,7 +8,12 @@ import { etiquetaEstadoListadoInvima, pildoraValidacion } from "../pildoras";
 const CAMPOS_COMPARABLES = [
   { columna: "DESCRIPCION", etiqueta: "Descripción" },
   { columna: "PRINCIPIO_ACTIVO", etiqueta: "Principio activo" },
-  { columna: "CONCENTRACION", etiqueta: "Concentración" },
+  // La columna se llama CONCENTRACION pero trae la PRESENTACIÓN COMERCIAL
+  // ("CAJA POR 100 TABLETAS EN BLISTER"), y por eso se compara contra
+  // DESCRIPCION_COMERCIAL de INVIMA (90,3 % de coincidencias contra 6,1 % de
+  // su CONCENTRACION real). Se rotula por lo que es: leerlo como
+  // "Concentración" hacía parecer que el cruce traía el campo equivocado.
+  { columna: "CONCENTRACION", etiqueta: "Presentación comercial" },
   { columna: "FORMA_FARMACEUTICA", etiqueta: "Forma farmacéutica" },
   { columna: "UNIDAD_MEDIDA", etiqueta: "Unidad de medida" },
   { columna: "CODIGO_ATC", etiqueta: "Código ATC" },
@@ -355,6 +360,19 @@ function diagnosticoDeVigencia(invima: Record<string, unknown>[], gemmaNet: Reco
     const detalleVigencia = String(fila["DETALLE_VIGENCIA_INVIMA"] || "");
     const estadoInvimaDetalle = String(fila["ESTADO_INVIMA_DETALLE"] || "");
     const camposConDiferencia = String(fila["CAMPOS_CON_DIFERENCIA"] || "");
+    // El CUM sigue Activo en INVIMA aunque el registro este en el listado de
+    // Vencidos u Otros Estados: es la "gracia de lotes" (agotar lo fabricado),
+    // no una autorizacion sin respaldo. Sin mirar esto la pantalla anunciaba
+    // "CRÍTICO — se puede autorizar un medicamento sin registro vigente" tres
+    // líneas encima de su propia fila "Estado del registro: Activo / Activo /
+    // coincide" -- reportado por el usuario (2026-09-07) sobre 20055681-1, y
+    // contradiciendo al nivel 3 que la auditoría ya le había asignado.
+    const cumActivoEnInvima = String(fila["ESTADO_CUM_INVIMA"] || "").trim().toLowerCase() === "activo";
+    // Riesgo real de vigencia = activo aquí Y sin respaldo en INVIMA. Es el
+    // MISMO par (ACTIVO, ESTADO_CUM_INVIMA) con el que
+    // `clasificar_prioridad_accion` decide el nivel 1, para que esta pantalla
+    // y las tarjetas no puedan volver a decir cosas distintas del mismo CUM.
+    const sinRespaldoVigente = activo && !cumActivoEnInvima;
 
     // Un "correcto" solo puede anunciarse como tal si NADA lo contradice.
     // Bug real que corrige (20055212-21, reportado por el usuario el
@@ -417,24 +435,65 @@ function diagnosticoDeVigencia(invima: Record<string, unknown>[], gemmaNet: Reco
           ],
         };
 
-      case "vencido_en_invima":
+      case "vencido_en_invima": {
+        // Tres casos distintos, no dos: inactivo aquí (coherente), activo con
+        // el CUM aún Activo en INVIMA (gracia de lotes) y activo sin respaldo
+        // (el único crítico de verdad).
+        if (!activo) {
+          return {
+            nivel: "advertencia",
+            titulo: "⚠ Vencido en INVIMA",
+            icono: "⏰",
+            mensaje: detalleVigencia || "INVIMA tiene este registro en su listado de VENCIDOS. En Gemma Net está inactivo.",
+            pasos: ["Ya está inactivo en Gemma Net — estado coherente", "Confirmar que la fecha de inactivación es consistente con el vencimiento"],
+          };
+        }
+        if (!sinRespaldoVigente) {
+          return {
+            nivel: "advertencia",
+            titulo: "⚠ Vigencia temporal — agotando lotes",
+            icono: "⏳",
+            mensaje:
+              detalleVigencia ||
+              "Está en el listado de VENCIDOS de INVIMA, pero el CUM sigue Activo: vigencia temporal mientras se agotan los lotes fabricados.",
+            pasos: [
+              "Se puede seguir dispensando mientras el CUM siga Activo en INVIMA",
+              "Vigilar: deja de estar vigente en cuanto INVIMA cambie el estado del CUM",
+              "Solicitar la renovación del registro si se requiere seguir usándolo",
+            ],
+          };
+        }
         return {
-          nivel: activo ? "critico" : "advertencia",
-          titulo: activo ? "🔴 CRÍTICO — Vencido y activo" : "⚠ Vencido en INVIMA",
-          icono: activo ? "🔴" : "⏰",
-          mensaje: detalleVigencia || `INVIMA tiene este registro en su listado de VENCIDOS. En Gemma Net está ${activoStr}.`,
-          pasos: activo
-            ? [
-                "INMEDIATAMENTE: desactivar en Gemma Net",
-                "Notificar al área clínica",
-                "No dispensar con un registro vencido",
-                "Solicitar renovación del registro a INVIMA si se requiere seguir usándolo",
-              ]
-            : ["Ya está inactivo en Gemma Net — estado coherente", "Confirmar que la fecha de inactivación es consistente con el vencimiento"],
+          nivel: "critico",
+          titulo: "🔴 CRÍTICO — Vencido y activo",
+          icono: "🔴",
+          mensaje: detalleVigencia || "INVIMA tiene este registro en su listado de VENCIDOS. En Gemma Net está activo.",
+          pasos: [
+            "INMEDIATAMENTE: desactivar en Gemma Net",
+            "Notificar al área clínica",
+            "No dispensar con un registro vencido",
+            "Solicitar renovación del registro a INVIMA si se requiere seguir usándolo",
+          ],
         };
+      }
 
       case "encontrado_en_otro_estado_invima": {
         const detalleEstado = estadoInvimaDetalle || "un estado especial (Cancelado, Suspendido, Negado, Desistido, Abandono o con pérdida de fuerza ejecutoria)";
+        // Mismo criterio que el listado de Vencidos: lo que decide el riesgo
+        // es ESTADO_CUM_INVIMA, no en que archivo aparece el registro.
+        if (activo && !sinRespaldoVigente) {
+          return {
+            nivel: "advertencia",
+            titulo: `⏳ ${estadoInvimaDetalle || "Otro estado"} — CUM aún vigente`,
+            icono: "⏳",
+            mensaje: `INVIMA reporta este registro como "${detalleEstado}", pero el CUM sigue Activo: todavía hay respaldo sanitario.`,
+            pasos: [
+              "Se puede seguir dispensando mientras el CUM siga Activo en INVIMA",
+              "Vigilar: el estado del registro ya cambió, el del CUM puede seguirlo",
+              "Confirmar con INVIMA si el cambio de estado afecta la comercialización",
+            ],
+          };
+        }
         return {
           nivel: activo ? "critico" : "ok",
           titulo: activo ? `🔴 CRÍTICO — ${estadoInvimaDetalle || "Otro estado"} y activo` : `✓ ${estadoInvimaDetalle || "Otro estado"} e inactivo`,
@@ -622,14 +681,34 @@ function crearComparacionEstadosHTML(
   // migracion a la nube). Mostrarlas como "2999-12-31" al lado de una fecha
   // real de INVIMA hacia parecer que el dato estaba mal cuando en realidad
   // esta ausente -- dos problemas distintos, que se atienden distinto.
+  // Las de fechas PASADAS son una lista corta y cerrada (FECHAS_CENTINELA en
+  // coherencia_invima.py). 1899-12-30 es el cero del calendario serial de Excel.
   const COMODINES = new Set(["2999-12-31", "1900-01-01", "1899-12-30"]);
+  // Las de "no vence" NO son una lista: son decenas de variantes repartidas
+  // (3000-01-01, 3000-12-31, 3001-01-01, 2199-01-01, 2900-01-01...), asi que
+  // se cortan por ANO igual que ANIO_CENTINELA_SIN_VENCIMIENTO en
+  // coherencia_invima.py -- ESE es el numero de referencia, este es su espejo.
+  //
+  // Sin este corte la tabla decia "falta actualizar" sobre un vencimiento de
+  // INVIMA del ano 3000, o sea: copia a Gemma Net una fecha imposible. Lo
+  // reporto el usuario (2026-09-07, "ano 3000 imposible") sobre 19998786-12, y
+  // la auditoria YA lo tenia bien (COHERENCIA_FECHAS_INVIMA vacio, sin
+  // hallazgo): la pantalla lo contradecia por recalcular con lista incompleta.
+  const ANIO_SIN_VENCIMIENTO = 2100;
   const soloFecha = (valor: unknown): string => String(valor ?? "").trim().slice(0, 10);
-  const esComodin = (valor: unknown) => COMODINES.has(soloFecha(valor));
+  const esComodin = (valor: unknown) => {
+    const texto = soloFecha(valor);
+    if (COMODINES.has(texto)) return true;
+    const anio = Number(texto.slice(0, 4));
+    return Number.isFinite(anio) && anio >= ANIO_SIN_VENCIMIENTO;
+  };
 
   const celda = (valor: unknown): string => {
     const texto = soloFecha(valor);
     if (!texto) return `<span class="celda-muda">—</span>`;
-    if (esComodin(valor)) return `<span class="celda-muda" title="Fecha comodín de Gemma Net: significa «sin dato», no una fecha real">sin dato</span>`;
+    // El texto ya no dice "de Gemma Net": desde que el corte por año entró,
+    // esto también tapa los comodines de INVIMA (vencimientos del año 3000).
+    if (esComodin(valor)) return `<span class="celda-muda" title="Fecha comodín (${escaparHTML(soloFecha(valor))}): significa «sin dato», no una fecha real">sin dato</span>`;
     // Mes con letras para que no se pueda confundir con el dia (INVIMA es
     // MM/DD/YYYY en origen y Gemma Net YYYY-MM-DD). El ISO exacto queda en el
     // title, que es el dato con el que alguien buscaria en la fuente.
@@ -746,7 +825,7 @@ function crearComparacionEstadosHTML(
         <th scope="row">${escaparHTML(par.etiqueta)}</th>
         <td>${celda(par.gemma)}</td>
         <td>${celda(par.invima)}</td>
-        <td>${difiere ? '<span class="pildora pildora--warn">no coincide</span>' : falta ? '<span class="pildora pildora--warn">falta actualizar</span>' : comparable ? '<span class="pildora pildora--ok">coincide</span>' : `<span class="celda-muda" title="${escaparHTML(motivoSinComparar(par.gemma, par.invima))}">sin comparar</span>`}</td>
+        <td>${difiere ? '<span class="pildora pildora--warn">No coincide / Actualizar campo</span>' : falta ? '<span class="pildora pildora--warn">Falta / Actualizar campo</span>' : comparable ? '<span class="pildora pildora--ok">Coincide</span>' : `<span class="celda-muda" title="${escaparHTML(motivoSinComparar(par.gemma, par.invima))}">Sin comparar</span>`}</td>
       </tr>`;
     })
     .join("");
