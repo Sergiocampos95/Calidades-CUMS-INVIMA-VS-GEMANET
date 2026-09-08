@@ -5,12 +5,14 @@ tests/test_pipeline.py)."""
 
 import pandas as pd
 
+from worker import tareas
 from worker.almacen_snapshots import leer_tabla
 from worker.estado import (
     ESTADO_ERROR,
     ESTADO_OK,
     ESTADO_PASO_ERROR,
     ESTADO_PASO_HECHO,
+    iniciar_progreso,
     progreso_actual,
     ultimo_refresco,
 )
@@ -365,3 +367,28 @@ def test_los_nulos_no_se_vuelven_la_cadena_nan_al_normalizar():
 
     assert unificado["EXPEDIENTE"].isna().sum() == 1
     assert "nan" not in unificado["EXPEDIENTE"].dropna().tolist()
+
+
+def test_el_progreso_dice_de_que_archivo_salio_el_catalogo(tmp_path):
+    """Con la fuente "archivos", el paso de INVIMA debe decir de QUE Excel
+    salio el dato. Las dos fuentes (API y archivos) producen snapshots que se
+    ven igual de sanos pero con cifras muy distintas, asi que un progreso mudo
+    sobre el origen deja imposible saber cual se cargo -- que es lo unico que
+    esta funcionalidad viene a resolver."""
+    from gemma_cum_loader.ingesta.fuente_invima import LectorInvimaDeArchivos
+    from gemma_cum_loader.ingesta.invima_socrata import DATASET_CUM_VIGENTES
+    pd.DataFrame({"EXPEDIENTE": ["1"]}).to_excel(
+        tmp_path / "ListadoCodigoUnicoVigentesJulio2026.xlsx", index=False
+    )
+    falso = {DATASET_CUM_VIGENTES: ("invima_vigentes", lambda r: pd.DataFrame())}
+    lector = LectorInvimaDeArchivos(tmp_path, por_dataset=falso)
+
+    ruta_estado = tmp_path / "estado.sqlite3"
+    iniciar_progreso(["Leyendo INVIMA -- Vigentes"], ruta=ruta_estado)
+    tareas._leer_invima(
+        "Leyendo INVIMA -- Vigentes", lector.leer, lector, ruta_estado=ruta_estado
+    )
+
+    paso = progreso_actual(ruta=ruta_estado)[0]
+    assert paso.estado == ESTADO_PASO_HECHO
+    assert "ListadoCodigoUnicoVigentesJulio2026.xlsx" in paso.detalle

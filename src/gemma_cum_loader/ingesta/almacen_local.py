@@ -109,6 +109,7 @@ def descubrir(
     tipo: str,
     carpeta: Path | None = None,
     validador: Callable[[Path], bool] | None = None,
+    extensiones: tuple[str, ...] | None = None,
 ) -> ArchivoDescubierto | None:
     """El archivo mas reciente de ese tipo que ademas sirva, o None.
 
@@ -117,6 +118,14 @@ def descubrir(
     traia la hoja `plantilla (2)` que el codigo necesita -- elegirla habria
     roto la corrida con un error a mitad de camino. Cuando hay forma de
     comprobar que un archivo sirve, se comprueba antes de proponerlo.
+
+    `extensiones` restringe a ciertos sufijos (ej. `(".xlsx",)`). Lo necesita
+    el refresco "desde archivos" (ver `fuente_invima.py`): `PATRONES` mezcla a
+    proposito los Excel que baja una persona con los `*.parquet` que el propio
+    sistema cachea tras cada lectura exitosa de Socrata, y "el mas reciente"
+    entre los dos es casi siempre el parquet de la API -- justo lo que ese
+    refresco NO quiere. Filtrar aca y no en el llamador mantiene las
+    EXCLUSIONES (los 4 listados se llaman casi igual) en un solo lugar.
     """
     base = carpeta if carpeta is not None else CARPETA_DATOS
     if not base.is_dir():
@@ -127,6 +136,8 @@ def descubrir(
     for patron in PATRONES.get(tipo, ()):
         for p in base.glob(patron):
             if not p.is_file() or _ignorable(p):
+                continue
+            if extensiones is not None and p.suffix.lower() not in extensiones:
                 continue
             # Sin espacios ni guiones: los nombres reales varian entre
             # "Otros Estado", "OtrosEstado" y "otros_estado".

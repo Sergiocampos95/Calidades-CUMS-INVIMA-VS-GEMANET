@@ -301,6 +301,15 @@ def ejecutar_refresco(
     if lector_invima_api is None:
         lector_con_respaldo = LectorInvimaConRespaldo()
         lector_invima_api = lector_con_respaldo.leer
+    elif hasattr(getattr(lector_invima_api, "__self__", None), "advertencias"):
+        # Un lector INYECTADO que tambien lleva `advertencias` -- hoy
+        # `LectorInvimaDeArchivos` (ingesta/fuente_invima.py). Sin esto sus
+        # notas no llegaban a la pantalla y el progreso quedaba mudo sobre el
+        # ORIGEN del dato: los 10 pasos en "hecho" y ni una palabra de si el
+        # catalogo salio de la API o de que Excel. Como las dos fuentes dan
+        # cifras muy distintas y el snapshot se ve igual de sano en los dos
+        # casos, no poder distinguirlas es justo lo que hay que evitar.
+        lector_con_respaldo = lector_invima_api.__self__
 
     try:
         reporte_gemanet = _paso(
