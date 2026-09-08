@@ -416,6 +416,27 @@ def test_columnas_de_seccion_de_campo_trae_su_trio_y_no_el_de_otros_campos():
     assert "PRINCIPIO_ACTIVO_GEMANET" not in columnas
 
 
+def test_columnas_de_seccion_descripcion_no_repite_la_descripcion_de_identificacion():
+    """En la seccion de DESCRIPCION la columna de identificacion DESCRIPCION
+    es byte a byte igual a DESCRIPCION_GEMANET (el trio _GEMANET se arma con
+    la misma columna cruda). Mostrarla dos veces solo estorba cuando lo que
+    se compara ES la descripcion; CODIGO_INTERNO basta para identificar la
+    fila. Para el resto de campos DESCRIPCION si sigue aportando."""
+    columnas = columnas_de_seccion("campo:DESCRIPCION")
+    assert columnas == (
+        "CODIGO_INTERNO",
+        "DESCRIPCION_GEMANET",
+        "DESCRIPCION_INVIMA",
+        "DESCRIPCION_VALIDACION",
+        "ACTIVO",
+        "ESTADO_CUM_INVIMA",
+        "ESTADO_INVIMA",
+    )
+    assert "DESCRIPCION" not in columnas
+    # El resto de secciones no pierde la columna DESCRIPCION.
+    assert "DESCRIPCION" in columnas_de_seccion("campo:PRINCIPIO_ACTIVO")
+
+
 def test_columnas_de_seccion_clave_desconocida_o_vacia_devuelve_tupla_vacia():
     """El paso 2 (backend) interpreta la tupla vacia como "no recortar nada".
     Si esta funcion inventara una lista de columnas para una clave que no

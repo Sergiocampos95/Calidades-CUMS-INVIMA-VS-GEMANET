@@ -764,8 +764,18 @@ def columnas_de_seccion(clave: str) -> tuple[str, ...]:
         campo = clave.removeprefix("campo:")
         if campo not in CAMPOS_COMPARADOS_COHERENCIA:
             return ()
+        # En la seccion de DESCRIPCION, la columna de identificacion
+        # DESCRIPCION es byte a byte igual a DESCRIPCION_GEMANET (ver
+        # coherencia_invima._columna_o_vacia(combinado, "DESCRIPCION") -> el
+        # trio _GEMANET): repetir la misma cadena dos veces solo estorba
+        # cuando lo que se compara ES la descripcion. CODIGO_INTERNO basta
+        # para identificar la fila. Para el resto de campos (CONCENTRACION,
+        # PRINCIPIO_ACTIVO...) DESCRIPCION si aporta, es otro dato.
+        identificacion = _COLUMNAS_IDENTIFICACION_SECCION
+        if campo == "DESCRIPCION":
+            identificacion = tuple(c for c in identificacion if c != "DESCRIPCION")
         return (
-            *_COLUMNAS_IDENTIFICACION_SECCION,
+            *identificacion,
             f"{campo}{SUFIJO_GEMANET}",
             f"{campo}{SUFIJO_INVIMA}",
             f"{campo}{SUFIJO_VALIDACION}",
