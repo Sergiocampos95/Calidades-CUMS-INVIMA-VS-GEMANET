@@ -77,7 +77,11 @@ from gemma_cum_loader.catalogos.resolver import (
     sigla_por_codigo,
     siglas_por_codigo,
 )
-from gemma_cum_loader.normaliza.codigos import PATRON_CUM, clasificar_codigos
+from gemma_cum_loader.normaliza.codigos import (
+    PATRON_ATC,
+    PATRON_CUM,
+    clasificar_codigos,
+)
 from gemma_cum_loader.normaliza.texto import normalizar, normalizar_entidad
 from gemma_cum_loader.validacion.reglas import es_error_excel
 
@@ -309,20 +313,33 @@ def _columnas_marcadas(df_booleano: pd.DataFrame, separador: str) -> pd.Series:
 # varia segun venga de Excel o de Postgres.
 FECHAS_CENTINELA = frozenset({19000101, 18991230, 29991231})
 
-# El comodin de "no vence" del lado de INVIMA, que NO es una lista corta como
-# el de Gemma Net: `FECHA VENCIMIENTO` trae 45.776 fechas del ano 3000 en
-# adelante, repartidas en decenas de variantes (3000-01-01 x40.482,
-# 3000-12-31 x4.323, 3001-01-01, 3000-10-10, 3000-04-04...). Por eso se corta
-# por ANO y no enumerando fechas: una lista fija dejaba pasar la cola larga.
-# Medido contra el snapshot real el 2026-09-03: tratarlas como fecha de verdad
-# producia 11.242 hallazgos falsos de "Falta actualizar FECHA_FIN en Gemma Net:
-# INVIMA reporta FECHA VENCIMIENTO el 3000-01-01" -- el 54% de todos los
-# hallazgos de fecha. Es el mismo caso que `-999` en Gemma Net: un centinela de
-# "sin dato", no un valor. Aparecio al pasar el par de FECHA_FIN de `FECHA
-# INACTIVO` a `FECHA VENCIMIENTO` (2026-09-02): es FECHA VENCIMIENTO la que lo
-# trae. El corte va en 3000 y no antes para no tocar el `2999-12-31` de Gemma
-# Net, que ya vive en FECHAS_CENTINELA y significa lo mismo.
-ANIO_CENTINELA_SIN_VENCIMIENTO = 3000
+# El comodin de "no vence", que NO es una lista corta como el de fechas
+# pasadas: se reparte en decenas de variantes (3000-01-01, 3000-12-31,
+# 3001-01-01, 3000-10-10, 2999-12-31, 2199-01-01, 2900-01-01...). Por eso se
+# corta por ANO y no enumerando fechas: una lista fija deja pasar la cola larga.
+#
+# El corte estuvo en 3000 hasta el 2026-09-07 y se bajo a 2100 porque los
+# listados de julio 2026 destaparon variantes POR DEBAJO de 3000 que ninguna
+# regla cubria y que por tanto se comparaban como fechas de verdad: 2199-01-01
+# (124 filas en FECHA_FIN), 2900-01-01 y 2300 (1 cada una). El usuario lo vio
+# primero en pantalla -- "ano 3000 imposible" -- sobre un CUM donde la consulta
+# recomendaba copiar esa fecha a Gemma Net.
+#
+# Por que 2100 y no otro numero, medido sobre el snapshot real de julio 2026:
+# la fecha PLAUSIBLE mas lejana de toda la base es 2036 (FECHA_VENCIMIENTO_INVIMA)
+# y 2035 (FECHA_FIN) -- coherente con un registro sanitario, que se otorga a 10
+# anos renovables. Entre 2050 y 2999 no queda NADA que parezca real: solo
+# 2999 (48.498), 2199 (124), 2099 (16), 2050 (13), 2300 (1), 2900 (1), 2056 (1).
+# 2100 deja un margen de 64 anos sobre el maximo real, asi que no puede matar
+# una vigencia legitima, y absorbe de una vez todas las variantes futuras --
+# incluido el `2999-12-31` de Gemma Net, que sigue ademas listado abajo.
+#
+# Medido contra el snapshot real el 2026-09-03: tratar estas fechas como dato
+# de verdad producia 11.242 hallazgos falsos de "Falta actualizar FECHA_FIN en
+# Gemma Net: INVIMA reporta FECHA VENCIMIENTO el 3000-01-01" -- el 54% de todos
+# los hallazgos de fecha. Es el mismo caso que `-999` en Gemma Net: un centinela
+# de "sin dato", no un valor.
+ANIO_CENTINELA_SIN_VENCIMIENTO = 2100
 
 
 def _es_fecha_real(serie: pd.Series) -> pd.Series:
@@ -618,6 +635,46 @@ def campos_sistemicamente_no_diligenciados_mascaras(
     }
 
 
+def _detectar_codigos_que_no_son_cum(
+    tipo_codigo_interno: pd.Series,
+    estado_listado_invima: pd.Series,
+    activo: pd.Series,
+    codigo_interno: pd.Series,
+) -> list[str]:
+    """Advertencia AGREGADA por los codigos con forma de CUM que NO estan en
+    ningun listado de INVIMA -- y que por eso `filtrar_universo_auditable` saca
+    del universo (ver su comentario).
+
+    Existe para que sacarlos NO sea silencioso. Son pocos y no se auditan, pero
+    alguien tiene que poder verlos: son filas del catalogo de Gemma Net que
+    parecen medicamentos y no lo son. Medido con los listados de julio 2026:
+    4 casos, tres "ALIMENTO"/"ENSURE CLINICAL" y dos de ellos con un Registro
+    Sanitario de ALIMENTOS (`RSA-...`) metido en el campo CODIGO_ATC.
+
+    Cumple ademas de alarma: si esta cifra pasa de unas pocas decenas, lo que
+    esta viejo es el catalogo de INVIMA, no el de Gemma Net -- con los listados
+    de 2022 eran 5.459.
+    """
+    es_cum = tipo_codigo_interno.isin(_TIPOS_CODIGO_AUDITABLES)
+    esta_activo = activo.fillna("").astype(str).str.strip().str.upper().isin({"SI", "SÍ", "S", "1"})
+    fuera = es_cum & esta_activo & estado_listado_invima.fillna("").astype(str).str.strip().isin(
+        [_LISTADO_NINGUNO, ""]
+    )
+    n = int(fuera.sum())
+    if n == 0:
+        return []
+    muestra = ", ".join(codigo_interno[fuera].astype(str).head(8).tolist())
+    return [
+        (
+            f"{n:,} codigos con formato de CUM valido NO aparecen en ninguno de los 4 "
+            "listados de INVIMA, asi que no se auditan: un codigo que INVIMA no reconoce "
+            f"no es un CUM. Codigos: {muestra}"
+            + (" ..." if n > 8 else "")
+            + ". Si esta cifra sube a miles, revisa que los listados de INVIMA esten al dia."
+        )
+    ]
+
+
 def _detectar_capa_legada_atc(tipo_codigo_interno: pd.Series) -> list[str]:
     """Advertencia AGREGADA, no por fila -- igual que
     `_detectar_campos_sistemicamente_no_diligenciados()`. La familia
@@ -868,6 +925,13 @@ def _validar_razonabilidad_numerica(reporte_gemanet: pd.DataFrame) -> pd.Series:
 # Dimension 10 -- valores de NOVEDAD_VIGENCIA_INVIMA, en orden de prioridad:
 # una fila puede cumplir varias condiciones y se reporta la de mayor riesgo.
 NOVEDAD_RIESGO_ACTIVO = "riesgo_activo_sin_vigencia"
+# Activo aqui, en el listado de Vencidos u Otros Estados, pero con el CUM
+# todavia Activo en INVIMA: la "gracia de lotes" con que INVIMA permite agotar
+# lo ya fabricado. Va aparte de NOVEDAD_RIESGO_ACTIVO porque hoy SI hay
+# respaldo sanitario -- meterlos juntos hacia que la consulta puntual dijera
+# "se puede autorizar un medicamento sin registro vigente" sobre un registro
+# que INVIMA declara vigente (reportado por el usuario, 2026-09-07).
+NOVEDAD_VIGENCIA_TEMPORAL = "vigencia_temporal_gracia_lotes"
 NOVEDAD_REGISTRO_VENCIDO = "registro_vencido_en_invima"
 NOVEDAD_REVISAR_REACTIVACION = "revisar_reactivacion"
 NOVEDAD_ACTUALIZAR_FECHA_FIN = "actualizar_fecha_fin"
@@ -997,6 +1061,7 @@ def _contrastar_vigencia_invima(
     tiene_correspondencia: pd.Series,
     corte_invima: pd.Timestamp | None = None,
     estado_coherencia: pd.Series | None = None,
+    estado_cum_invima: pd.Series | None = None,
 ) -> tuple[pd.Series, pd.Series]:
     """Calidad #10 -- CONTRASTE DE VIGENCIA: que dice INVIMA de las filas cuya
     vigencia local no se puede interpretar sola.
@@ -1127,11 +1192,40 @@ def _contrastar_vigencia_invima(
     if estado_coherencia is not None:
         en_vencidos = estado_coherencia.values == EstadoCoherencia.VENCIDO_EN_INVIMA.value
 
-        # Vencido en INVIMA y ACTIVO aca: los dos lados se contradicen, y en la
-        # direccion peligrosa.
+        # Vencido en INVIMA y ACTIVO aca. Pero "esta en el listado de Vencidos"
+        # NO es lo mismo que "no tiene vigencia": el listado dice en que archivo
+        # aparece, y ESTADO_CUM dice si el registro sigue activo. Hay que mirar
+        # los dos o se acusa de riesgo maximo a un registro que INVIMA declara
+        # vigente -- lo reporto el usuario (2026-09-07) sobre 20055681-1, donde
+        # la pantalla gritaba "CRITICO, se puede autorizar sin registro vigente"
+        # tres lineas encima de una fila que decia Activo / Activo / coincide.
         vencido_y_activo = en_vencidos & activo_local.values
-        clasificacion[vencido_y_activo] = NOVEDAD_RIESGO_ACTIVO
-        detalle[vencido_y_activo] = (
+        # OJO: NO se usa `activo_invima`, que sale de `combinado` -- el cruce
+        # con VIGENTES. Un CUM que solo esta en Vencidos tiene esa columna
+        # vacia aca, porque el ESTADO_CUM de los listados auxiliares se propaga
+        # DESPUES, ya en `auditar_coherencia`. Usar `activo_invima` daba
+        # "Activo=False" para justo las filas que este bloque tiene que
+        # distinguir, y la gracia de lotes nunca se detectaba.
+        cum_completo = activo_invima if estado_cum_invima is None else (
+            estado_cum_invima.astype(str).str.strip().str.upper().eq("ACTIVO")
+        )
+        cum_activo = np.asarray(cum_completo, dtype=bool)
+
+        # Gracia de lotes: INVIMA lo movio a Vencidos pero el CUM sigue Activo,
+        # que es como permite agotar los lotes ya fabricados. Hoy SI hay
+        # respaldo. Cae a riesgo pleno solo, y automaticamente, cuando INVIMA
+        # cambie ESTADO_CUM -- cada refresco reclasifica.
+        gracia_de_lotes = vencido_y_activo & cum_activo
+        clasificacion[gracia_de_lotes] = NOVEDAD_VIGENCIA_TEMPORAL
+        detalle[gracia_de_lotes] = (
+            "Activo en Gemma Net y en el listado de VENCIDOS de INVIMA, pero el CUM "
+            "sigue Activo: vigencia temporal mientras se agotan los lotes fabricados. "
+            "Vigilar -- deja de estar vigente en cuanto INVIMA cambie el estado."
+        )
+
+        riesgo_sin_vigencia = vencido_y_activo & ~cum_activo
+        clasificacion[riesgo_sin_vigencia] = NOVEDAD_RIESGO_ACTIVO
+        detalle[riesgo_sin_vigencia] = (
             "Activo en Gemma Net, pero INVIMA lo tiene en su listado de VENCIDOS. "
             "Riesgo alto: se puede autorizar un medicamento sin registro vigente."
         )
@@ -1640,6 +1734,117 @@ def _clasificar_naturaleza_hallazgo(
     ):
         naturaleza[mascara] = etiqueta
     return naturaleza
+
+
+# Cinco niveles de prioridad para "Priorizar lo que requiere accion".
+#
+# El prefijo numerico NO es decorativo: la tabla ordena por texto, asi que
+# "1_" ... "5_" hace que ordenar por la columna deje los criticos arriba sin
+# necesidad de una columna numerica paralela ni de un orden especial en el
+# frontend. Lo mismo vale para el checkbox-list del filtro, que los lista en
+# orden de urgencia y no alfabetico ("alto" antes que "critico").
+PRIORIDAD_CRITICA = "1_critico"
+PRIORIDAD_ALTA = "2_alto"
+PRIORIDAD_MEDIA = "3_medio"
+PRIORIDAD_BAJA = "4_bajo"
+PRIORIDAD_INFORMATIVA = "5_informativo"
+
+# Que hacer con cada nivel. Igual que ACCION_POR_NATURALEZA: la columna dice
+# "que tan urgente", esto dice "y ahora que".
+ACCION_POR_PRIORIDAD = {
+    PRIORIDAD_CRITICA: (
+        "No autorizar sin revisar: INVIMA marca el CUM como Inactivo y aqui sigue activo."
+    ),
+    PRIORIDAD_ALTA: (
+        "Verificar el codigo: no aparece en ningun listado de INVIMA, no hay contra que contrastarlo."
+    ),
+    PRIORIDAD_MEDIA: (
+        "Vigilar: la vigencia es temporal mientras se agotan lotes y va a caer."
+    ),
+    PRIORIDAD_BAJA: "Esperar. INVIMA tiene la renovacion en curso y hoy sigue vigente.",
+    PRIORIDAD_INFORMATIVA: "Actualizar el campo en Gemma Net con el dato oficial. Sin riesgo de vigencia.",
+}
+
+
+def clasificar_prioridad_accion(df: pd.DataFrame) -> pd.Series:
+    """Un nivel de urgencia por medicamento, para reducir 55.572 hallazgos a
+    "que miro primero".
+
+    Ordena por DIRECCION DEL RIESGO, no por el archivo de INVIMA donde
+    aparecio el CUM. Es la diferencia que hace util la columna: un vencido y
+    un "con diferencias" pueden ser igual de graves si en los dos INVIMA ya
+    marco el CUM como Inactivo -- lo que decide es si hay respaldo sanitario
+    vigente detras de un medicamento que aqui se puede seguir autorizando, y
+    eso lo dice ESTADO_CUM_INVIMA, no ESTADO_LISTADO_INVIMA (que es solo
+    ubicacion, ver `_estado_listado_invima`).
+
+    Se apoya en ESTADO_CUM_INVIMA + ESTADO_LISTADO_INVIMA, el MISMO par que
+    usan las mascaras de `calidades.py`, y NO en ESTADO_COHERENCIA. No es un
+    detalle de implementacion: la primera version usaba ESTADO_COHERENCIA y
+    daba 17.043 en renovacion donde la tarjeta de calidades -- ya verificada
+    por el usuario -- decia 16.479. Dos cifras para el mismo concepto en dos
+    pantallas de la misma app es justo lo que CLAUDE.md prohibe, y el usuario
+    lo detecto comparando las dos vistas (2026-09-07): "sospecho de esas
+    cifras porque los resultados que si he verificado son las cifras".
+
+    Medido contra produccion el 2026-09-07, sobre los 55.572 activos
+    auditables: 687 criticos, 5.459 altos, 1.737 medios, 16.479 bajos y
+    31.210 informativos -- suman exactamente 55.572, y los niveles 2, 4 y 5
+    coinciden al dedo con las tarjetas "No existe en INVIMA", "En tramite de
+    renovacion" y "Vigencia confirmada". Que el ultimo nivel se lleve el 56 %
+    es el punto: son diferencias de campo sobre registros vigentes en ambos
+    lados, y mientras compartian tabla con los 687 criticos no habia forma de
+    ver esos 687.
+
+    Primera coincidencia gana, en el orden en que estan escritas. Una fila
+    sin ningun hallazgo queda con cadena vacia, igual que NATURALEZA_HALLAZGO.
+    """
+    # Columnas opcionales: un snapshot viejo puede no traerlas todavia. Se
+    # degrada a vacio en vez de reventar -- sin ESTADO_CUM_INVIMA el nivel 1
+    # queda sin poblar, que es visible en pantalla, y no un KeyError que tumba
+    # el endpoint entero.
+    cum_invima = (
+        df["ESTADO_CUM_INVIMA"].fillna("").astype(str)
+        if "ESTADO_CUM_INVIMA" in df.columns
+        else pd.Series("", index=df.index, dtype="object")
+    )
+    listado = (
+        df["ESTADO_LISTADO_INVIMA"].fillna("").astype(str)
+        if "ESTADO_LISTADO_INVIMA" in df.columns
+        else pd.Series("", index=df.index, dtype="object")
+    )
+
+    cum_invima = cum_invima.str.strip().str.casefold()
+    listado = listado.str.strip()
+    sin_respaldo = cum_invima.eq("inactivo")
+    activo_invima = cum_invima.eq("activo")
+    # Cadena vacia cuenta como "en ningun listado": es lo que deja una fila
+    # que no cruzo con ningun dataset, igual que el centinela explicito.
+    no_existe = listado.isin([_LISTADO_NINGUNO, ""])
+    # "Gracia de lotes": INVIMA lo movio al listado de Vencidos u Otros
+    # Estados pero el CUM sigue Activo -- vigencia temporal mientras se agotan
+    # los lotes ya fabricados. No es critico (hoy hay respaldo) pero tampoco
+    # es rutina: cae al nivel 1 en cuanto INVIMA cambie el estado, sin que
+    # haya que tocar codigo (cada refresco reclasifica).
+    vigencia_temporal = activo_invima & listado.isin([_LISTADO_VENCIDOS, _LISTADO_OTROS_ESTADOS])
+    en_renovacion = activo_invima & listado.eq(_LISTADO_RENOVACION)
+    vigente = activo_invima & listado.eq(_LISTADO_VIGENTES)
+
+    return pd.Series(
+        np.select(
+            [sin_respaldo, no_existe, vigencia_temporal, en_renovacion, vigente],
+            [
+                PRIORIDAD_CRITICA,
+                PRIORIDAD_ALTA,
+                PRIORIDAD_MEDIA,
+                PRIORIDAD_BAJA,
+                PRIORIDAD_INFORMATIVA,
+            ],
+            default="",
+        ),
+        index=df.index,
+        dtype="object",
+    )
 
 
 _SEPARADOR_CLAVE = "\x00"  # no puede aparecer en un dato de texto real
@@ -2353,9 +2558,21 @@ def auditar_coherencia(
     dias_para_vencer = dias_para_vencer.where(
         _es_fecha_real(vencimiento) & tiene_correspondencia
     )
-    resultado["FECHA_ACTIVO_INVIMA"] = fechas_invima["FECHA_ACTIVO_INVIMA"].values
-    resultado["FECHA_INACTIVO_INVIMA"] = fechas_invima["FECHA_INACTIVO_INVIMA"].values
-    resultado["FECHA_VENCIMIENTO_INVIMA"] = vencimiento.values
+    # Se guardan como FECHA (`.dt.date`), no como Timestamp: INVIMA publica
+    # dias de calendario -- una vigencia, un vencimiento -- y no instantes, asi
+    # que la hora siempre es 00:00:00 y no significa nada. Arrastrarla hacia
+    # que la API las serializara como "2010-12-15T00:00:00" y la tabla mostrara
+    # "2010-12-15T00:0..." truncado, ocupando ancho para no decir nada
+    # (reportado por el usuario, 2026-09-07). Ademas las deja igual que
+    # FECHA_INICIO/FECHA_FIN de Gemma Net, que ya eran `date`: dos columnas que
+    # se comparan entre si no deberian tener tipos distintos.
+    #
+    # La conversion va AQUI, al escribir el resultado, y no antes: todo el
+    # calculo de arriba (comparaciones, `_es_fecha_real`, DIAS_PARA_VENCER)
+    # necesita datetime64 para operar vectorizado.
+    resultado["FECHA_ACTIVO_INVIMA"] = fechas_invima["FECHA_ACTIVO_INVIMA"].dt.date.values
+    resultado["FECHA_INACTIVO_INVIMA"] = fechas_invima["FECHA_INACTIVO_INVIMA"].dt.date.values
+    resultado["FECHA_VENCIMIENTO_INVIMA"] = vencimiento.dt.date.values
     resultado["DIAS_PARA_VENCER_INVIMA"] = dias_para_vencer.values
 
     # VIGENCIA NO CONFIRMABLE -- bug real reportado por el usuario (2026-09-02)
@@ -2404,6 +2621,7 @@ def auditar_coherencia(
         tiene_correspondencia,
         corte_invima,
         estado_coherencia=estado,
+        estado_cum_invima=estado_cum_invima,
     )
     resultado["NOVEDAD_VIGENCIA_INVIMA"] = novedad_vigencia.values
     resultado["DETALLE_VIGENCIA_INVIMA"] = detalle_vigencia.values
@@ -2455,10 +2673,21 @@ def auditar_coherencia(
     # DataFrame). Ver el docstring para el hallazgo de produccion que motiva
     # esta columna.
     resultado["FILA_LEGADA_DUPLICADA"] = _detectar_fila_legada_duplicada(resultado)
+    # Tambien al final: lee ESTADO_CUM_INVIMA y ESTADO_LISTADO_INVIMA, que se
+    # asignan mas arriba en esta misma funcion.
+    resultado["PRIORIDAD_ACCION"] = clasificar_prioridad_accion(resultado)
+    resultado["ACCION_POR_PRIORIDAD"] = (
+        resultado["PRIORIDAD_ACCION"].map(ACCION_POR_PRIORIDAD).fillna("").values
+    )
     resultado.attrs["advertencias_calidad"] = _detectar_campos_sistemicamente_no_diligenciados(
         reporte_gemanet
     ) + _detectar_capa_legada_atc(tipo_codigo_interno) + _detectar_codigos_huerfanos(estado, activo_gemanet) + _detectar_solape_vencidos_renovacion(
         gemanet["_CLAVE_CRUCE_INVIMA"], df_invima_vencidos, df_invima_renovacion, df_invima_otros_estados
+    ) + _detectar_codigos_que_no_son_cum(
+        tipo_codigo_interno,
+        resultado["ESTADO_LISTADO_INVIMA"],
+        activo_gemanet,
+        resultado["CODIGO_INTERNO"],
     )
     # Mismo par (texto, mascara) que las tarjetas de vigencia ya usan: el
     # texto arriba sigue igual (lo cubren las pruebas existentes), esto es
@@ -2611,6 +2840,71 @@ def filtrar_universo_auditable(resultado: pd.DataFrame) -> pd.DataFrame:
     else:
         omitidos.append("ESTADO_COHERENCIA (no se pudo excluir ancestrales/plantas)")
 
+    # Lo que se ignora aca NO es "todo lo que falta en INVIMA": es lo que NO ES
+    # UN MEDICAMENTO. Son dos cosas distintas y confundirlas apagaba la unica
+    # alarma que importa (aclaracion del usuario, 2026-09-08):
+    #
+    #   - Un CUM de verdad, activo en Gemma Net y ausente de los 4 listados, SI
+    #     es un hallazgo y tiene que verse: o el codigo esta mal digitado, o el
+    #     registro se anulo, o INVIMA no lo tiene. Se AUDITA.
+    #   - Algo que no es un medicamento (un alimento cargado en el catalogo) no
+    #     se "excluye de la auditoria": nunca tuvo por que entrar. Se IGNORA.
+    #
+    # El codigo interno no los distingue -- los cuatro casos reales tenian
+    # EXPEDIENTE de 8 digitos y consecutivo valido. Lo que si los distingue es
+    # CODIGO_ATC: un medicamento trae un ATC (D01AC01, V06DX), y los alimentos
+    # traian "RSA-001241-2016", un Registro Sanitario de ALIMENTOS.
+    #
+    # El formato no alcanza para reconocerlos y por eso llegaban hasta aca: los
+    # 4 casos que quedaban traian EXPEDIENTE real de 8 digitos y consecutivo
+    # valido (no el `-999` de la capa legada, que ya se excluye por
+    # TIPO_CODIGO_INTERNO). Lo que son se ve en el dato, no en el codigo: tres
+    # son "ALIMENTO EN POLVO"/"ALIMENTO LACTEO"/"ENSURE CLINICAL", y dos de
+    # ellos llevan en CODIGO_ATC un `RSA-001241-2016` -- un Registro Sanitario
+    # de ALIMENTOS, no un ATC.
+    #
+    # Este criterio solo es sano con un catalogo de INVIMA AL DIA, y por eso no
+    # se aplicaba antes: con los listados de 2022 habia 5.459 ausencias, casi
+    # Se ignora solo cuando faltan LAS DOS cosas: no esta en INVIMA Y su ATC ni
+    # siquiera tiene forma de ATC. Con una sola no alcanza -- un ATC raro en un
+    # medicamento que INVIMA si lista no prueba nada, y un ATC valido ausente de
+    # INVIMA es JUSTO el hallazgo que hay que mostrar, no esconder.
+    #
+    # La mascara se calcula aca pero se APLICA al final, junto con el conteo:
+    # aplicarla ya mismo mezclaria estas filas con las que se van por los otros
+    # criterios y el conteo dejaria de significar nada. Medido: aplicandola
+    # aqui daba 66.330 -- IUM, capa legada ATC y codigos basura ("1", "2", "3")
+    # que ya se ignoraban por su tipo.
+    sin_correspondencia_invima = pd.Series(False, index=resultado.index)
+    if "ESTADO_LISTADO_INVIMA" in resultado.columns:
+        listado = _columna_o_vacia(resultado, "ESTADO_LISTADO_INVIMA").str.strip()
+        fuera_de_invima = listado.isin([_LISTADO_NINGUNO, ""])
+        atc = _columna_o_vacia(resultado, "CODIGO_ATC").str.strip().str.upper()
+        # SOLO se ignora con evidencia VERIFICABLE de que no es un medicamento:
+        # que CODIGO_ATC ni siquiera tenga forma de ATC. Un "RSA-001241-2016"
+        # identifica POSITIVAMENTE otro tipo de registro (Registro Sanitario de
+        # ALIMENTOS); no es una inferencia sobre el producto.
+        #
+        # NO se excluye por lo que diga la DESCRIPCION, aunque se declare
+        # "ALIMENTO EN POLVO". Se intento y se revirtio el 2026-09-08 por una
+        # razon del usuario que va mas alla de esta auditoria: no hay forma
+        # verificable de demostrar que ese producto NO es un CUM, y un veredicto
+        # que derivara en borrarlo de la base perjudicaria a las areas que si lo
+        # necesitan por lo que realmente es. Nuestra vista de CUMs quedaria
+        # limpia a costa de decidir por otro sector.
+        #
+        # Ante la duda se REPORTA como hallazgo y decide una persona: es la
+        # regla 1 del proyecto ("sin decisiones a ciegas") aplicada a la
+        # frontera del sistema, no solo a una fila.
+        #
+        # Tampoco se filtra por el grupo ATC V06: medido sobre el universo
+        # auditado, de sus 10 filas 9 son "V06DC01 GLUCOSA ANHIDRA 5G SOLUCION
+        # INYECTABLE", que SI es un medicamento.
+        no_parece_medicamento = ~atc.str.match(PATRON_ATC).fillna(False)
+        sin_correspondencia_invima = fuera_de_invima & no_parece_medicamento
+    else:
+        omitidos.append("ESTADO_LISTADO_INVIMA (no se pudo excluir lo que no existe en INVIMA)")
+
     activo = _columna_o_vacia(resultado, "ACTIVO").str.strip().str.upper()
     if "ESTADO_CUM_INVIMA" in resultado.columns:
         # Criterio correcto: usar ESTADO_CUM_INVIMA (veredicto de vigencia real
@@ -2632,6 +2926,17 @@ def filtrar_universo_auditable(resultado: pd.DataFrame) -> pd.DataFrame:
         omitidos.append("ESTADO_CUM_INVIMA (no se pudo conservar la excepcion inactivo/vigente-en-INVIMA)")
     else:
         omitidos.append("ACTIVO (no se pudo excluir inactivos)")
+
+    # Los descartados por no existir en INVIMA NO se pierden: quedan contados y
+    # con sus codigos a mano. Sacarlos del universo auditable es correcto (no
+    # son CUM), pero hacerlo sin dejar rastro seria la suposicion silenciosa
+    # que la regla 2 del proyecto prohibe -- y es ademas el unico aviso de que
+    # el catalogo de INVIMA se quedo viejo, si algun dia esta cifra se dispara.
+    #
+    # `universo &` es lo que hace la cifra util: son los que pasaron TODOS los
+    # demas criterios y caen solo por este.
+    descartados = resultado.loc[universo & sin_correspondencia_invima]
+    universo &= ~sin_correspondencia_invima
 
     filtrado = resultado.loc[universo].copy()
     # Las mascaras booleanas de attrs (ej. "capa_legada_atc_mascara",
@@ -2656,5 +2961,11 @@ def filtrar_universo_auditable(resultado: pd.DataFrame) -> pd.DataFrame:
     # igual que uno filtrado bien (ver el bloque de `omitidos` arriba).
     attrs_recortados["filas_antes_del_recorte"] = len(resultado)
     attrs_recortados["recorte_omitido"] = omitidos
+    # Va DESPUES de armar attrs_recortados: `filtrado.attrs = attrs_recortados`
+    # reemplaza el dict entero, asi que escribir esta clave antes la borraria.
+    attrs_recortados["no_existen_en_invima"] = {
+        "total": len(descartados),
+        "codigos": _columna_o_vacia(descartados, "CODIGO_INTERNO").tolist(),
+    }
     filtrado.attrs = attrs_recortados
     return filtrado

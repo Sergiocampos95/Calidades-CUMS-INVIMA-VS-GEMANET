@@ -1,3 +1,5 @@
+from datetime import date
+
 import pandas as pd
 
 from gemma_cum_loader.auditoria.coherencia_invima import (
@@ -7,8 +9,18 @@ from gemma_cum_loader.auditoria.coherencia_invima import (
     NATURALEZA_CARGA_INCOMPLETA,
     NATURALEZA_DESACTUALIZADO,
     NATURALEZA_RESIDUAL_MIGRACION,
+    NOVEDAD_RIESGO_ACTIVO,
+    NOVEDAD_VIGENCIA_TEMPORAL,
+    PRIORIDAD_ALTA,
+    PRIORIDAD_BAJA,
+    PRIORIDAD_CRITICA,
+    PRIORIDAD_INFORMATIVA,
+    PRIORIDAD_MEDIA,
     EstadoCoherencia,
+    _es_fecha_comodin,
+    _es_fecha_real,
     auditar_coherencia,
+    clasificar_prioridad_accion,
     filtrar_universo_auditable,
 )
 from gemma_cum_loader.catalogos.resolver import cargar_catalogo
@@ -1557,9 +1569,12 @@ def test_vencido_en_invima_via_vencidos_propaga_las_3_fechas_de_invima():
     assert pd.notna(fila["FECHA_ACTIVO_INVIMA"])
     assert pd.notna(fila["FECHA_INACTIVO_INVIMA"])
     assert pd.notna(fila["FECHA_VENCIMIENTO_INVIMA"])
-    assert fila["FECHA_ACTIVO_INVIMA"] == pd.Timestamp("2010-05-12")
-    assert fila["FECHA_INACTIVO_INVIMA"] == pd.Timestamp("2020-01-30")
-    assert fila["FECHA_VENCIMIENTO_INVIMA"] == pd.Timestamp("2019-12-31")
+    # `date`, no `Timestamp`: INVIMA publica dias de calendario, no instantes.
+    # Guardarlas con hora hacia que la API las serializara como
+    # "2010-05-12T00:00:00" y la tabla mostrara ese sufijo inutil truncado.
+    assert fila["FECHA_ACTIVO_INVIMA"] == date(2010, 5, 12)
+    assert fila["FECHA_INACTIVO_INVIMA"] == date(2020, 1, 30)
+    assert fila["FECHA_VENCIMIENTO_INVIMA"] == date(2019, 12, 31)
 
 
 # --- ESTADO_LISTADO_INVIMA: el ARCHIVO de origen, no el veredicto ---
@@ -1685,14 +1700,56 @@ def test_filtro_conserva_activo_sin_importar_el_estado_listado_invima():
             ESTADO_COHERENCIA=EstadoCoherencia.VENCIDO_EN_INVIMA.value,
             ESTADO_LISTADO_INVIMA="vencido",
         ),
+    ])
+    resultado = filtrar_universo_auditable(df)
+    assert set(resultado["CODIGO_INTERNO"]) == {"500-1", "600-2"}
+
+
+def test_lo_que_no_es_un_medicamento_se_ignora_no_se_audita():
+    """La distincion que pidio el usuario (2026-09-08): IGNORAR no es AUDITAR.
+
+    Un alimento cargado en el catalogo nunca tuvo por que entrar a la
+    auditoria, y se reconoce por CODIGO_ATC -- los alimentos traen
+    "RSA-001241-2016", un Registro Sanitario de ALIMENTOS, que ni siquiera
+    tiene forma de ATC. El codigo interno no los distingue: los casos reales
+    traian EXPEDIENTE de 8 digitos y consecutivo valido."""
+    df = pd.DataFrame([
+        _fila_universo("500-1", ESTADO_LISTADO_INVIMA="vigente", CODIGO_ATC="D01AC01"),
         _fila_universo(
             "700-3",
             ESTADO_COHERENCIA=EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value,
             ESTADO_LISTADO_INVIMA="ninguno",
+            CODIGO_ATC="RSA-001241-2016",
         ),
     ])
     resultado = filtrar_universo_auditable(df)
-    assert set(resultado["CODIGO_INTERNO"]) == {"500-1", "600-2", "700-3"}
+
+    assert set(resultado["CODIGO_INTERNO"]) == {"500-1"}
+    # Se excluye, pero NO en silencio: queda contado y con su codigo a mano.
+    # Sacarlos sin dejar rastro seria la suposicion silenciosa que la regla 2
+    # del proyecto prohibe, y ademas es el unico aviso de que el catalogo de
+    # INVIMA se quedo viejo si algun dia la cifra se dispara.
+    assert resultado.attrs["no_existen_en_invima"]["total"] == 1
+    assert resultado.attrs["no_existen_en_invima"]["codigos"] == ["700-3"]
+
+
+def test_un_cum_de_verdad_ausente_de_invima_SI_se_audita():
+    """La otra mitad, y la que importa: un medicamento con ATC valido que
+    INVIMA no lista es un HALLAZGO (codigo mal digitado, registro anulado, o
+    INVIMA que no lo publica), no algo que ignorar. Filtrar por "no esta en
+    INVIMA" a secas apagaba justo esta alarma."""
+    df = pd.DataFrame([
+        _fila_universo(
+            "800-4",
+            ESTADO_COHERENCIA=EstadoCoherencia.SIN_CORRESPONDENCIA_INVIMA.value,
+            ESTADO_LISTADO_INVIMA="ninguno",
+            CODIGO_ATC="D01AC01",
+        ),
+    ])
+    resultado = filtrar_universo_auditable(df)
+
+    assert set(resultado["CODIGO_INTERNO"]) == {"800-4"}
+    assert resultado.attrs["no_existen_en_invima"]["total"] == 0
 
 
 # --- INCONSISTENCIA_FECHAS_ACTIVO: el aviso de vencido-y-activo no se repite ---
@@ -1986,3 +2043,151 @@ def test_el_dato_de_vigentes_no_lo_pisa_un_listado_auxiliar():
     ).loc["55-1"]
 
     assert resultado["PRINCIPIO_ACTIVO_INVIMA"] == "BUDESONIDA"
+
+
+# --- PRIORIDAD_ACCION: los 5 niveles de "Priorizar lo que requiere accion" ---
+
+
+def _prioridad(**campos) -> str:
+    """Un solo valor de `clasificar_prioridad_accion` para una fila armada a
+    mano. Los tests de abajo solo varian el par (ESTADO_CUM_INVIMA,
+    ESTADO_LISTADO_INVIMA), que es de lo unico que depende la clasificacion."""
+    base = {"ESTADO_CUM_INVIMA": "Activo", "ESTADO_LISTADO_INVIMA": "vigente"}
+    base.update(campos)
+    return clasificar_prioridad_accion(pd.DataFrame([base])).iloc[0]
+
+
+def test_prioridad_critica_cuando_invima_marca_el_cum_inactivo():
+    """El nivel 1 lo decide ESTADO_CUM_INVIMA, NO en cual de los 4 listados
+    aparece: un CUM inactivo sigue siendo inactivo aunque INVIMA todavia lo
+    liste en Vigentes."""
+    for listado in ("vigente", "vencido", "renovacion", "otros_estados"):
+        assert _prioridad(ESTADO_CUM_INVIMA="Inactivo", ESTADO_LISTADO_INVIMA=listado) == PRIORIDAD_CRITICA
+
+
+def test_prioridad_alta_cuando_no_esta_en_ningun_listado():
+    assert _prioridad(ESTADO_LISTADO_INVIMA="ninguno", ESTADO_CUM_INVIMA="") == PRIORIDAD_ALTA
+    # Cadena vacia es el mismo caso: no cruzo con ningun dataset.
+    assert _prioridad(ESTADO_LISTADO_INVIMA="", ESTADO_CUM_INVIMA="") == PRIORIDAD_ALTA
+
+
+def test_prioridad_media_es_la_gracia_de_lotes():
+    """Listado de Vencidos u Otros Estados pero el CUM sigue Activo: hoy hay
+    respaldo, y cae solo a nivel 1 cuando INVIMA cambie el estado -- sin tocar
+    codigo, porque cada refresco reclasifica."""
+    assert _prioridad(ESTADO_LISTADO_INVIMA="vencido") == PRIORIDAD_MEDIA
+    assert _prioridad(ESTADO_LISTADO_INVIMA="otros_estados") == PRIORIDAD_MEDIA
+
+
+def test_prioridad_baja_en_renovacion_y_informativa_si_esta_vigente():
+    assert _prioridad(ESTADO_LISTADO_INVIMA="renovacion") == PRIORIDAD_BAJA
+    assert _prioridad(ESTADO_LISTADO_INVIMA="vigente") == PRIORIDAD_INFORMATIVA
+
+
+def test_los_cinco_niveles_son_excluyentes_y_cubren_todo_el_universo():
+    """La invariante que hace util la columna: cada fila cae en exactamente un
+    nivel, asi que las 5 tarjetas suman el total de la tabla. Si dejaran un
+    hueco, la pantalla mostraria tarjetas que no cuadran con su propia tabla
+    -- que es el bug que el usuario reporto el 2026-09-07."""
+    filas = [
+        {"ESTADO_CUM_INVIMA": cum, "ESTADO_LISTADO_INVIMA": listado}
+        for cum in ("Activo", "Inactivo")
+        for listado in ("vigente", "vencido", "renovacion", "otros_estados", "ninguno")
+    ]
+    prioridades = clasificar_prioridad_accion(pd.DataFrame(filas))
+
+    assert (prioridades != "").all(), "toda combinacion real debe caer en algun nivel"
+    assert set(prioridades) <= {
+        PRIORIDAD_CRITICA,
+        PRIORIDAD_ALTA,
+        PRIORIDAD_MEDIA,
+        PRIORIDAD_BAJA,
+        PRIORIDAD_INFORMATIVA,
+    }
+
+
+def test_prioridad_degrada_sin_reventar_si_el_snapshot_es_viejo():
+    """Un snapshot anterior a ESTADO_CUM_INVIMA no debe tumbar el endpoint:
+    devuelve niveles sin poblar el 1, que se ve en pantalla, en vez de un
+    KeyError."""
+    prioridades = clasificar_prioridad_accion(pd.DataFrame([{"CODIGO_INTERNO": "1-1"}]))
+    assert prioridades.iloc[0] == PRIORIDAD_ALTA  # sin listado == no existe en INVIMA
+
+
+def test_el_orden_alfabetico_de_los_niveles_es_el_orden_de_urgencia():
+    """El prefijo numerico existe para esto: la tabla ordena por texto, y sin
+    el "2_alto" quedaria antes que "1_critico"."""
+    assert sorted(
+        [PRIORIDAD_INFORMATIVA, PRIORIDAD_CRITICA, PRIORIDAD_BAJA, PRIORIDAD_ALTA, PRIORIDAD_MEDIA]
+    ) == [
+        PRIORIDAD_CRITICA,
+        PRIORIDAD_ALTA,
+        PRIORIDAD_MEDIA,
+        PRIORIDAD_BAJA,
+        PRIORIDAD_INFORMATIVA,
+    ]
+
+
+# --- Comodines de "no vence" por debajo del ano 3000 (listados julio 2026) ---
+
+
+def test_las_fechas_lejanas_no_son_fechas_reales_aunque_no_lleguen_al_ano_3000():
+    """Los listados de julio 2026 destaparon variantes que el corte viejo
+    (ano 3000) dejaba pasar: 2199-01-01 aparece 124 veces en FECHA_FIN, y
+    2900-01-01 y 2300 una vez cada una. Se comparaban como fechas de verdad,
+    asi que la app recomendaba "actualizar" un vencimiento a un ano imposible
+    -- lo vio el usuario en pantalla (2026-09-07): "ano 3000 imposible".
+
+    El limite es 2100 porque la fecha plausible mas lejana de toda la base es
+    2036: un registro sanitario se otorga a 10 anos renovables, no a 160.
+    """
+    lejanas = pd.Series(
+        pd.to_datetime(["2199-01-01", "2300-06-15", "2900-01-01", "3000-01-01", "3001-01-01"])
+    )
+    assert not _es_fecha_real(lejanas).any()
+    assert _es_fecha_comodin(lejanas).all()
+
+
+def test_una_vigencia_real_lejana_sigue_contando_como_fecha():
+    """El corte no puede tragarse una vigencia legitima. 2036 es el maximo
+    real medido en produccion; 2099 sigue del lado de "fecha" para no decidir
+    por el negocio en la banda dudosa."""
+    reales = pd.Series(pd.to_datetime(["2026-04-21", "2036-07-27", "2099-12-31"]))
+    assert _es_fecha_real(reales).all()
+    assert not _es_fecha_comodin(reales).any()
+
+
+def test_vencido_con_cum_activo_no_es_riesgo_sino_vigencia_temporal():
+    """Reportado por el usuario (2026-09-07) sobre 20055681-1: la consulta
+    anunciaba "CRÍTICO -- se puede autorizar un medicamento sin registro
+    vigente" tres lineas encima de su propia fila "Estado del registro:
+    Activo / Activo / coincide".
+
+    Estar en el listado de VENCIDOS dice en que archivo aparece el registro;
+    ESTADO_CUM dice si sigue habiendo respaldo sanitario. Con el CUM Activo es
+    la gracia de lotes (agotar lo fabricado), no una autorizacion a ciegas --
+    y la auditoria ya lo clasificaba nivel 3, contra el "critico" de la
+    pantalla."""
+    resultado = _auditar(
+        [_fila_gemanet("55-1", ACTIVO="Si")],
+        [_fila_invima("900-9")],  # Vigentes no lo tiene
+        vencidos_filas=[_fila_invima("55-1", ESTADO_REGISTRO="Vencido", ESTADO_CUM="Activo")],
+    ).loc["55-1"]
+
+    assert resultado["ESTADO_CUM_INVIMA"] == "Activo"
+    assert resultado["NOVEDAD_VIGENCIA_INVIMA"] == NOVEDAD_VIGENCIA_TEMPORAL
+    assert "sin registro vigente" not in resultado["DETALLE_VIGENCIA_INVIMA"]
+
+
+def test_vencido_con_cum_inactivo_si_es_riesgo():
+    """La otra rama: sin respaldo en INVIMA y activo aca, el critico de verdad.
+    Sin esta prueba el arreglo de arriba podria haber apagado la alarma
+    entera."""
+    resultado = _auditar(
+        [_fila_gemanet("55-1", ACTIVO="Si")],
+        [_fila_invima("900-9")],  # Vigentes no lo tiene
+        vencidos_filas=[_fila_invima("55-1", ESTADO_REGISTRO="Vencido", ESTADO_CUM="Inactivo")],
+    ).loc["55-1"]
+
+    assert resultado["NOVEDAD_VIGENCIA_INVIMA"] == NOVEDAD_RIESGO_ACTIVO
+    assert "sin registro vigente" in resultado["DETALLE_VIGENCIA_INVIMA"]
