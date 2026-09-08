@@ -60,6 +60,18 @@ _COLUMNAS_VERIFICACION_GEMANET = (
     "codigo_atc",
     "marca_medicamento",
     "consecutivo_unidad_medida",
+    # El estado local, que es la mitad de casi todo hallazgo de esta auditoria
+    # ("activo aqui pero inactivo en INVIMA"): sin el, quien pega la consulta
+    # ve los campos pero no puede confirmar el dato que motivo el hallazgo.
+    # Pedido del usuario (2026-09-07).
+    #
+    # Va el valor CRUDO y su traduccion: el proyecto lee `sw_activo = 1` como
+    # activo y CUALQUIER otro valor (0 o NULL) como inactivo -- ver el CASE de
+    # ingesta/gemanet_sql.py, que es de donde sale la columna ACTIVO del
+    # reporte. Mostrar el crudo deja ver cual es ese "otro valor" en la base
+    # real, en vez de tener que confiar en que sea 0.
+    "sw_activo",
+    "CASE WHEN sw_activo = 1 THEN 'Activo' ELSE 'Inactivo' END AS estado_gemma_net",
 )
 
 
@@ -326,6 +338,19 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
         "ESTADO_INVIMA",
         "CONSEJO",
     ]
+    # El periodo de vigencia, en PARES: la fecha local seguida de la de INVIMA
+    # con la que se compara (ver PARES_FECHAS_GEMANET_INVIMA). Las cinco
+    # tarjetas de vigencia lo comparten porque las cinco responden la misma
+    # pregunta -- "¿hasta cuando vale este registro?" -- y verlas contiguas es
+    # lo que permite juzgarlo sin abrir el medicamento.
+    #
+    # Estas tarjetas NO llevan CAMPOS_CON_DIFERENCIA ni los trios campo-a-campo:
+    # aca solo se compara VIGENCIA (pedido del usuario, 2026-09-07). Que un
+    # medicamento vigente tenga ademas la descripcion desactualizada es cierto,
+    # pero es asunto de la tarjeta "Diferencia de estado o campos", que existe
+    # justo para eso; mezclarlo aca es lo que llenaba la tabla de columnas que
+    # no responden la pregunta de la tarjeta.
+    vigencia = ["FECHA_FIN", "FECHA_VENCIMIENTO_INVIMA"]
     return [
         (
             "Vigencia confirmada",
@@ -352,10 +377,7 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
             # busca a mano en los Excel de INVIMA, con ESTADO_CUM_INVIMA
             # visible para distinguirlo del vencido pleno.
             solo_activos & es_cum & ~formato_codigo_invalido & activo_invima & listado.eq("vigente"),
-            [
-                *base, "FECHA_VENCIMIENTO_INVIMA",
-                "CAMPOS_CON_DIFERENCIA", "COHERENCIA_FECHAS_INVIMA", "CONSULTA_VERIFICACION_SQL",
-            ],
+            [*base, *vigencia, "CONSULTA_VERIFICACION_SQL"],
         ),
         (
             "Registro vencido en INVIMA",
@@ -380,9 +402,7 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
             # distinto -- un agujero silencioso. Medido con los Excel de 2022:
             # 10 filas; con el catalogo en vivo del 2026-09-03: 2.
             solo_activos & es_cum & listado.eq("vencido"),
-            [
-                *base, "FECHA_VENCIMIENTO_INVIMA", "CONSULTA_VERIFICACION_SQL",
-            ],
+            [*base, *vigencia, "CONSULTA_VERIFICACION_SQL"],
         ),
         (
             "En trámite de renovación",
@@ -391,7 +411,7 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
                 "(ESTADO_CUM='Activo', listado='renovacion')."
             ),
             solo_activos & es_cum & activo_invima & listado.eq("renovacion"),
-            [*base, "CONSULTA_VERIFICACION_SQL"],
+            [*base, *vigencia, "CONSULTA_VERIFICACION_SQL"],
         ),
         (
             "En otro estado en INVIMA",
@@ -400,13 +420,37 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
                 "(Cancelado, Suspendido, Inactivo, etc., listado='otros_estados')."
             ),
             solo_activos & es_cum & activo_invima & listado.eq("otros_estados"),
-            [*base, "CONSULTA_VERIFICACION_SQL"],
+            [*base, *vigencia, "CONSULTA_VERIFICACION_SQL"],
         ),
+        # Una calidad como las demas, sobre medicamentos AUDITADOS: un CUM
+        # activo aca que INVIMA no tiene en ninguno de sus 4 listados.
+        #
+        # La distincion que la hace util (aclaracion del usuario, 2026-09-08)
+        # es entre IGNORAR y AUDITAR, que no es lo mismo:
+        #
+        #   - Un alimento cargado en el catalogo NO se "excluye de la
+        #     auditoria": nunca tuvo por que entrar. Se ignora antes, en
+        #     `filtrar_universo_auditable`, comprobando CODIGO_ATC (los
+        #     alimentos traen "RSA-...", un Registro Sanitario de ALIMENTOS,
+        #     que ni siquiera tiene forma de ATC). No llega hasta aca.
+        #   - Un CUM de verdad ausente de INVIMA SI es un hallazgo: codigo mal
+        #     digitado, registro anulado, o INVIMA que no lo publica. Se audita
+        #     y sale en esta tarjeta.
+        #
+        # Antes esta tarjeta mezclaba las dos cosas y por eso mostraba
+        # alimentos: se filtraba por "no esta en INVIMA" a secas, que apagaba
+        # justo la alarma que importa.
         (
             "No existe en INVIMA",
             (
-                "CUMs activos que no aparecen en ninguno de los 4 listados de INVIMA "
-                "(vigente, vencido, renovacion, otros_estados)."
+                "MEDICAMENTOS activos en Gemma Net que INVIMA no tiene en ninguno de sus "
+                "4 listados. Es un hallazgo real y hay que revisarlo: o el codigo esta mal "
+                "digitado, o el registro sanitario se anulo, o INVIMA no lo publica. "
+                "Se comprueba que de verdad sea un medicamento mirando CODIGO_ATC: lo que "
+                "no trae un ATC (los alimentos, por ejemplo, traen un Registro Sanitario "
+                "de ALIMENTOS 'RSA-...') no es un CUM, nunca entra a la auditoria y por "
+                "tanto tampoco aparece aca -- no es que se excluya, es que no aplica. "
+                "Si la cifra sube a miles, lo desactualizado es el catalogo de INVIMA."
             ),
             solo_activos & es_cum & ~en_algun_listado,
             [*base, "CLASIFICADO", "TIPO_SIN_CORRESPONDENCIA", "CONSULTA_VERIFICACION_SQL"],
@@ -429,9 +473,33 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
             [
                 *base, "RESPONSABLE_DISCREPANCIA",
                 "DETALLE_DIFERENCIAS", "CAMPOS_CON_DIFERENCIA", "PORCENTAJE_CALIDAD",
-                "FECHA_INICIO", "FECHA_FIN", "FECHA_ACTIVO_INVIMA", "FECHA_INACTIVO_INVIMA",
+                # Las fechas van en PARES, en el mismo orden en que se
+                # comparan: FECHA_INICIO contra FECHA ACTIVO y FECHA_FIN
+                # contra FECHA VENCIMIENTO (ver PARES_FECHAS_GEMANET_INVIMA).
+                #
+                # FECHA_VENCIMIENTO_INVIMA faltaba: la tarjeta seguia pidiendo
+                # FECHA_INACTIVO_INVIMA, el par VIEJO, desde antes de la
+                # correccion del 2026-09-02 ("fecha vencimiento invima = fecha
+                # fin gemma"). Efecto: en la seccion "Fecha fin diferencias"
+                # se veia la fecha local pero NO contra cual se la habia
+                # comparado, que es justo el dato que hace falta para decidir.
+                "FECHA_INICIO", "FECHA_ACTIVO_INVIMA",
+                "FECHA_FIN", "FECHA_VENCIMIENTO_INVIMA",
                 "COHERENCIA_FECHAS_INVIMA", "INCONSISTENCIA_FECHAS_ACTIVO", "CONSULTA_VERIFICACION_SQL",
-                *COLUMNAS_TRIO_CAMPOS_COMPARADOS,
+                # SIN los 22 trios campo-a-campo (COLUMNAS_TRIO_CAMPOS_COMPARADOS).
+                # Eran 22 de las 38 columnas de esta tarjeta y llenaban la
+                # pantalla de "Coincide" repetido: quien mira la tabla completa
+                # todavia no sabe QUE campo le interesa, y para eso ya esta
+                # CAMPOS_CON_DIFERENCIA, que nombra los que difieren en una
+                # sola celda.
+                #
+                # El trio de un campo aparece al abrir SU seccion, que es
+                # justo para lo que existen las secciones y lo que devuelve
+                # `columnas_de_seccion`. Reportado por el usuario dos veces
+                # (2026-09-04 "es estorboso, genera redundancia" y 2026-09-07
+                # "se siguen viendo todas las redundancias"): la primera vez
+                # se arreglo solo el caso CON seccion abierta, y la tabla por
+                # defecto -- que es la que se ve al entrar -- seguia igual.
             ],
         ),
     ]
@@ -464,6 +532,21 @@ def calidades_auditoria(auditoria: pd.DataFrame) -> list[Calidad]:
     resultado = []
     for nombre, explica, mascara, columnas_deseadas in _definiciones(auditoria):
         columnas = tuple(c for c in columnas_deseadas if c in auditoria.columns)
+        # El DataFrame lleva MAS columnas de las que la tabla muestra: las que
+        # necesita cada seccion para armar su vista recortada (los trios
+        # campo-a-campo, sobre todo). `columnas` es "que se ve por defecto";
+        # `df_tabla` es "de que dispone quien abra una seccion".
+        #
+        # Estaban unidos y por eso quitar los 22 trios de la vista por defecto
+        # -- que era lo pedido, llenaban la pantalla de "Coincide" repetido --
+        # se los quitaba tambien a las secciones, que son justo las que los
+        # muestran. Un mismo campo no puede significar las dos cosas.
+        columnas_para_secciones = tuple(
+            c
+            for c in _columnas_de_todas_las_secciones()
+            if c in auditoria.columns and c not in columnas
+        )
+        del_df = [*columnas, *columnas_para_secciones]
         subconjunto = auditoria[mascara]
         medicamentos = int(mascara.sum())
         porcentaje = round(medicamentos / total * 100, 1) if total else 0.0
@@ -474,10 +557,27 @@ def calidades_auditoria(auditoria: pd.DataFrame) -> list[Calidad]:
                 columnas=columnas,
                 medicamentos=medicamentos,
                 porcentaje_del_catalogo=porcentaje,
-                df_tabla=subconjunto[list(columnas)].copy() if columnas else subconjunto.iloc[:, :0],
+                df_tabla=subconjunto[del_df].copy() if del_df else subconjunto.iloc[:, :0],
             )
         )
     return resultado
+
+
+def _columnas_de_todas_las_secciones() -> tuple[str, ...]:
+    """Union de lo que pide `columnas_de_seccion` para cada seccion posible.
+
+    Se deriva de `CAMPOS_COMPARADOS_COHERENCIA` y de los pares de fecha, las
+    mismas fuentes que usa `_registro_secciones` para decidir que secciones
+    existen -- si manana se agrega un campo comparado, su trio entra aca solo,
+    sin que nadie tenga que acordarse."""
+    claves = [f"campo:{campo}" for campo in CAMPOS_COMPARADOS_COHERENCIA]
+    claves += [f"fecha:{campo}" for campo in PARES_FECHAS_GEMANET_INVIMA]
+    vistas: list[str] = []
+    for clave in claves:
+        for columna in columnas_de_seccion(clave):
+            if columna not in vistas:
+                vistas.append(columna)
+    return tuple(vistas)
 
 
 # ---------------------------------------------------------------------------
@@ -517,7 +617,22 @@ def calidad_admite_secciones(nombre: str) -> bool:
 ETIQUETAS_CAMPO_DIFERENCIA = {
     "DESCRIPCION": "Descripcion",
     "PRINCIPIO_ACTIVO": "Principio activo",
-    "CONCENTRACION": "Concentracion",
+    # La columna se llama CONCENTRACION pero NO contiene una concentracion:
+    # contiene la presentacion comercial ("CAJA POR 100 TABLETAS EN BLISTER").
+    # Se rotula por lo que ES, no por como se llama -- el usuario fue a validar
+    # el campo y lo leyo como un error de cruce (2026-09-08), y con razon:
+    # ningun rotulo decia que ahi va un empaque.
+    #
+    # Medido sobre las 57.736 filas con correspondencia de julio 2026, cuanto
+    # coincide el campo local contra cada candidato de INVIMA:
+    #     DESCRIPCION_COMERCIAL   52.116 (90,3 %)   <- con el que se compara
+    #     CONCENTRACION            3.508 ( 6,1 %)
+    #     CANTIDAD + UNIDAD            1 ( 0,0 %)
+    # El cruce apunta al campo correcto; lo que faltaba era decirlo en pantalla.
+    #
+    # El NOMBRE TECNICO no se toca: viaja en el snapshot, en las columnas del
+    # trio (CONCENTRACION_GEMANET/_INVIMA/_VALIDACION) y en el Excel de cargue.
+    "CONCENTRACION": "Presentacion comercial",
     "UNIDAD_MEDIDA": "Unidad de medida",
     "CODIGO_ATC": "Codigo ATC",
     "FORMA_FARMACEUTICA": "Forma farmaceutica",

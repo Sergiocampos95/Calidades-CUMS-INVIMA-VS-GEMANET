@@ -47,10 +47,39 @@ _MENSAJE_SIN_AUDITORIA = (
 
 
 def _tabla_auditoria(carpeta: Path):
+    """El snapshot COMPLETO, sin recortar -- 199.611 filas.
+
+    Lo necesitan las dimensiones de auto-consistencia (`/auditoria/dimensiones`):
+    formato, duplicados y completitud miden el reporte de Gemma Net contra si
+    mismo, y son deteccion de basura. Recortar antes esconderia justo la fila
+    con el problema. Para lo que se AUDITA contra INVIMA, usar
+    `_tabla_auditable`."""
     df = leer_tabla("auditoria", carpeta)
     if df is None:
         raise HTTPException(status_code=503, detail=_MENSAJE_SIN_AUDITORIA)
     return df
+
+
+def _tabla_auditable(carpeta: Path):
+    """El snapshot recortado al universo auditable -- lo que se compara contra
+    INVIMA, y lo que miden las 6 tarjetas de calidades.
+
+    Antes NINGUN endpoint de este router aplicaba el recorte, asi que las
+    tarjetas median sobre la tabla cruda mientras "Priorizar lo que requiere
+    accion" (auditoria.py) medi­a sobre el universo filtrado. Las dos pantallas
+    coincidian solo porque las mascaras de `calidades.py` repiten a mano los
+    mismos criterios -- hasta que dejaron de coincidir.
+
+    Lo destapo el usuario (2026-09-08): 4 codigos con formato de CUM valido que
+    INVIMA no reconoce (alimentos: ENSURE CLINICAL, ALIMENTO LACTEO EN POLVO)
+    seguian saliendo en la tarjeta "No existe en INVIMA" DESPUES de que
+    `filtrar_universo_auditable` ya los hubiera sacado de la auditoria. Medido:
+    el recorte deja esa tarjeta en 0 y las otras cinco intactas.
+
+    La tarjeta se conserva aunque quede en cero -- pedido del usuario: sirve
+    para ver si alguien vuelve a cargar en Gemma Net algo que no es un
+    medicamento, "aun si no hay casos actualmente"."""
+    return filtrar_universo_auditable(_tabla_auditoria(carpeta))
 
 
 # Cache de las 6 calidades ya calculadas, por snapshot. Mismo patron y misma
@@ -82,7 +111,7 @@ _CACHE_CALIDADES: dict[str, tuple[str, list[Calidad]]] = {}
 # los 6 df_tabla para devolverlos identicos -- gasto de memoria en el camino
 # degradado, que es justo donde menos conviene.
 def _calidades(carpeta: Path) -> list[Calidad]:
-    auditoria = _tabla_auditoria(carpeta)
+    auditoria = _tabla_auditable(carpeta)
     snapshot = snapshot_actual(carpeta)
     # Sin snapshot no hay nombre con el que versionar la entrada: se calcula
     # sin cachear en vez de arriesgar servir un resultado que no se puede
@@ -204,6 +233,14 @@ def tabla_calidad_filtrada(
     tabla = filtrar_por_seccion(calidad.df_tabla, seccion) if aplica else calidad.df_tabla
     if aplica and seccion is not None:
         tabla = _con_columnas_de_seccion(tabla, seccion)
+    else:
+        # Sin seccion se muestran solo las columnas VISIBLES de la calidad.
+        # `df_tabla` trae ademas las que necesita cada seccion para recortarse
+        # (los trios campo-a-campo), y sin esta linea salian todas: 38 columnas
+        # de las que 22 eran "Coincide" repetido -- exactamente la redundancia
+        # que el usuario reporto dos veces. Ver el comentario de
+        # `columnas_para_secciones` en calidades.py.
+        tabla = tabla[[c for c in calidad.columnas if c in tabla.columns]]
     return filtrar_tabla(tabla, q=q, filtros_json=filtros_json)
 
 
@@ -377,8 +414,10 @@ def naturaleza_hallazgos(carpeta: Path = Depends(carpeta_snapshots)) -> list[Hal
     lo residual de la migracion al final). Filtrado al universo auditable
     (mismo criterio que /resumen, ver auditoria.py) -- sin esto, un hallazgo
     en un CUM inactivo o en un codigo que no es CUM infla el conteo de algo
-    que no hay que accionar."""
-    auditoria = filtrar_universo_auditable(_tabla_auditoria(carpeta))
+    que no hay que accionar. El recorte ya lo hace `_tabla_auditoria`, que es
+    el unico punto de entrada del router: aplicarlo dos veces daria el mismo
+    resultado pero recorreria 199.611 filas de mas por request."""
+    auditoria = _tabla_auditable(carpeta)
     if "NATURALEZA_HALLAZGO" not in auditoria.columns:
         return []
     conteo = auditoria["NATURALEZA_HALLAZGO"].value_counts()

@@ -37,11 +37,15 @@ def _fila(codigo_interno, **overrides):
 def test_devuelve_las_6_calidades_en_orden():
     auditoria = pd.DataFrame([_fila("500-1")])
     calidades = calidades_auditoria(auditoria)
-    # Rediseño 2026-09-02: ahora son 6 calidades (no 7). La tarjeta de
-    # "Inactivo en Gemma Net pero vigente en INVIMA" se integro dentro de
-    # "Diferencia de estado o campos" (tarjeta 6). El veredicto de vigencia
-    # ahora es ESTADO_CUM_INVIMA (el campo real de INVIMA), no
-    # ESTADO_LISTADO_INVIMA (que es solo ubicacion).
+    # Rediseño 2026-09-02: de 7 a 6. La tarjeta de "Inactivo en Gemma Net pero
+    # vigente en INVIMA" se integro dentro de "Diferencia de estado o campos".
+    # El veredicto de vigencia es ESTADO_CUM_INVIMA (el campo real de INVIMA),
+    # no ESTADO_LISTADO_INVIMA (que es solo ubicacion).
+    #
+    # 2026-09-08: "No existe en INVIMA" se conserva pero cambia de naturaleza:
+    # es un DETECTOR, no una calidad. Sus filas no se auditan (un codigo que
+    # INVIMA no reconoce no es un CUM), pero siguen visibles para poder ver si
+    # alguien cargo algo que no es un medicamento.
     assert len(calidades) == 6
     assert calidades[0].nombre == "Vigencia confirmada"
     assert calidades[-1].nombre == "Diferencia de estado o campos"
@@ -238,11 +242,19 @@ def test_consejo_sale_de_naturaleza_hallazgo_y_queda_vacio_sin_hallazgo():
     assert tabla.loc["500-2", "CONSEJO"] == ""
 
 
-def test_con_diferencias_muestra_el_trio_gemanet_invima_validacion_por_campo():
-    """Pedido explicito del usuario (2026-08-28): CAMPOS_CON_DIFERENCIA dice
-    CUALES campos difieren, pero no que contienen -- esta calidad tiene que
-    traer el valor de Gemma Net, el de INVIMA y el veredicto de cada uno de
-    los 7 campos comparables, no solo el nombre del campo."""
+def test_con_diferencias_lleva_el_trio_de_cada_campo_aunque_no_lo_muestre_por_defecto():
+    """El pedido del usuario (2026-08-28) sigue vigente: CAMPOS_CON_DIFERENCIA
+    dice CUALES campos difieren pero no que contienen, asi que el valor de
+    Gemma Net, el de INVIMA y el veredicto tienen que estar disponibles.
+
+    Lo que cambio (2026-09-07) es DONDE se ven. Los 22 trios eran 22 de las 38
+    columnas de la tarjeta y llenaban la pantalla de "Coincide" repetido --
+    "se siguen viendo todas las redundancias". Ahora el trio de un campo
+    aparece al abrir SU seccion, y por eso este test separa las dos cosas:
+    `columnas` es lo que se muestra por defecto (ya no los trae) y `df_tabla`
+    es de lo que dispone quien abra una seccion (los sigue trayendo). Si se
+    volvieran a unir, `columnas_de_seccion` se quedaria sin datos que mostrar
+    -- que es justo el bug que este test evita que vuelva."""
     auditoria = pd.DataFrame(
         [
             _fila(
@@ -256,9 +268,14 @@ def test_con_diferencias_muestra_el_trio_gemanet_invima_validacion_por_campo():
     )
     calidades = calidades_auditoria(auditoria)
     con_diferencias = next(c for c in calidades if c.nombre == "Diferencia de estado o campos")
-    assert "DESCRIPCION_GEMANET" in con_diferencias.columnas
-    assert "DESCRIPCION_INVIMA" in con_diferencias.columnas
-    assert "DESCRIPCION_VALIDACION" in con_diferencias.columnas
+
+    # No se muestran por defecto...
+    assert "DESCRIPCION_GEMANET" not in con_diferencias.columnas
+    # ...pero el dato viaja igual, que es lo que la seccion necesita para
+    # poder recortarse a el (ver columnas_de_seccion).
+    assert "DESCRIPCION_GEMANET" in con_diferencias.df_tabla.columns
+    assert "DESCRIPCION_INVIMA" in con_diferencias.df_tabla.columns
+    assert "DESCRIPCION_VALIDACION" in con_diferencias.df_tabla.columns
     fila = con_diferencias.df_tabla.iloc[0]
     assert fila["DESCRIPCION_GEMANET"] == "ACETAMINOFEN 500MG"
     assert fila["DESCRIPCION_INVIMA"] == "ACETAMINOFEN 500 MG"
@@ -479,3 +496,22 @@ def test_estado_invima_conserva_el_detalle_de_otros_estados_aunque_sea_homogeneo
     columna = _con_columnas_derivadas(homogeneo)["ESTADO_INVIMA"]
 
     assert list(columna) == ["Otro estado (Revocado)", "Otro estado (Revocado)"]
+
+
+def test_la_consulta_de_verificacion_trae_el_estado_local_y_su_traduccion():
+    """La mitad de casi todo hallazgo de esta auditoria es el estado local
+    ("activo aqui pero inactivo en INVIMA"). Sin `sw_activo` en la consulta,
+    quien la pega en un cliente SQL ve los campos del medicamento pero no
+    puede confirmar el dato que motivo el hallazgo (pedido del usuario,
+    2026-09-07).
+
+    Va el valor CRUDO y su traduccion porque el proyecto lee `sw_activo = 1`
+    como activo y CUALQUIER otro valor como inactivo (ver el CASE de
+    ingesta/gemanet_sql.py): mostrar el crudo deja ver cual es ese otro valor
+    en la base real en vez de asumir que es 0."""
+    consulta = _consultas_verificacion_gemanet(pd.Series(["500-1"])).iloc[0]
+
+    assert "sw_activo" in consulta
+    assert "CASE WHEN sw_activo = 1 THEN 'Activo' ELSE 'Inactivo' END" in consulta
+    assert consulta.startswith("SELECT ")
+    assert consulta.endswith("WHERE codigo_interno = '500-1';")

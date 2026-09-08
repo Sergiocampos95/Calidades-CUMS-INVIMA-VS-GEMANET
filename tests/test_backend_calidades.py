@@ -66,10 +66,10 @@ def test_listar_calidades_devuelve_6_con_conteos_correctos(tmp_path):
         r = cliente.get("/auditoria/calidades")
         assert r.status_code == 200
         calidades = {c["nombre"]: c for c in r.json()}
-        # Rediseño 2026-09-02: ahora son 6 calidades. La tarjeta de
-        # "Inactivo en Gemma Net pero vigente en INVIMA" se integro dentro de
-        # "Diferencia de estado o campos". El veredicto de vigencia ahora es
-        # ESTADO_CUM_INVIMA, no ESTADO_LISTADO_INVIMA.
+        # Rediseño 2026-09-02: de 7 a 6 (la tarjeta de "Inactivo aqui pero
+        # vigente en INVIMA" se integro en "Diferencia de estado o campos").
+        # 2026-09-08: "No existe en INVIMA" se conserva como DETECTOR (sus
+        # filas no se auditan, pero deben poder verse).
         assert len(calidades) == 6
         # La regla vigente del negocio exige CUMs activos y validos. El
         # ejemplo de prueba solo tiene un CUM activo vigente y uno vencido.
@@ -345,12 +345,19 @@ def test_seccion_de_campo_trae_solo_su_trio_y_no_el_de_otros_campos_comparados(t
         app.dependency_overrides.clear()
 
 
-def test_sin_seccion_las_columnas_de_la_tabla_no_cambian(tmp_path):
-    """Hay 6 tarjetas y pruebas existentes (ver
-    test_todas_las_calidades_incluyen_el_estado_de_invima_en_columnas_y_filas)
-    que dependen de ver la tabla SIN recortar cuando no llega `seccion` -- si
-    el recorte por seccion se aplicara tambien sin seccion, esas tarjetas
-    perderian columnas que hoy si muestran."""
+def test_sin_seccion_no_viajan_los_trios_campo_a_campo(tmp_path):
+    """Sin seccion abierta la tabla muestra las columnas de contexto, NO los
+    22 trios <CAMPO>_GEMANET/_INVIMA/_VALIDACION.
+
+    Eran 22 de las 38 columnas de la tarjeta y llenaban la pantalla de
+    "Coincide" repetido -- el usuario lo reporto dos veces (2026-09-04 "es
+    estorboso, genera redundancia" y 2026-09-07 "se siguen viendo todas las
+    redundancias"). Quien mira la tabla completa todavia no sabe que campo le
+    interesa: para eso esta CAMPOS_CON_DIFERENCIA, que los nombra en una sola
+    celda, y las secciones, que abren el trio del campo elegido.
+
+    El dato NO se pierde: sigue en `df_tabla` para que la seccion pueda
+    recortarse a el (ver `test_seccion_de_campo_trae_solo_su_trio...`)."""
     cliente, carpeta = _cliente(tmp_path)
     try:
         escribir_snapshot({"auditoria": _auditoria_con_trio_de_campos()}, carpeta=carpeta)
@@ -359,9 +366,10 @@ def test_sin_seccion_las_columnas_de_la_tabla_no_cambian(tmp_path):
         filas = r.json()["filas"]
         assert len(filas) > 0
         for fila in filas:
-            assert "CONCENTRACION_GEMANET" in fila
-            assert "DESCRIPCION_GEMANET" in fila
-            assert "RESPONSABLE_DISCREPANCIA" in fila
+            assert "CONCENTRACION_GEMANET" not in fila
+            assert "DESCRIPCION_GEMANET" not in fila
+            # El contexto que si se muestra sigue estando.
+            assert "CAMPOS_CON_DIFERENCIA" in fila
             assert "ESTADO_INVIMA" in fila
     finally:
         app.dependency_overrides.clear()
@@ -458,5 +466,55 @@ def test_un_snapshot_nuevo_invalida_las_calidades_cacheadas(tmp_path):
             "las cifras no cambiaron tras un snapshot nuevo: la cache de "
             "_calidades no se esta invalidando"
         )
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_las_tarjetas_no_muestran_lo_que_la_auditoria_excluyo(tmp_path):
+    """Bug reportado tres veces por el usuario (2026-09-08): 4 codigos con
+    formato de CUM valido que INVIMA no reconoce (alimentos: ENSURE CLINICAL,
+    ALIMENTO LACTEO EN POLVO) seguian saliendo en la tarjeta "No existe en
+    INVIMA" DESPUES de que `filtrar_universo_auditable` los hubiera sacado de
+    la auditoria.
+
+    La causa: este router no aplicaba el recorte en NINGUN endpoint, asi que
+    las tarjetas median sobre la tabla cruda mientras "Priorizar lo que
+    requiere accion" media sobre el universo filtrado. Las dos pantallas
+    coincidian solo porque las mascaras de calidades.py repiten a mano los
+    mismos criterios -- hasta que dejaron de coincidir.
+
+    La tarjeta se CONSERVA aunque quede en cero (pedido del usuario): sirve
+    para ver si alguien vuelve a cargar algo que no es un medicamento."""
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        df = _auditoria_muestra()
+        # Un CUM impecable de formato que INVIMA no reconoce: un alimento.
+        df = pd.concat(
+            [
+                df,
+                pd.DataFrame([{
+                    **df.iloc[0].to_dict(),
+                    "CODIGO_INTERNO": "20109427-1",
+                    "DESCRIPCION": "ENSURE CLINICAL 220ML - ALIMENTO HIPERPROTEICO",
+                    "ACTIVO": "Si",
+                    "TIPO_CODIGO_INTERNO": "cum",
+                    "ESTADO_LISTADO_INVIMA": "ninguno",
+                    "ESTADO_CUM_INVIMA": "",
+                    "ESTADO_COHERENCIA": "sin_correspondencia_invima",
+                }]),
+            ],
+            ignore_index=True,
+        )
+        escribir_snapshot({"auditoria": df}, carpeta=carpeta)
+
+        calidades = {c["nombre"]: c for c in cliente.get("/auditoria/calidades").json()}
+        assert "No existe en INVIMA" in calidades, "la tarjeta se conserva"
+        assert calidades["No existe en INVIMA"]["medicamentos"] == 0
+
+        # Y no aparece en la tabla de ninguna calidad.
+        for nombre in calidades:
+            filas = cliente.get(f"/auditoria/calidades/{nombre}").json()["filas"]
+            codigos = {f.get("CODIGO_INTERNO") for f in filas}
+            assert "20109427-1" not in codigos, f"aparece en '{nombre}'"
     finally:
         app.dependency_overrides.clear()

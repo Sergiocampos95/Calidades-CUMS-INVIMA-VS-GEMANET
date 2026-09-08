@@ -30,6 +30,23 @@ import pandas as pd
 # origen evita que alguno de los tres quede desincronizado si esto cambia.
 PATRON_CUM = re.compile(r"^\d+-\d+$")
 
+# Un CODIGO_ATC empieza SIEMPRE por letra (grupo anatomico) + 2 digitos (grupo
+# terapeutico): D01AC01, J06BA02, V06DX. Los niveles inferiores son opcionales
+# -- "V06DX" es un ATC de nivel 4 tan valido como uno completo de 7 -- por eso
+# el patron solo exige el prefijo y no los 7 caracteres.
+#
+# Sirve para distinguir un medicamento de algo que no lo es cuando el codigo
+# interno no alcanza. Caso real (usuario, 2026-09-08): entre los codigos con
+# formato de CUM impecable que INVIMA no reconoce habia alimentos con
+# "RSA-001241-2016" en CODIGO_ATC -- un Registro Sanitario de ALIMENTOS, que no
+# empieza por letra+2digitos y por tanto no es un ATC ni de lejos.
+#
+# NO se exigen los 7 caracteres a proposito: descartar "V06DX" (nutrientes)
+# por venir incompleto seria decidir a ciegas sobre un ATC que si existe, y la
+# regla 1 del proyecto prohibe justamente eso. Lo que este patron afirma es
+# solo "esto ni siquiera tiene forma de ATC".
+PATRON_ATC = re.compile(r"^[A-Z]\d{2}")
+
 CodigoTipo = Literal[
     "cum",
     "cum_con_sufijo_atc",
