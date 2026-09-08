@@ -56,3 +56,4 @@ data_runtime.*/
 # npm run build -- no son fuente, no se versionan.
 frontend/node_modules/
 frontend/dist/
+data_runtime/capturas/

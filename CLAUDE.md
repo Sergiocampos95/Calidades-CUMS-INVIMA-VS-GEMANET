@@ -36,7 +36,25 @@ cd frontend && npx tsc --noEmit           # tipos del frontend
 # DESARROLLO (reinicia AUTOMÁTICAMENTE todo):
 .\reinicia_todo.ps1                       # backend + refresco + frontend
 .\reinicia_todo.ps1 -SinRefresco          # omite el refresco si el snapshot ya sirve
+
+# VERIFICAR EN PANTALLA (no solo contra la API):
+python scripts\ver_app.py                          # portada
+python scripts\ver_app.py auditoria priorizar      # una vista concreta
+python scripts\ver_app.py invima --cum 20055681-1  # consultar un CUM
+python scripts\ver_app.py auditoria entender --texto --tema oscuro
 ```
+
+**Mirar la pantalla es parte de verificar, no un extra.** La suite y la API
+pueden estar en verde con la vista rota: el 2026-09-08, con 657 pruebas
+pasando, la consulta puntual anunciaba "CRÍTICO — se puede autorizar sin
+registro vigente" tres líneas encima de su propia fila "coincide", otra vista
+mandaba a copiar una fecha del año 3000, y 1.194 descripciones se mostraban con
+mojibake. Los tres salieron de mirar, no de una prueba.
+
+`scripts/ver_app.py` usa el **Edge que ya está instalado** (no baja los ~150 MB
+del chromium de Playwright), guarda la captura en `data_runtime/capturas/` (en
+`.gitignore`) e imprime los errores de la consola del navegador — un fallo de
+JS deja la vista a medias y sin eso la captura sale "vacía" sin decir por qué.
 
 **Importante**: Tras cambios en `src/` o `backend/`, ejecuta `.\reinicia_todo.ps1` (no
 hagas esto a mano). Hacen falta CUATRO cosas y olvidar una sola deja la pantalla

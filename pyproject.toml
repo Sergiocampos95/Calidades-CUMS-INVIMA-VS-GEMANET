@@ -43,6 +43,12 @@ dev = [
     "pytest>=8.0",
     # TestClient de FastAPI (backend/tests/) lo requiere en tiempo de prueba.
     "httpx>=0.27",
+    # Verificar la app EN PANTALLA, no solo contra la API (scripts/ver_app.py).
+    # Varios defectos de 2026-09-08 solo se veian mirando: un banner que
+    # gritaba CRITICO encima de su propia fila "coincide", un veredicto que
+    # mandaba a copiar una fecha del ano 3000, y texto con mojibake. Ninguno
+    # lo atrapaba la suite. NO baja un navegador: usa el Edge de la maquina.
+    "playwright>=1.40",
 ]
 
 [dependency-groups]

@@ -182,6 +182,25 @@ agregan funcionalidades.
 | `reinicia_worker.ps1` | Arranca el worker. **`reinicia_todo.ps1` NO lo arranca** — el worker refresca al arrancar y eso contradiría `-SinRefresco` |
 | `scripts/pre-push` | Hook: pytest + ruff + tsc. Aborta el push si algo falla |
 | `scripts/instalar-hooks.ps1` | Instala el hook una vez |
+| `scripts/ver_app.py` | **Abre la app en un navegador y captura la pantalla.** Ver abajo |
+
+### Verificar en pantalla
+
+```bash
+python scripts/ver_app.py                          # portada
+python scripts/ver_app.py auditoria priorizar      # una vista
+python scripts/ver_app.py invima --cum 20055681-1  # consultar un CUM
+python scripts/ver_app.py auditoria entender --texto --tema oscuro
+```
+
+Usa el **Edge instalado** (`channel="msedge"`), no baja el chromium de
+Playwright. La captura va a `data_runtime/capturas/` (en `.gitignore`).
+
+**La suite en verde no garantiza que la vista esté bien.** El 2026-09-08, con
+657 pruebas pasando: un banner gritaba CRÍTICO tres líneas encima de su propia
+fila "coincide", un veredicto mandaba a copiar una fecha del año 3000, una tabla
+volcaba las 92 columnas del snapshot, y 1.194 descripciones salían con mojibake.
+Ninguno lo atrapaba una prueba.
 
 **Sin worker corriendo, el botón "Actualizar ahora" responde 503**: el backend
 solo deja la solicitud, quien la ejecuta es el worker.
