@@ -7,6 +7,17 @@ El `README.md` es la documentacion funcional completa y esta al dia: leelo antes
 de tocar logica de negocio. Este archivo solo recoge lo que un agente necesita
 para no romper convenciones.
 
+Dos documentos mas, en `design/`, que evitan re-derivar lo ya decidido:
+
+- **`design/reglas_negocio.md`** — cada regla que el sistema aplica sobre los
+  datos, con la medicion que la justifica y la fecha en que se decidio.
+  Consultalo ANTES de cambiar un umbral, un filtro, una cascada o un
+  veredicto. Incluye las reglas que ya se probaron y se REVIRTIERON, para no
+  volver a proponerlas.
+- **`design/mapa_del_proyecto.md`** — donde vive cada cosa, el ciclo de vida
+  del dato (fuentes -> worker -> snapshot -> backend -> frontend) y la tabla
+  "quiero cambiar X, toco Y".
+
 ## Los dos flujos (no confundirlos)
 
 | Pregunta | Flujo | Modulos |
@@ -176,10 +187,38 @@ DESCARTADO: no se toca ni se le agregan funcionalidades (regla dura, ver
 Reglas acordadas con el usuario el 2026-09-04, despues de una sesion en la que
 se acumularon 55 commits sin subir y dos agentes se pisaron en la misma rama.
 
+**Una sesion = un problema.** Una sesion atiende UN problema, en UNA rama que
+lleva su nombre, y termina cuando ese problema esta resuelto, verificado en
+pantalla y subido. Lo que aparezca por el camino y no sea ese problema se
+anota (una nota al usuario al cerrar la sesion) y se trabaja DESPUES, en su
+propia sesion.
+
+Por que, medido en este repositorio: la sesion del 2026-09-08 dejo 8 commits
+en la rama `ui/vocabulario-veredictos` -- un nombre que solo describe el
+ultimo. Los otros siete tocan fechas centinela, universo auditable, worker,
+eleccion de fuente, delimitador de exportacion, priorizacion y navegacion.
+Son ocho arreglos buenos, cada uno con su porque escrito, pero llegaron
+juntos y eso cuesta caro en tres sitios:
+
+- **Revisar.** Nadie revisa ocho cambios no relacionados con el mismo
+  cuidado con que revisa uno.
+- **Revertir.** Si uno sale mal, la rama no se puede devolver sin llevarse
+  los otros siete por delante.
+- **Verificar.** Cada arreglo pide su propio `.\reinicia_todo.ps1` y su
+  propia mirada en pantalla. Ocho a la vez es justo cuando se empieza a
+  confiar en que "la suite esta verde" -- y la suite no ve la pantalla.
+
+Un problema puede necesitar varios commits (el arreglo, la prueba, la
+correccion de lo que el arreglo destapo). Eso sigue siendo una sesion. Lo que
+NO es una sesion es una lista de temas distintos que comparten rama solo
+porque se trabajaron el mismo dia.
+
 **Ramas.** `master` es la rama estable y siempre debe quedar desplegable. Todo
 trabajo va en una rama por tarea (`fix/<tema>` o `feature/<tema>`), que se
 fusiona a `master` solo cuando esta verde Y verificada en pantalla. Nunca se
-commitea directo a `master`.
+commitea directo a `master`. El nombre de la rama es el problema de la sesion:
+si al terminar el nombre ya no describe lo que hay dentro, la sesion cubrio
+mas de un problema.
 
 **Antes de empezar una tanda:** `git fetch origin && git status`. Si la rama
 quedo atras, ponerse al dia antes de tocar nada.
@@ -217,19 +256,20 @@ snapshot es de antes".
 Este proyecto define agentes especializados en `.claude/agents/`. Ver
 `.claude/AGENTES.md` para el reparto de responsabilidades y como encadenarlos.
 
-## Contexto compartido entre herramientas (Copilot CLI, Claude Code, Copilot Chat)
+## Registro de trabajo
 
-- `AGENTS.md` en la raiz es el puente para Copilot CLI (lo lee
-  automaticamente). Copilot Chat en VS Code lee `.github/copilot-instructions.md`
-  y las reglas por carpeta de `.github/instructions/*.instructions.md`. Los tres
-  apuntan a este archivo sin duplicar reglas.
-- **El reparto de trabajo con Copilot esta en `.ai/planes/README.md`**: Claude
-  Code decide y verifica, Copilot acelera dentro de una decision ya tomada.
-  Cada tarea no trivial lleva un plan en `.ai/planes/<slug>.md` con un dueno
-  por paso y tres marcas (`[ ]` libre, `[~]` tomado, `[x]` hecho). Comandos:
-  `/plan-equipo`, `/tomar-paso`, `/bitacora`.
+**Claude Code es el unico agente que trabaja este repositorio** (decision del
+usuario, 2026-09-08). Ya NO hay plan compartido ni reparto de pasos con
+Copilot: un cambio inesperado en el arbol es propio, no de otra herramienta.
+
 - `.ai/bitacora.jsonl` es un registro append-only de cambios no triviales
-  (agente, fecha, resumen, archivos). Formato en `.ai/README.md`.
-- Convencion de commits: si propones un mensaje, agrega un trailer
-  `Agente: <nombre>` (ej. `Agente: Copilot CLI`) para poder filtrar
-  `git log --grep="^Agente:"` por herramienta.
+  (agente, fecha, resumen, archivos). Formato en `.ai/README.md`. Sigue
+  vigente: es la memoria en una linea de por que se hizo cada tanda, sin
+  abrir el log de git. Comando: `/bitacora`.
+- Los planes de `.ai/planes/` quedan como HISTORIA de tareas ya ejecutadas.
+  No se crean planes nuevos con dueno por paso; la sesion trabaja un solo
+  problema (ver arriba) y lo cierra.
+- `AGENTS.md` en la raiz y `.github/copilot-instructions.md` /
+  `.github/instructions/*.instructions.md` siguen en el arbol apuntando a
+  este archivo. Ya no cumplen una funcion en el flujo de trabajo; si estorban,
+  se borran en una tanda aparte.
