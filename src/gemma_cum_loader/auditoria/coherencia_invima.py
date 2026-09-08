@@ -992,51 +992,52 @@ def _campos_en_pendiente_gyc(
     """Por campo, una mascara True donde el dato de Gemma Net es un
     medicamento COMBINADO que la plataforma guardo en una sola fila.
 
-    Se marca cuando pasan LAS DOS cosas a la vez:
+    Se marca un campo cuando pasan LAS DOS cosas a la vez:
 
       1. INVIMA trae MAS DE UNA fila para ese EXPEDIENTE-CONSECUTIVO
          (`CODIGO_INTERNO` repetido en `df_invima` -- el caso normal es una
          fila por principio activo, ver `invima_reader.py`).
       2. El valor de Gemma Net contiene, como subcadena ya normalizada, el
-         texto de DOS O MAS de esas filas -- es decir, junta varios
-         principios activos / descripciones en uno.
+         PRINCIPIO_ACTIVO de DOS O MAS de esas filas -- es decir, junta
+         varios principios activos en un solo campo.
 
-    Si INVIMA trae varias filas pero el dato de Gemma Net calza con UNA
-    sola, NO se marca: eso se compara normal (contra la fila que gano el
-    `drop_duplicates` de `auditar_coherencia`). La deteccion se limita a
-    `_CAMPOS_COMBINADO_GYC` porque el resto de campos es identico para
-    todos los principios activos del combinado.
+    El nombre del principio activo (no la descripcion completa armada) es la
+    senal robusta: en el dato real la plataforma NO pega las descripciones
+    enteras una tras otra, las INTERCALA ("PA1 606mg PA2 4mg FORMA"), asi
+    que buscar la descripcion compuesta de cada fila como subcadena
+    contigua no calza casi nunca. El nombre del principio activo si aparece
+    literal ("... 606MG TIOCOLCHICOSIDO 4MG ...").
+
+    Si INVIMA trae varias filas pero el dato de Gemma Net contiene UN solo
+    principio activo, NO se marca: eso se compara normal (contra la fila que
+    gano el `drop_duplicates` de `auditar_coherencia`) -- puede ser una
+    diferencia real, no un combinado pegado. La deteccion se limita a
+    `_CAMPOS_COMBINADO_GYC`.
 
     `df_invima` es el dataset CRUDO de Vigentes, ANTES de deduplicar por
     `CODIGO_INTERNO` -- por eso hay que pasarlo aparte y no reusar el
     `invima` ya colapsado.
     """
     vacio = pd.Series(False, index=clave_cruce_por_fila.index)
+    campos = [campo for campo in _CAMPOS_COMBINADO_GYC if campo in valores_locales]
     if df_invima.empty or "CODIGO_INTERNO" not in df_invima.columns:
-        return {campo: vacio.copy() for campo in valores_locales}
+        return {campo: vacio.copy() for campo in campos}
 
     clave_invima = df_invima["CODIGO_INTERNO"].fillna("").astype(str).str.strip()
     filas_por_clave = clave_invima.value_counts()
-    tiene_varias_filas = (
-        clave_cruce_por_fila.map(filas_por_clave).fillna(0).gt(1)
-    )
+    tiene_varias_filas = clave_cruce_por_fila.map(filas_por_clave).fillna(0).gt(1)
 
-    texto_invima_por_campo = {
-        "DESCRIPCION": _normalizada(_descripcion_esperada_invima(df_invima)),
-        "PRINCIPIO_ACTIVO": _normalizada(_columna_o_vacia(df_invima, "PRINCIPIO_ACTIVO")),
-    }
+    # clave INVIMA -> conjunto de PRINCIPIO_ACTIVO normalizados NO vacios de
+    # sus filas. Un `set` para no contar dos veces la misma frase repetida
+    # entre las N filas del mismo codigo (distintos roles / titulares).
+    pa_invima = _normalizada(_columna_o_vacia(df_invima, "PRINCIPIO_ACTIVO"))
+    bloques_por_clave: dict[str, set[str]] = {}
+    for clave, texto in zip(clave_invima, pa_invima):
+        if texto:
+            bloques_por_clave.setdefault(clave, set()).add(texto)
 
     resultado: dict[str, pd.Series] = {}
-    for campo in _CAMPOS_COMBINADO_GYC:
-        if campo not in valores_locales:
-            continue
-        # clave INVIMA -> conjunto de textos normalizados NO vacios de sus
-        # filas. Un `set` para no contar dos veces la misma frase repetida.
-        bloques_por_clave: dict[str, set[str]] = {}
-        for clave, texto in zip(clave_invima, texto_invima_por_campo[campo]):
-            if texto:
-                bloques_por_clave.setdefault(clave, set()).add(texto)
-
+    for campo in campos:
         local_normalizado = _normalizada(valores_locales[campo])
         bloques_presentes = pd.Series(
             [

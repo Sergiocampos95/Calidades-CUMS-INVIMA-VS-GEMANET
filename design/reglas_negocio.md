@@ -133,9 +133,12 @@ y no aparece en `CAMPOS_CON_DIFERENCIA` (se lista aparte en
 
 Se marca solo cuando pasan **las dos** cosas: (1) INVIMA trae >1 fila para ese
 `CODIGO_INTERNO` **y** (2) el valor de Gemma Net contiene, como subcadena
-normalizada, el texto de **dos o más** de esas filas. Si INVIMA trae varias
-filas pero el dato de Gemma Net calza con **una sola**, se compara normal —no
-es un combinado pegado, es un registro que corresponde a una de las filas.
+normalizada, el **nombre del principio activo** de **dos o más** de esas filas.
+Si contiene uno solo, se compara normal —puede ser una diferencia real, no un
+combinado pegado—. Medido sobre el snapshot del 2026-09-08: ~12.500 filas
+marcan `DESCRIPCION` (la plataforma pega los principios activos en la
+descripción casi siempre) y solo 1 marca también `PRINCIPIO_ACTIVO` (ese
+campo casi nunca lo pega).
 
 Pendiente de decisión de GyC (anotado 2026-09-08): `ESTADO_COHERENCIA` de la
 fila **no** se tocó —una fila cuyos únicos hallazgos son de este tipo puede

@@ -107,10 +107,14 @@ nada. `_campos_en_pendiente_gyc()` marca un campo cuando pasan **las dos**:
 
 1. `df_invima["CODIGO_INTERNO"]` (crudo, sin deduplicar) tiene **>1 fila** para
    esa clave de cruce.
-2. El valor local, normalizado, contiene como subcadena el texto normalizado
+2. El valor local, normalizado, contiene como subcadena el **`PRINCIPIO_ACTIVO`**
    de **≥2** de esas filas (`_bloques_distintos_en()` descarta el bloque que
    es subcadena de otro más largo — "IBUPROFENO" dentro de "IBUPROFENO
-   ARGININA" no es un segundo principio activo).
+   ARGININA" no es un segundo principio activo). Se usa el nombre del
+   principio activo y **no** la descripción compuesta de cada fila porque la
+   plataforma **intercala** los datos (`PA1 606mg PA2 4mg FORMA`), no pega
+   descripciones enteras: el nombre del PA sí aparece literal, la descripción
+   compuesta casi nunca.
 
 Solo `DESCRIPCION` y `PRINCIPIO_ACTIVO` (`_CAMPOS_COMBINADO_GYC`): el resto de
 campos es idéntico para todos los principios activos del combinado. El
