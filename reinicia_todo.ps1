@@ -15,6 +15,14 @@ $ErrorActionPreference = "Stop"
 $raiz = $PSScriptRoot
 Set-Location $raiz
 
+# El python del venv por ruta, no el del PATH: este script no activa el venv,
+# asi que un `python` pelado toma el del sistema y revienta con
+# "No module named 'pandas'" si esa consola no tenia el venv activo -- mismo
+# bug ya corregido en reinicia_worker.ps1 y encontrado aca el 2026-09-09 al
+# auditar los tres scripts de reinicio juntos.
+$python = Join-Path $raiz ".venv\Scripts\python.exe"
+if (-not (Test-Path $python)) { $python = "python" }
+
 # La consola de Windows es cp1252: un emoji en un print de Python revienta el
 # proceso con UnicodeEncodeError (fallo real, 2026-09-02). Se fuerza UTF-8 y
 # todo lo que imprime este script es ASCII.
@@ -63,7 +71,7 @@ Get-ChildItem -Path $raiz -Filter "*.pyc" -Recurse -File -Force -ErrorAction Sil
 # prohibe. Por eso se inspecciona el estado devuelto y se sale con codigo 1.
 if (-not $SinRefresco) {
   Paso "Refrescando snapshot (~2 min)"
-  python -c @"
+  & $python -c @"
 from pathlib import Path
 import sys
 from worker.tareas import ejecutar_refresco
@@ -119,4 +127,4 @@ if (-not $hayWorker) {
   Write-Host "            Arrancalo aparte con .\reinicia_worker.ps1 si lo necesitas." -ForegroundColor DarkYellow
 }
 Write-Host ""
-python -m uvicorn backend.app.main:app --reload --port 8000
+& $python -m uvicorn backend.app.main:app --reload --port 8000

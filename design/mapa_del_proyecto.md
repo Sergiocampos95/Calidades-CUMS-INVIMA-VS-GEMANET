@@ -178,8 +178,9 @@ agregan funcionalidades.
 
 | Script | Qué hace |
 |---|---|
-| `reinicia_todo.ps1` | Mata el backend, limpia `__pycache__`, refresca, levanta frontend y backend |
+| `reinicia_todo.ps1` | El de uso normal. Mata el backend, limpia `__pycache__`, refresca, levanta frontend y backend |
 | `reinicia_todo.ps1 -SinRefresco` | Igual pero sin refrescar |
+| `reinicia_backend.ps1` | Solo backend: mata backend+worker+streamlit (si quedó vivo), limpia cache, arranca **solo** el backend, sin tocar frontend ni refrescar. Para cuando el frontend ya está bien y solo cambió código Python |
 | `reinicia_worker.ps1` | Arranca el worker. **`reinicia_todo.ps1` NO lo arranca** — el worker refresca al arrancar y eso contradiría `-SinRefresco` |
 | `scripts/pre-push` | Hook: pytest + ruff + tsc. Aborta el push si algo falla |
 | `scripts/instalar-hooks.ps1` | Instala el hook una vez |

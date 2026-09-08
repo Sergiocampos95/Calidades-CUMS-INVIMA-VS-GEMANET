@@ -33,5 +33,12 @@ Write-Host "Limpiando cache..." -ForegroundColor Yellow
 Get-ChildItem -Path . -Recurse -Directory -Filter __pycache__ -Force | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
 Write-Host "Iniciando backend en puerto 8000..." -ForegroundColor Green
-Set-Location "c:\Users\TECNOLGO TIC\Documents\gemma-cum-loader"
-& python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --log-level info
+Set-Location $PSScriptRoot
+
+# El python del venv por ruta, no el del PATH: mismo bug ya corregido en
+# reinicia_worker.ps1 (2026-09-07) y encontrado aca el 2026-09-09 al auditar
+# los tres scripts de reinicio juntos -- un `python` pelado toma el del
+# sistema y revienta con "No module named 'fastapi'".
+$python = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
+if (-not (Test-Path $python)) { $python = "python" }
+& $python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --log-level info
