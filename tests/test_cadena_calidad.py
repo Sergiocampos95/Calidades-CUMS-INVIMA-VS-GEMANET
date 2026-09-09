@@ -22,9 +22,7 @@ def _fila_gemanet(codigo_interno, **overrides):
     base = {
         "CODIGO_INTERNO": codigo_interno,
         "DESCRIPCION": "ACETAMINOFEN 500MG TABLETA",
-        # CONCENTRACION se cruza contra CONCENTRACION de INVIMA (ver
-        # _CAMPOS_DIRECTOS): el fixture "todo coincide" trae la concentracion.
-        "CONCENTRACION": "500 MG",
+        "CONCENTRACION": "CAJA POR 100 TABLETAS EN BLISTER PVC/ALUMINIO",
         "FORMA_FARMACEUTICA": "TABLETA",
         "PRINCIPIO_ACTIVO": "ACETAMINOFEN",
         "CODIGO_ATC": "N02BE01",

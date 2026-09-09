@@ -201,22 +201,23 @@ CLASIFICADO_VALORES_CREACION_PROPIA = ["Medicamento Ancestral", "Planta Medicina
 # campo de salida -> (columna en el Reporte de Gemma Net, columna en INVIMA)
 # DESCRIPCION, MARCA_MEDICAMENTO y UNIDAD_MEDIDA se arman aparte (ver abajo)
 #
-# CONCENTRACION de Gemma Net se cruza contra CONCENTRACION de INVIMA (la
-# concentracion real, "500 mg") -- decision del usuario (2026-09-08): la
-# auditoria debe contrastar concentracion contra concentracion, campo con su
-# homonimo.
+# CONCENTRACION de Gemma Net NO guarda una concentracion: guarda la
+# PRESENTACION COMERCIAL ("CAJA POR 100 TABLETAS EN BLISTER PVC/ALUMINIO"),
+# que en INVIMA vive en DESCRIPCION_COMERCIAL y no en su columna homonima.
+# Compararla contra CONCENTRACION de INVIMA -- que si es una concentracion
+# ("500 mg") -- fallaba en el 100 % de las filas. Medido el 2026-08-21 sobre
+# las 43.266 filas con correspondencia, cruzando cada campo local contra
+# TODOS los de INVIMA:
 #
-# Historia, para no re-derivarla: entre el 2026-08-21 y el 2026-09-08 este
-# cruce apuntaba a DESCRIPCION_COMERCIAL de INVIMA, porque se habia medido que
-# la columna CONCENTRACION del reporte solia traer la PRESENTACION COMERCIAL
-# ("CAJA POR 100 TABLETAS EN BLISTER PVC/ALUMINIO") y no una concentracion.
-# Medido el 2026-09-08 sobre 57.736 filas con correspondencia: 90,3 % exactas
-# contra DESCRIPCION_COMERCIAL y 6,1 % contra CONCENTRACION. Con este cruce
-# homonimo, esas filas cuyo dato local es un empaque quedan como "difiere"
-# (o similitud baja) -- es el comportamiento buscado: la diferencia real es
-# que Gemma Net tiene mal diligenciado el campo, y la auditoria debe decirlo.
+#     contra CONCENTRACION de INVIMA          2 exactas ( 0,0 %)  similitud  3,2
+#     contra DESCRIPCION_COMERCIAL       42.338 exactas (97,9 %)  similitud 100,0
+#
+# Era el unico campo que fallaba siempre, y por eso ESTADO_COHERENCIA=correcto
+# daba CERO en todo el reporte y PORCENTAJE_CALIDAD no podia pasar de 85,7 %.
+# El nombre de salida se deja como CONCENTRACION porque es el que ya usan la
+# UI y el Excel de cargue; lo que contiene esta documentado aca.
 _CAMPOS_DIRECTOS = {
-    "CONCENTRACION": ("CONCENTRACION", "CONCENTRACION"),
+    "CONCENTRACION": ("CONCENTRACION", "DESCRIPCION_COMERCIAL"),
     "FORMA_FARMACEUTICA": ("FORMA_FARMACEUTICA", "FORMA_FARMACEUTICA"),
     "PRINCIPIO_ACTIVO": ("PRINCIPIO_ACTIVO", "PRINCIPIO_ACTIVO"),
     "CODIGO_ATC": ("CODIGO_ATC", "ATC"),

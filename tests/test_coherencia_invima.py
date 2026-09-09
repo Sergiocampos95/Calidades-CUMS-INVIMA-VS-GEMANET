@@ -42,11 +42,11 @@ def _fila_gemanet(codigo_interno, **overrides):
         # (PA + UNIDAD_REFERENCIA) -- la que fallaba en el 100 % de los casos
         # reales. Ver _descripcion_esperada_invima.
         "DESCRIPCION": "ACETAMINOFEN 500MG TABLETA",
-        # CONCENTRACION se cruza contra CONCENTRACION de INVIMA (decision del
-        # usuario 2026-09-08, ver _CAMPOS_DIRECTOS). El fixture "bien
-        # diligenciado" trae la concentracion real; una fila con la
-        # presentacion comercial aca queda como "difiere", que es lo buscado.
-        "CONCENTRACION": "500 MG",
+        # El campo se llama CONCENTRACION pero Gemma Net guarda ahi la
+        # PRESENTACION COMERCIAL. No es un descuido del fixture: es lo que
+        # trae el dato real, y por eso se compara contra DESCRIPCION_COMERCIAL
+        # de INVIMA y no contra su columna homonima (ver _CAMPOS_DIRECTOS).
+        "CONCENTRACION": "CAJA POR 100 TABLETAS EN BLISTER PVC/ALUMINIO",
         "FORMA_FARMACEUTICA": "TABLETA",
         "PRINCIPIO_ACTIVO": "ACETAMINOFEN",
         "CODIGO_ATC": "N02BE01",
@@ -68,10 +68,11 @@ def _fila_invima(codigo_interno, **overrides):
         # ya NO participa de la descripcion esperada: es una frase ("CADA
         # CAPSULA DE GELATINA DURA CONTIENE"), no un dato.
         "UNIDAD_REFERENCIA": "CADA TABLETA CONTIENE",
-        # CONCENTRACION de INVIMA es la concentracion real y es contra lo que
-        # se cruza el campo homonimo del reporte (ver _CAMPOS_DIRECTOS).
-        # DESCRIPCION_COMERCIAL se conserva porque el archivo real la trae,
-        # pero ya no participa de ningun cruce.
+        # CONCENTRACION de INVIMA si es una concentracion. Se deja en el
+        # fixture -- distinta de la del reporte -- justamente para que se note
+        # si alguien vuelve a mapearla contra el CONCENTRACION local: la
+        # comparacion pasaria a fallar en el 100 % de las filas, como pasaba
+        # antes del 2026-08-21.
         "CONCENTRACION": "500 MG",
         "DESCRIPCION_COMERCIAL": "CAJA POR 100 TABLETAS EN BLISTER PVC/ALUMINIO",
         "FORMA_FARMACEUTICA": "TABLETA",
@@ -226,32 +227,19 @@ def test_unidad_que_no_calza_con_ninguna_sigla_del_codigo_sigue_siendo_hallazgo(
     assert "UNIDAD_MEDIDA" in fila["CAMPOS_CON_DIFERENCIA"]
 
 
-def test_concentracion_local_se_compara_contra_concentracion_de_invima():
-    """El campo CONCENTRACION del reporte se cruza contra CONCENTRACION de
-    INVIMA -- campo contra su homonimo (decision del usuario 2026-09-08).
+def test_concentracion_local_se_compara_contra_descripcion_comercial_de_invima():
+    """El campo CONCENTRACION del reporte guarda la PRESENTACION comercial.
 
-    Cuando ambos traen la concentracion real y coinciden, el veredicto es
-    "coincide" y CONCENTRACION_INVIMA muestra la concentracion, no la
-    presentacion comercial.
+    Su equivalente en INVIMA es DESCRIPCION_COMERCIAL, no la columna del mismo
+    nombre. Mapearlo mal hacia fallar el 100 % de las filas (2 exactas sobre
+    43.266 medidas contra produccion) y dejaba ESTADO_COHERENCIA=correcto en
+    cero para todo el reporte. Aca la presentacion coincide y la concentracion
+    de INVIMA es distinta: si alguien invierte el mapeo, este test lo dice.
     """
     resultado = _auditar([_fila_gemanet("500-1")], [_fila_invima("500-1")])
     fila = resultado.loc["500-1"]
     assert fila["CONCENTRACION_VALIDACION"] == "coincide"
-    assert fila["CONCENTRACION_INVIMA"] == "500 MG"
-
-
-def test_concentracion_local_con_presentacion_comercial_difiere_de_invima():
-    """Una fila cuyo CONCENTRACION local trae la presentacion comercial (mal
-    diligenciada) queda como "difiere" frente a la concentracion de INVIMA --
-    ese es justamente el hallazgo que la auditoria debe reportar.
-    """
-    resultado = _auditar(
-        [_fila_gemanet("500-1", CONCENTRACION="CAJA POR 100 TABLETAS EN BLISTER PVC/ALUMINIO")],
-        [_fila_invima("500-1")],
-    )
-    fila = resultado.loc["500-1"]
-    assert fila["CONCENTRACION_VALIDACION"] == "difiere"
-    assert "CONCENTRACION" in fila["CAMPOS_CON_DIFERENCIA"]
+    assert fila["CONCENTRACION_INVIMA"] == "CAJA POR 100 TABLETAS EN BLISTER PVC/ALUMINIO"
 
 
 def test_trio_de_columnas_por_campo_trae_los_dos_lados_y_el_veredicto():
