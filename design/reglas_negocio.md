@@ -74,33 +74,43 @@ medicamentos reales para atrapar 1 alimento.
 Los nombres de columna de Gemma Net no siempre describen su contenido. Estos
 son los casos donde el nombre engaña:
 
-### `CONCENTRACION` casi nunca guarda una concentración
+### `CONCENTRACION`: ninguna de las dos fuentes guarda ahí una concentración
 
-La columna `CONCENTRACION` de Gemma Net **suele traer la presentación
-comercial** ("CAJA POR 100 TABLETAS EN BLISTER PVC/ALUMINIO"), no una
-concentración.
+- **Gemma Net `CONCENTRACION`** (`m.concentracion` de `tb_medicamento`) trae la
+  **presentación comercial** ("RECIPIENTE EN ALUMINIO CON 200 DOSIS MEDIDAS…"),
+  palabra por palabra igual a la `DESCRIPCION_COMERCIAL` de INVIMA.
+- **INVIMA `CONCENTRACION`** trae un **código de una sola letra**. Valores
+  distintos en todo el listado de Vigentes: `A B C D E F S` — nada más
+  (157.756 filas, cero con un dígito). La concentración real de INVIMA vive
+  partida en `CANTIDAD` (`0.215`) + `UNIDAD_MEDIDA` (`% (W/W)`).
+- La concentración de verdad ("120 MCG") solo aparece **dentro del texto** de
+  `DESCRIPCION` / `PRINCIPIO_ACTIVO`, en los dos lados.
 
-Medido el 2026-09-08 sobre las 57.736 filas con correspondencia (listados de
-julio 2026), cuánto coincide el campo local contra cada candidato de INVIMA:
+Medido el 2026-09-08 sobre las 57.736 filas con correspondencia, cuánto
+coincide el campo local exacto contra cada candidato de INVIMA:
 
 | Contra | Coincidencias exactas |
 |---|---|
-| `DESCRIPCION_COMERCIAL` | **52.116 (90,3 %)** |
-| `CONCENTRACION` | 3.508 (6,1 %) |
+| `DESCRIPCION_COMERCIAL` | 52.116 (90,3 %) |
+| `CONCENTRACION` (código de letra) | 3.508 (6,1 %) |
 | `CANTIDAD` + `UNIDAD_MEDIDA` | 1 (0,0 %) |
 
-**Aun así el cruce es homónimo: `CONCENTRACION` contra `CONCENTRACION`**
-(decisión del usuario, 2026-09-09). La auditoría contrasta concentración
-contra concentración, y las ~90 % de filas cuyo dato local es un empaque
-salen como `difiere` **a propósito** — el hallazgo real es que Gemma Net
-tiene ese campo mal diligenciado, y la auditoría debe decirlo, no taparlo
-comparando contra otra columna.
+**El cruce es homónimo: `CONCENTRACION` contra `CONCENTRACION`** — decisión
+**explícita** del usuario (2026-09-09), tomada después de ver esta evidencia:
+"lo que debe importar es si hay diferencias de campos, sin importar cuál sea
+la cifra". Resultado medido: ~4.000 `coincide` (filas donde Gemma Net también
+guarda la letra) y ~129.000 `difiere` comparando `"RECIPIENTE EN ALUMINIO…"`
+contra `"F"`. Es el comportamiento aceptado, no un bug.
 
-Historia, para no re-derivarla: entre el **2026-08-21 y el 2026-09-08** este
-cruce apuntó a `DESCRIPCION_COMERCIAL` de INVIMA, precisamente por esa
-medición — se buscaba que `ESTADO_COHERENCIA=correcto` dejara de dar CERO en
-todo el reporte. El 2026-09-09 el usuario pidió volver al cruce homónimo
-asumiendo el volumen de `difiere` que implica.
+Historia, para no re-derivarla: entre el **2026-08-21 y el 2026-09-09** este
+cruce apuntó a `DESCRIPCION_COMERCIAL` (empaque contra empaque, útil pero con
+nombre engañoso). El cruce homónimo se intentó, se revirtió y se **reaplicó**
+el 2026-09-09, todo en la misma sesión, una vez que el usuario confirmó que
+lo quería así a pesar del volumen de `difiere`.
+
+Auditar la concentración **de verdad** sería otra cosa: extraer número+unidad
+del texto de Gemma Net y compararlo contra `CANTIDAD` + `UNIDAD_MEDIDA` de
+INVIMA. Es una feature aparte, no un cambio de mapeo.
 
 El nombre técnico no se toca: viaja en el snapshot, en el trío
 `CONCENTRACION_GEMANET/_INVIMA/_VALIDACION` y en el Excel de cargue.

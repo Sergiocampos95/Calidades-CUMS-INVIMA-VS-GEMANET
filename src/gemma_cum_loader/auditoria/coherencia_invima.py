@@ -201,20 +201,39 @@ CLASIFICADO_VALORES_CREACION_PROPIA = ["Medicamento Ancestral", "Planta Medicina
 # campo de salida -> (columna en el Reporte de Gemma Net, columna en INVIMA)
 # DESCRIPCION, MARCA_MEDICAMENTO y UNIDAD_MEDIDA se arman aparte (ver abajo)
 #
-# CONCENTRACION de Gemma Net se cruza contra CONCENTRACION de INVIMA (la
-# concentracion real, "500 mg") -- decision del usuario (2026-09-08): la
-# auditoria debe contrastar concentracion contra concentracion, campo con su
-# homonimo.
+# CONCENTRACION de Gemma Net se cruza contra CONCENTRACION de INVIMA -- campo
+# contra su homonimo. Decision EXPLICITA del usuario (2026-09-09), tomada tras
+# ver la evidencia de abajo: "lo que debe importar es si hay diferencias de
+# campos, sin importar cual sea la cifra".
 #
-# Historia, para no re-derivarla: entre el 2026-08-21 y el 2026-09-08 este
-# cruce apuntaba a DESCRIPCION_COMERCIAL de INVIMA, porque se habia medido que
-# la columna CONCENTRACION del reporte solia traer la PRESENTACION COMERCIAL
-# ("CAJA POR 100 TABLETAS EN BLISTER PVC/ALUMINIO") y no una concentracion.
-# Medido el 2026-09-08 sobre 57.736 filas con correspondencia: 90,3 % exactas
-# contra DESCRIPCION_COMERCIAL y 6,1 % contra CONCENTRACION. Con este cruce
-# homonimo, esas filas cuyo dato local es un empaque quedan como "difiere"
-# (o similitud baja) -- es el comportamiento buscado: la diferencia real es
-# que Gemma Net tiene mal diligenciado el campo, y la auditoria debe decirlo.
+# QUE contiene de verdad cada lado (medido contra el snapshot real, caso
+# 20083667-1 "SALBUTAMOL SULFATO 120 MCG" entre otros):
+#
+#   - INVIMA.CONCENTRACION  = un codigo de UNA letra. Valores distintos en
+#     TODO el listado de Vigentes: A B C D E F S -- nada mas (157.756 filas,
+#     cero con un digito). La concentracion real de INVIMA vive partida en
+#     CANTIDAD ("0.215") + UNIDAD_MEDIDA ("% (W/W)"), no en esta columna.
+#   - Gemma Net.CONCENTRACION = la PRESENTACION COMERCIAL ("RECIPIENTE EN
+#     ALUMINIO CON 200 DOSIS MEDIDAS..."), palabra por palabra igual a la
+#     DESCRIPCION_COMERCIAL de INVIMA. Gemma Net NO tiene ninguna columna con
+#     la concentracion; el "120 MCG" solo aparece dentro del texto de
+#     DESCRIPCION / PRINCIPIO_ACTIVO.
+#
+# Consecuencia de este cruce homonimo, medida: ~4.000 "coincide" (filas donde
+# Gemma Net tambien guarda la letra) y ~129.000 "difiere" comparando
+# "RECIPIENTE EN ALUMINIO..." contra "F". El usuario acepta esa cifra: para
+# esta auditoria el hallazgo es "los campos homonimos no coinciden", no el
+# volumen.
+#
+# Historia: entre el 2026-08-21 y el 2026-09-09 este cruce apunto a
+# DESCRIPCION_COMERCIAL de INVIMA (90,3 % exactas vs 6,1 % contra CONCENTRACION,
+# 57.736 filas) -- comparaba empaque contra empaque, util pero con un nombre
+# que engaña. Se intento y revirtio el cruce homonimo el 2026-09-09 (misma
+# sesion) antes de que el usuario confirmara que lo queria asi.
+#
+# Auditar la concentracion DE VERDAD seria otra cosa: extraer numero+unidad
+# del texto de Gemma Net y compararlo contra CANTIDAD + UNIDAD_MEDIDA de
+# INVIMA. Es una feature aparte, no un cambio de mapeo.
 _CAMPOS_DIRECTOS = {
     "CONCENTRACION": ("CONCENTRACION", "CONCENTRACION"),
     "FORMA_FARMACEUTICA": ("FORMA_FARMACEUTICA", "FORMA_FARMACEUTICA"),
