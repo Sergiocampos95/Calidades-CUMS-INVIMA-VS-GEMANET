@@ -74,11 +74,11 @@ medicamentos reales para atrapar 1 alimento.
 Los nombres de columna de Gemma Net no siempre describen su contenido. Estos
 son los casos donde el nombre engaña:
 
-### `CONCENTRACION` no guarda una concentración
+### `CONCENTRACION` casi nunca guarda una concentración
 
-Guarda la **presentación comercial** ("CAJA POR 100 TABLETAS EN BLISTER
-PVC/ALUMINIO"). Por eso se compara contra `DESCRIPCION_COMERCIAL` de INVIMA y
-no contra su columna homónima.
+La columna `CONCENTRACION` de Gemma Net **suele traer la presentación
+comercial** ("CAJA POR 100 TABLETAS EN BLISTER PVC/ALUMINIO"), no una
+concentración.
 
 Medido el 2026-09-08 sobre las 57.736 filas con correspondencia (listados de
 julio 2026), cuánto coincide el campo local contra cada candidato de INVIMA:
@@ -89,9 +89,21 @@ julio 2026), cuánto coincide el campo local contra cada candidato de INVIMA:
 | `CONCENTRACION` | 3.508 (6,1 %) |
 | `CANTIDAD` + `UNIDAD_MEDIDA` | 1 (0,0 %) |
 
-En pantalla se rotula **"Presentación comercial"**. El nombre técnico no se
-toca: viaja en el snapshot, en el trío `CONCENTRACION_GEMANET/_INVIMA/_VALIDACION`
-y en el Excel de cargue.
+**Aun así el cruce es homónimo: `CONCENTRACION` contra `CONCENTRACION`**
+(decisión del usuario, 2026-09-09). La auditoría contrasta concentración
+contra concentración, y las ~90 % de filas cuyo dato local es un empaque
+salen como `difiere` **a propósito** — el hallazgo real es que Gemma Net
+tiene ese campo mal diligenciado, y la auditoría debe decirlo, no taparlo
+comparando contra otra columna.
+
+Historia, para no re-derivarla: entre el **2026-08-21 y el 2026-09-08** este
+cruce apuntó a `DESCRIPCION_COMERCIAL` de INVIMA, precisamente por esa
+medición — se buscaba que `ESTADO_COHERENCIA=correcto` dejara de dar CERO en
+todo el reporte. El 2026-09-09 el usuario pidió volver al cruce homónimo
+asumiendo el volumen de `difiere` que implica.
+
+El nombre técnico no se toca: viaja en el snapshot, en el trío
+`CONCENTRACION_GEMANET/_INVIMA/_VALIDACION` y en el Excel de cargue.
 
 ### El mapeo completo de campos comparados
 
@@ -99,7 +111,7 @@ y en el Excel de cargue.
 
 | Campo de salida | Gemma Net | INVIMA |
 |---|---|---|
-| `CONCENTRACION` | `CONCENTRACION` | **`DESCRIPCION_COMERCIAL`** |
+| `CONCENTRACION` | `CONCENTRACION` | `CONCENTRACION` |
 | `FORMA_FARMACEUTICA` | `FORMA_FARMACEUTICA` | `FORMA_FARMACEUTICA` |
 | `PRINCIPIO_ACTIVO` | `PRINCIPIO_ACTIVO` | `PRINCIPIO_ACTIVO` |
 | `CODIGO_ATC` | `CODIGO_ATC` | `ATC` |
