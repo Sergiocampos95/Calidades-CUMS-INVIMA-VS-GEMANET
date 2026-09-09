@@ -652,22 +652,14 @@ def calidad_admite_secciones(nombre: str) -> bool:
 ETIQUETAS_CAMPO_DIFERENCIA = {
     "DESCRIPCION": "Descripcion",
     "PRINCIPIO_ACTIVO": "Principio activo",
-    # La columna se llama CONCENTRACION pero NO contiene una concentracion:
-    # contiene la presentacion comercial ("CAJA POR 100 TABLETAS EN BLISTER").
-    # Se rotula por lo que ES, no por como se llama -- el usuario fue a validar
-    # el campo y lo leyo como un error de cruce (2026-09-08), y con razon:
-    # ningun rotulo decia que ahi va un empaque.
-    #
-    # Medido sobre las 57.736 filas con correspondencia de julio 2026, cuanto
-    # coincide el campo local contra cada candidato de INVIMA:
-    #     DESCRIPCION_COMERCIAL   52.116 (90,3 %)   <- con el que se compara
-    #     CONCENTRACION            3.508 ( 6,1 %)
-    #     CANTIDAD + UNIDAD            1 ( 0,0 %)
-    # El cruce apunta al campo correcto; lo que faltaba era decirlo en pantalla.
-    #
-    # El NOMBRE TECNICO no se toca: viaja en el snapshot, en las columnas del
-    # trio (CONCENTRACION_GEMANET/_INVIMA/_VALIDACION) y en el Excel de cargue.
-    "CONCENTRACION": "Presentacion comercial",
+    # Se rotula "Concentracion" -- el mismo nombre de la columna -- porque el
+    # cruce es homonimo: CONCENTRACION de Gemma Net contra CONCENTRACION de
+    # INVIMA (decision del usuario 2026-09-09, ver _CAMPOS_DIRECTOS en
+    # coherencia_invima.py). Antes decia "Presentacion comercial" porque el
+    # cruce apuntaba a DESCRIPCION_COMERCIAL de INVIMA; al volver el cruce a
+    # la columna homonima, el rotulo tiene que acompanar o vuelve a leerse
+    # como un error de cruce.
+    "CONCENTRACION": "Concentracion",
     "UNIDAD_MEDIDA": "Unidad de medida",
     "CODIGO_ATC": "Codigo ATC",
     "FORMA_FARMACEUTICA": "Forma farmaceutica",

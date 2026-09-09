@@ -8,12 +8,12 @@ import { etiquetaEstadoListadoInvima, pildoraValidacion } from "../pildoras";
 const CAMPOS_COMPARABLES = [
   { columna: "DESCRIPCION", etiqueta: "Descripción" },
   { columna: "PRINCIPIO_ACTIVO", etiqueta: "Principio activo" },
-  // La columna se llama CONCENTRACION pero trae la PRESENTACIÓN COMERCIAL
-  // ("CAJA POR 100 TABLETAS EN BLISTER"), y por eso se compara contra
-  // DESCRIPCION_COMERCIAL de INVIMA (90,3 % de coincidencias contra 6,1 % de
-  // su CONCENTRACION real). Se rotula por lo que es: leerlo como
-  // "Concentración" hacía parecer que el cruce traía el campo equivocado.
-  { columna: "CONCENTRACION", etiqueta: "Presentación comercial" },
+  // Cruce homónimo: CONCENTRACION de Gemma Net contra CONCENTRACION de INVIMA
+  // (decisión del usuario 2026-09-09, ver _CAMPOS_DIRECTOS en
+  // coherencia_invima.py). El rótulo acompaña al nombre de la columna; antes
+  // decía "Presentación comercial" porque el cruce apuntaba a
+  // DESCRIPCION_COMERCIAL.
+  { columna: "CONCENTRACION", etiqueta: "Concentración" },
   { columna: "FORMA_FARMACEUTICA", etiqueta: "Forma farmacéutica" },
   { columna: "UNIDAD_MEDIDA", etiqueta: "Unidad de medida" },
   { columna: "CODIGO_ATC", etiqueta: "Código ATC" },
