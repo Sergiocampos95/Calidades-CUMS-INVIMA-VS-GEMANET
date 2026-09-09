@@ -184,8 +184,31 @@ function render(): void {
   document.getElementById("miga-titulo")!.textContent = seccionActual.sub.length > 1 ? subActual.etiqueta : seccionActual.etiqueta;
   pintarRail();
   pintarSubnav();
-  const vista = document.getElementById("vista");
-  if (vista) void subActual.montar(vista);
+  const anterior = document.getElementById("vista");
+  if (!anterior) return;
+  // Cada render ESTRENA el nodo de la vista en vez de reusarlo. `montar()` es
+  // async y `render()` no lo espera: el montar ANTERIOR puede estar detenido
+  // en un `await` (la primera pagina de su tabla, un /resumen) y, al resolver,
+  // sigue escribiendo en el contenedor que recibio por parametro. Si ese
+  // contenedor fuera el mismo nodo de siempre, esa escritura tardia aterriza
+  // DEBAJO de la vista nueva, ya montada.
+  //
+  // Bug real (2026-09-09): cambiando rapido de "Priorizar lo que requiere
+  // accion" a "Trazabilidad de calidad", la tabla de Priorizar (55.570 filas,
+  // con su columna PRIORIDAD y su selector de niveles) aparecia colgando bajo
+  // el eslabon H6 de la cadena. Se veia como si la vista mezclara dos
+  // pantallas; en realidad era la anterior llegando tarde.
+  //
+  // Con un nodo nuevo, lo que llega tarde cae en el nodo VIEJO, ya
+  // desconectado del documento: invisible, y recolectado cuando la vista que
+  // lo capturo deja de referenciarlo. Se resuelve en UN sitio -- aca --, y no
+  // obliga a que cada vista cancele sus propios fetch ni a cambiar la firma
+  // `montar(contenedor)` que implementan todas.
+  const vista = document.createElement("main");
+  vista.className = anterior.className;
+  vista.id = "vista";
+  anterior.replaceWith(vista);
+  void subActual.montar(vista);
 }
 
 function inicializarSalud(): void {
