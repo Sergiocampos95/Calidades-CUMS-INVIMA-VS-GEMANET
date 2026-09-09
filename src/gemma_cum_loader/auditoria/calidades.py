@@ -320,6 +320,20 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
         | _no_vacio(auditoria, "INCONSISTENCIA_FECHAS_ACTIVO")
     )
 
+    # Discrepancia PURA de estado de vigencia entre Gemma Net e INVIMA, en las
+    # dos direcciones. Se factoriza aca -- una sola definicion -- porque la
+    # usan DOS tarjetas y no pueden divergir: la tarjeta "Estado" (solo el
+    # estado) y "Diferencia de estado o campos" (esto MAS los otros campos).
+    #   - Activo en Gemma Net + Inactivo en INVIMA. Se excluye listado=='vencido'
+    #     porque ese caso ya vive en "Registro vencido en INVIMA" (misma
+    #     exclusion que usaba la tarjeta 6).
+    #   - Inactivo en Gemma Net + Activo en INVIMA: el caso de mayor riesgo, sin
+    #     restriccion de listado mas alla de estar en alguno.
+    discrepancia_vigencia = (
+        (solo_activos & inactivo_invima & listado.ne("vencido"))
+        | (~solo_activos & activo_invima)
+    )
+
     # Los estados van CONTIGUOS y a la izquierda: el estado local, la vigencia
     # real de INVIMA y donde vive el registro. Van en `base` -- y no al final
     # de cada tarjeta -- porque si CONSEJO queda en medio se pierde la lectura
@@ -456,6 +470,28 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
             [*base, "CLASIFICADO", "TIPO_SIN_CORRESPONDENCIA", "CONSULTA_VERIFICACION_SQL"],
         ),
         (
+            "Estado",
+            (
+                "SOLO la discrepancia de estado de vigencia entre Gemma Net e INVIMA, sin "
+                "mirar otros campos. CUMs que estan ACTIVOS en Gemma Net e INACTIVOS en "
+                "INVIMA (ESTADO_CUM_INVIMA='Inactivo'), y CUMs INACTIVOS en Gemma Net que "
+                "INVIMA todavia declara ACTIVOS -- este ultimo es el de mayor riesgo. "
+                "Mira ESTADO_CUM_INVIMA (el veredicto de vigencia) y ESTADO_LISTADO_INVIMA "
+                "(en cual archivo de INVIMA aparece) para ubicar el caso. Los que ademas "
+                "difieren en descripcion, fechas u otro campo salen en 'Diferencia de "
+                "estado o campos'; aca no se repiten esas columnas."
+            ),
+            # Subconjunto EXACTO de la parte de estado de "Diferencia de estado
+            # o campos": misma mascara factorizada, sin el OR de diferencia_campos.
+            es_cum & en_algun_listado & discrepancia_vigencia,
+            [
+                *base,
+                "ESTADO_LISTADO_INVIMA",
+                "RESPONSABLE_DISCREPANCIA",
+                "CONSULTA_VERIFICACION_SQL",
+            ],
+        ),
+        (
             "Diferencia de estado o campos",
             (
                 "Medicamentos con discrepancia de estado de vigencia (activo/inactivo) entre "
@@ -464,9 +500,8 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
                 "La columna RESPONSABLE_DISCREPANCIA indica si es GyC o TIC."
             ),
             es_cum & en_algun_listado & (
-                # Discrepancia de vigencia:
-                (solo_activos & inactivo_invima & listado.ne("vencido"))  # Activo aqui, inactivo alla
-                | (~solo_activos & activo_invima)  # Inactivo aqui, activo alla
+                # Discrepancia de vigencia (misma mascara que usa la tarjeta "Estado"):
+                discrepancia_vigencia
                 # O diferencias de otros campos:
                 | (solo_activos & diferencia_campos)
             ),
@@ -506,7 +541,7 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
 
 
 def calidades_auditoria(auditoria: pd.DataFrame) -> list[Calidad]:
-    """Las 6 calidades que el negocio pide poder revisar, cada una con su
+    """Las 7 calidades que el negocio pide poder revisar, cada una con su
     tabla navegable ya filtrada. No recalcula nada de `auditar_coherencia()`
     -- solo combina mascaras booleanas vectorizadas sobre columnas que esa
     funcion ya dejo en el DataFrame (mas CONSEJO/CONSULTA_VERIFICACION_SQL,

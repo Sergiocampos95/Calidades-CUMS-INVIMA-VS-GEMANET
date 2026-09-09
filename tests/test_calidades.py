@@ -34,7 +34,7 @@ def _fila(codigo_interno, **overrides):
     return base
 
 
-def test_devuelve_las_6_calidades_en_orden():
+def test_devuelve_las_7_calidades_en_orden():
     auditoria = pd.DataFrame([_fila("500-1")])
     calidades = calidades_auditoria(auditoria)
     # Rediseño 2026-09-02: de 7 a 6. La tarjeta de "Inactivo en Gemma Net pero
@@ -46,9 +46,17 @@ def test_devuelve_las_6_calidades_en_orden():
     # es un DETECTOR, no una calidad. Sus filas no se auditan (un codigo que
     # INVIMA no reconoce no es un CUM), pero siguen visibles para poder ver si
     # alguien cargo algo que no es un medicamento.
-    assert len(calidades) == 6
+    #
+    # 2026-09-09: de 6 a 7. Se agrega "Estado" -- SOLO la discrepancia de
+    # vigencia (subconjunto exacto de la parte de estado de "Diferencia de
+    # estado o campos"), como tarjeta propia e independiente pedida por el
+    # usuario. Va JUSTO ANTES de "Diferencia de estado o campos", asi que esa
+    # sigue siendo la ultima.
+    nombres = [c.nombre for c in calidades]
+    assert len(calidades) == 7
     assert calidades[0].nombre == "Vigencia confirmada"
     assert calidades[-1].nombre == "Diferencia de estado o campos"
+    assert nombres[-2] == "Estado"
 
 
 def _conteo_por_nombre(auditoria):
@@ -90,6 +98,35 @@ def test_registro_vencido_recoge_el_vencido_pleno_del_listado():
     assert conteo["Vigencia confirmada"] == 0
 
 
+def test_estado_recoge_las_dos_direcciones_de_discrepancia_de_vigencia():
+    """La tarjeta "Estado" trae SOLO la discrepancia de estado, en las dos
+    direcciones, y como subconjunto exacto de "Diferencia de estado o campos".
+
+    Pedido del usuario (2026-09-09). Casos:
+      - CUM activo en Gemma Net + ESTADO_CUM_INVIMA='Inactivo' (listado != vencido).
+      - CUM inactivo en Gemma Net + ESTADO_CUM_INVIMA='Activo' (mayor riesgo).
+    NO entra el que coincide en estado aunque difiera en otros campos, ni el
+    activo/inactivo que ademas esta en listado 'vencido' (ese vive en
+    "Registro vencido en INVIMA")."""
+    auditoria = pd.DataFrame([
+        _fila("10000001-1", ESTADO_CUM_INVIMA="Inactivo", ESTADO_LISTADO_INVIMA="otros_estados"),
+        _fila("10000002-1", ACTIVO="NO", ESTADO_CUM_INVIMA="Activo", ESTADO_LISTADO_INVIMA="vigente"),
+        # Coincide en estado, solo difiere un campo -> NO va a "Estado".
+        _fila("10000003-1", CAMPOS_CON_DIFERENCIA="DESCRIPCION"),
+        # Activo aqui / inactivo alla PERO en listado 'vencido' -> va a la otra tarjeta.
+        _fila("10000004-1", ESTADO_CUM_INVIMA="Inactivo", ESTADO_LISTADO_INVIMA="vencido"),
+    ])
+    calidades = {c.nombre: c for c in calidades_auditoria(auditoria)}
+    estado = calidades["Estado"]
+    assert sorted(estado.df_tabla["CODIGO_INTERNO"].tolist()) == ["10000001-1", "10000002-1"]
+    # Subconjunto exacto: todo lo de "Estado" esta tambien en la tarjeta 7.
+    grande = set(calidades["Diferencia de estado o campos"].df_tabla["CODIGO_INTERNO"])
+    assert set(estado.df_tabla["CODIGO_INTERNO"]).issubset(grande)
+    # La tarjeta "Estado" no arrastra las columnas de comparacion campo a campo.
+    assert "CAMPOS_CON_DIFERENCIA" not in estado.columnas
+    assert "DETALLE_DIFERENCIAS" not in estado.columnas
+
+
 def test_calidades_excluyen_no_cums_y_inactivos_salvo_la_excepcion():
     """La auditoria del negocio debe mostrar solo CUMs activos y validos
     contra INVIMA; los legados, no-CUM y activos locales inactivos quedan
@@ -120,7 +157,7 @@ def test_calidades_excluyen_no_cums_y_inactivos_salvo_la_excepcion():
 def test_inactivo_en_gemanet_pero_vigente_en_invima_es_la_unica_excepcion_visible():
     """Un CUM inactivo en Gemma Net que INVIMA SI tiene vigente
     (ESTADO_CUM_INVIMA='Activo') es el unico caso donde un inactivo debe
-    verse -- ahora dentro de la tarjeta 6 'Diferencia de estado o campos'."""
+    verse -- dentro de 'Diferencia de estado o campos' y su subconjunto 'Estado'."""
     auditoria = pd.DataFrame([
         _fila("500-1", ESTADO_CUM_INVIMA="Activo"),
         _fila(
@@ -134,12 +171,18 @@ def test_inactivo_en_gemanet_pero_vigente_en_invima_es_la_unica_excepcion_visibl
     excepcion = next(c for c in calidades if c.nombre == "Diferencia de estado o campos")
     assert excepcion.medicamentos == 1
     assert excepcion.df_tabla["CODIGO_INTERNO"].tolist() == ["500-2"]
-    # No debe aparecer duplicado en ninguna otra calidad -- son mutuamente
+    # "500-2" es discrepancia PURA de vigencia (inactivo aqui, activo en INVIMA),
+    # asi que ademas aparece en "Estado" -- que es, por diseno, un subconjunto
+    # exacto de "Diferencia de estado o campos" (ver
+    # test_estado_recoge_las_dos_direcciones_de_discrepancia_de_vigencia).
+    estado = next(c for c in calidades if c.nombre == "Estado")
+    assert estado.df_tabla["CODIGO_INTERNO"].tolist() == ["500-2"]
+    # Fuera de esas tres, ninguna otra calidad lo toca -- son mutuamente
     # excluyentes con las de "solo activos".
     assert all(
         c.medicamentos == 0
         for c in calidades
-        if c.nombre not in ("Vigencia confirmada", "Diferencia de estado o campos")
+        if c.nombre not in ("Vigencia confirmada", "Diferencia de estado o campos", "Estado")
     )
     vigentes = next(c for c in calidades if c.nombre == "Vigencia confirmada")
     assert vigentes.medicamentos == 1

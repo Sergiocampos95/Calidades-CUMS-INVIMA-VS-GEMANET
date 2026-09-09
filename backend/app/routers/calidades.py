@@ -103,8 +103,8 @@ def _tabla_auditable(carpeta: Path):
 _CACHE_CALIDADES: dict[str, tuple[str, list[Calidad]]] = {}
 
 
-# Ya no se post-procesa cada Calidad para inyectarle ESTADO_CUM_INVIMA: las
-# 6 definiciones la piden en `base` (auditoria/calidades.py) y `_definiciones`
+# Ya no se post-procesa cada Calidad para inyectarle ESTADO_CUM_INVIMA: todas
+# las definiciones la piden en `base` (auditoria/calidades.py) y `_definiciones`
 # solo conserva las columnas que existen en el DataFrame, asi que si el
 # snapshot la trae ya viene incluida, y si no la trae tampoco habria de donde
 # sacarla. La funcion que lo hacia (`_con_estado_listado_invima`) solo copiaba

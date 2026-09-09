@@ -292,7 +292,7 @@ _CAMPOS_COMBINADO_GYC     = ("DESCRIPCION", "PRINCIPIO_ACTIVO")
 ## Dónde seguir leyendo desde acá
 
 - El resultado de esta función es la entrada de `filtrar_universo_auditable()`
-  (qué se ignora vs qué se audita — ver `reglas_negocio.md` §3) y de las 6
+  (qué se ignora vs qué se audita — ver `reglas_negocio.md` §3) y de las 7
   tarjetas de `calidades.py` (§8).
 - La cadena H1–H6 (`cadena_calidad.py`) **no recalcula nada de esto**: lee las
   mismas columnas `_GEMANET`/`_INVIMA`/`_VALIDACION` que esta función ya dejó.

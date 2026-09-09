@@ -48,7 +48,7 @@ Sin dependencias de web ni de UI. Es la parte que se puede probar sola.
 | Archivo | Para qué |
 |---|---|
 | `coherencia_invima.py` | **El corazón del flujo de auditoría.** ~3.000 líneas. Ver desglose abajo |
-| `calidades.py` | Las 6 tarjetas de "Entender la calidad del catálogo" y sus secciones |
+| `calidades.py` | Las 7 tarjetas de "Entender la calidad del catálogo" y sus secciones |
 | `cadena_calidad.py` | La cadena H1..H6, encadenada por teoría de conjuntos |
 
 **Qué hay dentro de `coherencia_invima.py`** (lo que más cuesta encontrar):
@@ -115,7 +115,7 @@ que dejó el worker y aplica máscaras vectorizadas.
 | Archivo | Para qué |
 |---|---|
 | `routers/auditoria.py` | "Priorizar lo que requiere acción". `_priorizables` es el único filtro |
-| `routers/calidades.py` | Las 6 tarjetas. **`_tabla_auditoria` (completa) vs `_tabla_auditable` (recortada)** — ver abajo |
+| `routers/calidades.py` | Las 7 tarjetas. **`_tabla_auditoria` (completa) vs `_tabla_auditable` (recortada)** — ver abajo |
 | `routers/consulta_detalle.py` | Consulta puntual de un CUM |
 | `routers/descargas.py` | xlsx / csv / txt. Sección completa, no la página visible |
 | `routers/refrescar.py` | `POST /refrescar` + `GET /refrescar/progreso` |

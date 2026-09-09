@@ -59,7 +59,7 @@ def test_sin_snapshot_responde_503_en_las_3_rutas(tmp_path):
         app.dependency_overrides.clear()
 
 
-def test_listar_calidades_devuelve_6_con_conteos_correctos(tmp_path):
+def test_listar_calidades_devuelve_7_con_conteos_correctos(tmp_path):
     cliente, carpeta = _cliente(tmp_path)
     try:
         escribir_snapshot({"auditoria": _auditoria_muestra()}, carpeta=carpeta)
@@ -70,14 +70,18 @@ def test_listar_calidades_devuelve_6_con_conteos_correctos(tmp_path):
         # vigente en INVIMA" se integro en "Diferencia de estado o campos").
         # 2026-09-08: "No existe en INVIMA" se conserva como DETECTOR (sus
         # filas no se auditan, pero deben poder verse).
-        assert len(calidades) == 6
+        # 2026-09-09: de 6 a 7, se agrega "Estado" (solo la discrepancia de
+        # vigencia, subconjunto de "Diferencia de estado o campos").
+        assert len(calidades) == 7
         # La regla vigente del negocio exige CUMs activos y validos. El
         # ejemplo de prueba solo tiene un CUM activo vigente y uno vencido.
         assert calidades["No existe en INVIMA"]["medicamentos"] == 0
         assert calidades["Vigencia confirmada"]["medicamentos"] == 1
         assert calidades["Registro vencido en INVIMA"]["medicamentos"] == 1
-        # "3-3": la fila inactiva que deberia ser visible en la tarjeta 6.
+        # "3-3": la fila inactiva en Gemma Net pero activa en INVIMA -- visible
+        # en la tarjeta 7 y tambien en "Estado" (es discrepancia pura).
         assert calidades["Diferencia de estado o campos"]["medicamentos"] == 1
+        assert calidades["Estado"]["medicamentos"] == 1
     finally:
         app.dependency_overrides.clear()
 

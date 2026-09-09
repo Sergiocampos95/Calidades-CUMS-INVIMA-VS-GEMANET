@@ -262,7 +262,7 @@ exactamente lo que hay que evitar.
 **Invariante:** los 5 niveles suman el total de la tabla. Hay una prueba que lo
 fija.
 
-## 8. Las 6 calidades
+## 8. Las 7 calidades
 
 En `auditoria/calidades.py`. Todas miden sobre el **universo auditable**.
 
@@ -274,8 +274,19 @@ En `auditoria/calidades.py`. Todas miden sobre el **universo auditable**.
 5. **No existe en INVIMA** — CUMs activos que INVIMA no tiene. **Se conserva
    aunque quede en cero**: sirve para ver si alguien carga algo que no es un
    medicamento (decisión del usuario, 2026-09-08)
-6. **Diferencia de estado o campos** — discrepancia de vigencia en cualquier
-   dirección, o diferencias de otros campos
+6. **Estado** — SOLO la discrepancia de vigencia, sin mirar otros campos:
+   CUM activo en Gemma Net + `ESTADO_CUM_INVIMA = Inactivo` (se excluye
+   listado `vencido`, que ya vive en la calidad 2), y CUM inactivo en Gemma
+   Net + `ESTADO_CUM_INVIMA = Activo` (el de mayor riesgo). Es un
+   **subconjunto exacto** de la parte de estado de la calidad 7 — misma
+   máscara factorizada (`discrepancia_vigencia`) — y **no repite** las
+   columnas de comparación campo a campo: para eso está la 7. Pedido del
+   usuario (2026-09-09): quería la discrepancia de estado como tarjeta propia,
+   independiente, aun aceptando el solape con la 7. Valida `ESTADO_CUM_INVIMA`
+   y `ESTADO_LISTADO_INVIMA`.
+7. **Diferencia de estado o campos** — discrepancia de vigencia en cualquier
+   dirección (misma máscara `discrepancia_vigencia` que la calidad 6), o
+   diferencias de otros campos
 
 ## 9. Fuentes de INVIMA: archivos o API
 
