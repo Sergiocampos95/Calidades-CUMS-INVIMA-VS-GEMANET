@@ -116,6 +116,56 @@ el navegador sigue apuntando a la primera en 5173.
 **Mitigación:** comprobar con `Get-NetTCPConnection -State Listen -LocalPort
 5173`, nunca con un intento de conexión TCP a `127.0.0.1`.
 
+### "Ya hay un refresco en curso" que no cede nunca, y datos de hace horas
+
+**Causa real (medido 2026-09-09, con captura del usuario):** había **SEIS
+procesos `worker.refresco`** vivos a la vez, en tres parejas
+(`12:29:33`, `12:32:59`, `12:34:53`), corriendo refrescos simultáneos sobre
+**el mismo `data_runtime/estado_worker.sqlite3`**. Más dos árboles de uvicorn
+duplicados en el 8000, arrancados con 4 segundos de diferencia.
+
+Cómo se llega ahí: dos sesiones de Claude Code corriendo `reinicia_todo.ps1`
+casi a la vez, más el botón "Actualizar ahora" lanzando workers. Nada
+comprueba si ya hay uno.
+
+Por qué el botón se queda pegado: `_hay_refresco_en_curso` pide "algún paso
+sin terminar **Y** worker vivo". Con varios workers pisándose el mismo estado
+**siempre** hay alguno vivo y **siempre** hay pasos a medias — de corridas
+distintas. El 409 no cede solo. Síntoma delator: el paso "en curso" **salta
+hacia atrás o adelante** entre consultas (se vio pasar de "Leyendo INVIMA —
+Vigentes" a "Leyendo INVIMA — Renovacion"): son dos corridas escribiendo el
+mismo registro, no una avanzando.
+
+**Diagnóstico** — contar workers, que deben ser **una sola pareja**
+(padre + hijo):
+```powershell
+Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
+  Where-Object { $_.CommandLine -match 'worker' } |
+  Select-Object ProcessId, ParentProcessId, CreationDate
+```
+Fechas de creación en grupos separados = varios refrescos encimados. Y para
+los backends duplicados, el del puerto puede NO ser el que lanzó el worker:
+```powershell
+Get-NetTCPConnection -State Listen -LocalPort 8000 | Select-Object OwningProcess
+```
+
+**Mitigación:** matar por PID hasta dejar **un** backend y **cero** workers
+(filtrando por `CommandLine`, nunca `Get-Process python` — ver más arriba),
+esperar los `MARGEN_LATIDO_SEGUNDOS` (60 s) a que venza el latido, y recién
+ahí volver a pedir el refresco. Con un solo worker el refresco tomó 250 s y
+`/salud` volvió a `ok`.
+
+**No confundir con un bug de código.** Se llegó a sospechar de `refrescar.py`
+porque `GET /refrescar/progreso` decía `en_curso: false` mientras `POST
+/refrescar` daba 409 — la invariante 2 de `reglas_negocio.md` §14. No era
+eso: eran dos workers, uno muriendo y otro naciendo entre las dos llamadas.
+Con un solo worker los dos endpoints vuelven a coincidir.
+
+**Cómo no volver a caer:** un solo agente/persona corriendo
+`reinicia_todo.ps1` a la vez. Si el botón arranca el worker por su cuenta
+(feature discutida el 2026-09-09), necesita un cerrojo: comprobar-y-arrancar
+sin lock permite que dos peticiones dejen dos workers.
+
 ### Las cifras salen en cero, o una columna nueva no aparece
 
 **Causa:** el snapshot que sirve el backend es de antes de que esa columna
