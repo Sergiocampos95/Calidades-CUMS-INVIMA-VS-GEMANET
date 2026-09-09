@@ -165,12 +165,22 @@ def test_df_tabla_trae_descripcion_como_columna_identificadora():
     "PRODUCTO" -- un campo del lado INVIMA que no existe en `auditoria`
     (el lado Gemma Net usa DESCRIPCION) -- el filtro `if c in
     auditoria.columns` lo descartaba en silencio y df_tabla quedaba sin
-    ninguna columna identificadora."""
+    ninguna columna identificadora.
+
+    Desde H2 la identificadora es DESCRIPCION_GEMANET (mismo texto que
+    DESCRIPCION): la DESCRIPCION plana se omite para no repetir la columna."""
     auditoria = _auditar([_fila_gemanet("500-1")], [_fila_invima("500-1")])
     cadena = construir_cadena_calidad(auditoria)
     for eslabon in cadena:
-        assert "DESCRIPCION" in eslabon.df_tabla.columns
         assert "PRODUCTO" not in eslabon.df_tabla.columns
+        tiene_texto = (
+            "DESCRIPCION" in eslabon.df_tabla.columns
+            or "DESCRIPCION_GEMANET" in eslabon.df_tabla.columns
+        )
+        assert tiene_texto, eslabon.nombre
+    assert "DESCRIPCION" in cadena[0].df_tabla.columns  # H1: sin trio, plana
+    assert "DESCRIPCION" not in cadena[1].df_tabla.columns  # H2: solo _GEMANET
+    assert "DESCRIPCION_GEMANET" in cadena[1].df_tabla.columns
 
 
 def test_columnas_trio_incluyen_similitud_del_campo():

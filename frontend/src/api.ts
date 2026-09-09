@@ -257,3 +257,12 @@ export function urlDescargaCalidad(
   if (seccion) url.searchParams.set("seccion", seccion);
   return url.toString();
 }
+
+/** URL para descargar una tabla de la cadena de calidad H1-H6 completa.
+ * Igual que `urlDescargaCalidad`: trae el eslabon entero, sin la paginacion
+ * ni los filtros de pantalla. */
+export function urlDescargaEslabon(nombre: string, formato: "xlsx" | "csv" | "txt"): string {
+  const url = new URL(`${BASE_URL}/descargas/cadena/${encodeURIComponent(nombre)}`);
+  url.searchParams.set("formato", formato);
+  return url.toString();
+}

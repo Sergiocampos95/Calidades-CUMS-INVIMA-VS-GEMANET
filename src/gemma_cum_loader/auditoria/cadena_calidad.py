@@ -249,7 +249,15 @@ def construir_cadena_calidad(
         # (2026-08-27): con "PRODUCTO" el filtro `if c in auditoria.columns`
         # lo descartaba en silencio -- df_tabla nunca tuvo columna
         # identificadora, se veia como una columna de guiones en la UI.
-        columnas_tabla = [c for c in ("CODIGO_INTERNO", "DESCRIPCION") if c in auditoria.columns]
+        # DESCRIPCION plana solo mientras la cadena no haya agregado su trio.
+        # Desde H2, DESCRIPCION_GEMANET trae EXACTAMENTE el mismo texto (el
+        # lado Gemma Net del trio ES esta columna) y las dos salian contiguas
+        # repetidas en la tabla -- el mismo arreglo que ya se hizo en la vista
+        # "Entender la calidad" (2026-09-08). CODIGO_INTERNO siempre.
+        identificadoras = ["CODIGO_INTERNO"]
+        if f"DESCRIPCION{SUFIJO_GEMANET}" not in columnas_trio_acumuladas:
+            identificadoras.append("DESCRIPCION")
+        columnas_tabla = [c for c in identificadoras if c in auditoria.columns]
         columnas_tabla += [c for c in columnas_trio_acumuladas if c in auditoria.columns]
         # Solo las filas que siguen vivas en ESTE eslabon (`universo_previo`,
         # el mismo conjunto que ya se usa para calcular `universo` arriba) --

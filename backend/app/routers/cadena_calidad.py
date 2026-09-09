@@ -117,3 +117,11 @@ def valores_columna_eslabon(
     nombre: str, columna: str, carpeta: Path = Depends(carpeta_snapshots)
 ) -> list[dict[str, object]]:
     return valores_distintos(_eslabon_o_404(nombre, carpeta).df_tabla, columna)
+
+
+def tabla_eslabon(nombre: str, carpeta: Path):
+    """La tabla COMPLETA de un eslabon H1-H6, sin paginar ni filtrar --
+    para la descarga (mismo criterio que `tabla_calidad_filtrada` en
+    calidades.py: la paginacion es comodidad de la vista, un reporte no se
+    recorta). Lanza 404/503 igual que el resto del router."""
+    return _eslabon_o_404(nombre, carpeta).df_tabla

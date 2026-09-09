@@ -1,5 +1,8 @@
+import io
+
 import pandas as pd
 from fastapi.testclient import TestClient
+from openpyxl import load_workbook
 
 from backend.app.dependencies import carpeta_snapshots
 from backend.app.main import app
@@ -21,7 +24,11 @@ def _auditoria_muestra():
     return pd.DataFrame(
         {
             "CODIGO_INTERNO": ["1-1", "2-2", "3-3"],
-            "DESCRIPCION": ["ACETAMINOFEN 500MG TABLETA", "IBUPROFENO 400MG TABLETA", "NAPROXENO 250MG TABLETA"],
+            "DESCRIPCION": [
+                "ACETAMINOFEN 500MG TABLETA",
+                "IBUPROFENO 400MG TABLETA",
+                "NAPROXENO 250MG TABLETA",
+            ],
             "ESTADO_COHERENCIA": [
                 EstadoCoherencia.CORRECTO.value,
                 EstadoCoherencia.CON_DIFERENCIAS.value,
@@ -122,14 +129,18 @@ def test_tabla_de_un_eslabon_trae_descripcion_no_producto(tmp_path):
         app.dependency_overrides.clear()
 
 
-def test_valores_de_columna_de_un_eslabon_no_choca_con_la_ruta_de_un_solo_segmento(tmp_path):
+def test_valores_de_columna_de_un_eslabon_no_choca_con_la_ruta_de_un_solo_segmento(
+    tmp_path,
+):
     """/{nombre}/valores tiene que resolverse aparte de /{nombre} -- si la
     ruta quedara mal registrada, esto devolveria 404 (tratando "valores"
     como si fuera el nombre de un eslabon) en vez de la lista de valores."""
     cliente, carpeta = _cliente(tmp_path)
     try:
         escribir_snapshot({"auditoria": _auditoria_muestra()}, carpeta=carpeta)
-        r = cliente.get("/auditoria/cadena/H1/valores", params={"columna": "ESTADO_COHERENCIA"})
+        r = cliente.get(
+            "/auditoria/cadena/H1/valores", params={"columna": "ESTADO_COHERENCIA"}
+        )
         assert r.status_code == 200
         valores = {v["valor"] for v in r.json()}
         assert valores == {"correcto", "con_diferencias", "sin_correspondencia_invima"}
@@ -143,6 +154,80 @@ def test_filtro_solo_pasa_en_la_tabla_de_un_eslabon(tmp_path):
         escribir_snapshot({"auditoria": _auditoria_muestra()}, carpeta=carpeta)
         r = cliente.get("/auditoria/cadena/H2", params={"solo_pasa": True})
         codigos = {f["CODIGO_INTERNO"] for f in r.json()["filas"]}
-        assert codigos == {"1-1"}  # 2-2 tiene correspondencia (paso H1) pero se cae en H2
+        assert codigos == {
+            "1-1"
+        }  # 2-2 tiene correspondencia (paso H1) pero se cae en H2
+    finally:
+        app.dependency_overrides.clear()
+
+
+# --- GET /descargas/cadena/{nombre} --------------------------------------
+#
+# La vista "Trazabilidad de calidad" era la unica tabla de auditoria sin
+# botones de descarga (el resto ya los tiene desde el plan
+# tablas-por-seccion-y-exportacion.md). El endpoint reusa `tabla_eslabon`,
+# la MISMA tabla que ve la pantalla, y trae el eslabon COMPLETO -- la
+# paginacion es comodidad de la vista, no recorta un reporte.
+
+
+def test_descargar_eslabon_sin_snapshot_da_503(tmp_path):
+    cliente, _ = _cliente(tmp_path)
+    try:
+        r = cliente.get("/descargas/cadena/H1", params={"formato": "xlsx"})
+        assert r.status_code == 503
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_descargar_eslabon_desconocido_da_404(tmp_path):
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        escribir_snapshot({"auditoria": _auditoria_muestra()}, carpeta=carpeta)
+        r = cliente.get("/descargas/cadena/H99", params={"formato": "xlsx"})
+        assert r.status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_descargar_eslabon_formato_no_reconocido_da_400_no_500(tmp_path):
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        escribir_snapshot({"auditoria": _auditoria_muestra()}, carpeta=carpeta)
+        r = cliente.get("/descargas/cadena/H1", params={"formato": "pdf"})
+        assert r.status_code == 400
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_descargar_eslabon_xlsx_trae_todas_las_filas_del_eslabon(tmp_path):
+    """H1 ve los 3 CUMs (su universo es todo CUM real, con o sin
+    correspondencia). El archivo trae exactamente lo que ve la tabla."""
+
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        escribir_snapshot({"auditoria": _auditoria_muestra()}, carpeta=carpeta)
+        r = cliente.get("/descargas/cadena/H1", params={"formato": "xlsx"})
+        assert r.status_code == 200
+        assert r.headers["content-disposition"].endswith('filename="cadena_h1.xlsx"')
+        hoja = load_workbook(io.BytesIO(r.content)).active
+        codigos = {
+            fila[0] for fila in hoja.iter_rows(min_row=2, max_col=1, values_only=True)
+        }
+        assert codigos == {"1-1", "2-2", "3-3"}
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_descargar_eslabon_csv_lleva_bom_y_separador_pipe(tmp_path):
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        escribir_snapshot({"auditoria": _auditoria_muestra()}, carpeta=carpeta)
+        r = cliente.get("/descargas/cadena/H2", params={"formato": "csv"})
+        assert r.status_code == 200
+        assert r.content.startswith(b"\xef\xbb\xbf")  # BOM utf-8
+        encabezado = r.content.decode("utf-8-sig").splitlines()[0]
+        assert "|" in encabezado
+        # Desde H2 no viene la DESCRIPCION plana repetida, solo _GEMANET.
+        assert "DESCRIPCION_GEMANET" in encabezado
     finally:
         app.dependency_overrides.clear()

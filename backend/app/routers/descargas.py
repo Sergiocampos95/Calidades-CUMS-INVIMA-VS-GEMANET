@@ -26,6 +26,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 
 from backend.app.dependencies import carpeta_snapshots
 from backend.app.exportar import DELIMITADOR_EXPORTACION, bytes_desde_escritor
+from backend.app.routers.cadena_calidad import tabla_eslabon
 from backend.app.routers.calidades import tabla_calidad_filtrada
 from gemma_cum_loader.exportacion.cargue import generar_excel_cargue
 from gemma_cum_loader.exportacion.estructura_cargue import (
@@ -158,15 +159,39 @@ def descargar_calidad(
             detail=f"formato '{formato}' no reconocido. Usa uno de: {', '.join(_FORMATOS_CALIDAD)}.",
         )
     tabla = tabla_calidad_filtrada(nombre, carpeta, seccion=seccion, q=busqueda, filtros_json=filtros_json)
-    nombre_archivo_base = _nombre_de_archivo_seguro(nombre, seccion or "")
+    return _serializar_tabla_plana(tabla, _nombre_de_archivo_seguro(nombre, seccion or ""), formato)
 
+
+@router.get("/cadena/{nombre}")
+def descargar_eslabon_cadena(
+    nombre: str,
+    formato: str = "xlsx",
+    carpeta: Path = Depends(carpeta_snapshots),
+) -> Response:
+    """Una tabla de la cadena de calidad H1-H6 COMPLETA (sin paginar) en
+    xlsx/csv/txt. Faltaba: la vista "Trazabilidad de calidad" era la unica
+    tabla de auditoria sin botones de descarga. Mismo criterio que
+    `descargar_calidad`: el archivo trae todas las filas del eslabon, la
+    paginacion de pantalla no recorta un reporte. `tabla_eslabon` ya lanza
+    404 si el nombre no es un eslabon y 503 si no hay snapshot."""
+    if formato not in _FORMATOS_CALIDAD:
+        raise HTTPException(
+            status_code=400,
+            detail=f"formato '{formato}' no reconocido. Usa uno de: {', '.join(_FORMATOS_CALIDAD)}.",
+        )
+    tabla = tabla_eslabon(nombre, carpeta)
+    return _serializar_tabla_plana(tabla, _nombre_de_archivo_seguro("cadena", nombre), formato)
+
+
+def _serializar_tabla_plana(tabla: pd.DataFrame, nombre_archivo_base: str, formato: str) -> Response:
+    """Una tabla plana -> Response con Content-Disposition, en el formato
+    pedido. Compartido por la descarga de una calidad y la de un eslabon de
+    la cadena: las dos son tablas de una sola hoja, sin agrupar."""
     if formato == "xlsx":
         # NO `guardar_reporte`: agrupa en una hoja por valor de `columna_hoja`
         # ("accion"/"ESTADO_COHERENCIA"), una columna que la tabla recortada
-        # por seccion puede no traer -- rompería con KeyError. Una calidad
-        # filtrada es una tabla plana, una sola hoja, mismo patron que ya usan
-        # `generar_excel_cargue`/`generar_excel_estructura_cargue`
-        # (`tabla.to_excel(ruta, index=False)`).
+        # puede no traer -- rompería con KeyError. Es una tabla plana, una
+        # sola hoja, mismo patron que `generar_excel_cargue`.
         contenido = bytes_desde_escritor(lambda ruta: tabla.to_excel(ruta, index=False))
         return _adjunto(f"{nombre_archivo_base}.xlsx", contenido, MEDIA_XLSX)
 

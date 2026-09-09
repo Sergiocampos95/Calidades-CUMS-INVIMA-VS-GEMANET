@@ -637,6 +637,8 @@ tbody tr:hover { background: var(--accent-soft); }
 
 .aviso { padding: 0.6rem 0.9rem; border-radius: var(--radio-sm); font-size: 0.82rem; }
 .aviso--error { background: var(--danger-soft); color: var(--danger); }
+.aviso--info { background: var(--accent-soft); color: var(--text-muted); }
+.aviso--info strong { color: var(--text); }
 
 /* Tabla de comparacion emparejada de "Consultar INVIMA" -- cada fila es un
    campo con su valor de CADA fuente y el veredicto al lado, en vez de dos

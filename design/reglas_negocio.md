@@ -374,6 +374,21 @@ el anterior. `CADENA_CALIDAD_DEFAULT` en `auditoria/cadena_calidad.py`:
 **H5 (laboratorio) está excluido a propósito**, a la espera de que el negocio
 confirme el campo. Agregarlo es una sola línea en ese módulo.
 
+**Un eslabón vacío NO es un bug.** Como la cadena es acumulativa, si un campo
+intermedio coincide poco, el universo de los siguientes cae casi a cero. Hoy
+pasa con H4 (`CONCENTRACION`): desde el cruce homónimo del 2026-09-09 (§sobre
+`CONCENTRACION`), ~97 % de las filas dan «difiere» a propósito, así que H4 baja
+a ~0 % y H6 se queda sin filas que evaluar y muestra «—» (vacío, nunca 0 %). La
+vista lo dice con una tarjeta corta en vez de dejar la tabla vacía sin
+explicación.
+
+**La `DESCRIPCION` plana solo aparece en H1.** Desde H2, `DESCRIPCION_GEMANET`
+(el lado Gemma Net del trío) trae el mismo texto; mostrar las dos era una
+columna repetida.
+
+**Cada tabla de la cadena se puede descargar** (`GET /descargas/cadena/{H}`),
+igual que las calidades: el eslabón completo, sin la paginación de pantalla.
+
 ## 13. Reglas que se probaron y se REVIRTIERON
 
 Están aquí para que no se vuelvan a proponer. Todas parecían razonables.

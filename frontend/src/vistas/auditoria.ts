@@ -9,6 +9,7 @@ import {
   obtenerSeccionesCalidad,
   obtenerValoresColumna,
   urlDescargaCalidad,
+  urlDescargaEslabon,
 } from "../api";
 import { cabeceraConDescarga } from "../descargas";
 import {
@@ -415,7 +416,9 @@ export async function montarAuditExplorar(contenedor: HTMLElement): Promise<void
 
 export async function montarCadenaCalidad(contenedor: HTMLElement): Promise<void> {
   contenedor.innerHTML =
-    `<p class="vista__intro">Cada tabla valida un campo más que la anterior, sobre las mismas filas (pedido de Sergio). ` +
+    `<p class="vista__intro">Cada tabla valida un campo más que la anterior y solo sobre las filas que ` +
+    `pasaron todas las anteriores (pedido de Sergio), así que si un campo intermedio coincide poco, los ` +
+    `eslabones siguientes se quedan con pocas filas o ninguna. ` +
     `H5 (laboratorio) está pendiente de confirmar con negocio, no se muestra todavía.</p>`;
 
   // Mismo patron que la vista de calidades: lo que se ELIGE (los eslabones
@@ -440,6 +443,20 @@ export async function montarCadenaCalidad(contenedor: HTMLElement): Promise<void
   function mostrarEslabon(eslabon: EslabonResumen): void {
     filaPasos.querySelectorAll(".cadena-paso").forEach((el) => el.classList.toggle("activo", el.getAttribute("data-nombre") === eslabon.nombre));
     columnaTabla.innerHTML = "";
+    // La cadena es acumulativa: un eslabon solo evalua las filas que pasaron
+    // TODOS los anteriores. Si un campo intermedio coincide poco (hoy
+    // CONCENTRACION, por el cruce homonimo), su universo cae casi a cero y
+    // los siguientes se quedan sin filas que evaluar -- eso es correcto, no
+    // un dato faltante, pero sin decirlo la tabla vacia se lee como "roto".
+    if (eslabon.universo === 0) {
+      columnaTabla.innerHTML =
+        `<div class="aviso aviso--info">` +
+        `<strong>Sin filas que evaluar en ${esc(eslabon.nombre)}.</strong> ` +
+        `Ningún medicamento llegó hasta aquí: todos se detuvieron en un eslabón anterior ` +
+        `de la cadena. Revisa el porcentaje del eslabón previo para ver dónde se cortan.` +
+        `</div>`;
+      return;
+    }
     // Columnas REALES que trae esa tabla (ver EslabonResumen.columnas_trio
     // en el backend) -- no se re-derivan a mano a partir de
     // campos_acumulados: para H1 esa lista viene vacia (no agrega un campo
@@ -447,9 +464,16 @@ export async function montarCadenaCalidad(contenedor: HTMLElement): Promise<void
     // ESTADO_COHERENCIA ni NOVEDAD_VIGENCIA_INVIMA/DETALLE_VIGENCIA_INVIMA
     // -- justo la vigencia que se necesita ver (bug real reportado por el
     // usuario, 2026-08-27).
-    const columnas = ["CODIGO_INTERNO", "DESCRIPCION", ...eslabon.columnas_trio, eslabon.columna_estado];
+    // Desde H2 el trio ya trae DESCRIPCION_GEMANET (mismo texto que
+    // DESCRIPCION): pedir tambien la DESCRIPCION plana sacaba dos columnas
+    // identicas contiguas. El backend deja de mandarla, aca tampoco se pide.
+    const identificadoras = eslabon.columnas_trio.includes("DESCRIPCION_GEMANET")
+      ? ["CODIGO_INTERNO"]
+      : ["CODIGO_INTERNO", "DESCRIPCION"];
+    const columnas = [...identificadoras, ...eslabon.columnas_trio, eslabon.columna_estado];
     new TablaFiltrable(columnaTabla, {
       columnas,
+      urlDescarga: (formato) => urlDescargaEslabon(eslabon.nombre, formato),
       formatearCelda: (columna, valor) => {
         if (valor === null || valor === undefined || valor === "") return null; // deja el "—" del default
         if (columna === "ESTADO_COHERENCIA") return pildoraEstadoCoherencia(valor);

@@ -117,7 +117,7 @@ que dejó el worker y aplica máscaras vectorizadas.
 | `routers/auditoria.py` | "Priorizar lo que requiere acción". `_priorizables` es el único filtro |
 | `routers/calidades.py` | Las 7 tarjetas. **`_tabla_auditoria` (completa) vs `_tabla_auditable` (recortada)** — ver abajo |
 | `routers/consulta_detalle.py` | Consulta puntual de un CUM |
-| `routers/descargas.py` | xlsx / csv / txt. Sección completa, no la página visible |
+| `routers/descargas.py` | xlsx / csv / txt. Sección completa, no la página visible. Cubre calidades (`/descargas/calidad/{n}`) y eslabones de la cadena (`/descargas/cadena/{H}`) |
 | `routers/refrescar.py` | `POST /refrescar` + `GET /refrescar/progreso` |
 | `routers/salud.py` | Estado del último refresco, desfases de esquema |
 | `routers/candidatos.py`, `cargue.py`, `universo.py`, `cadena_calidad.py` | El flujo de candidatos y la cadena H1..H6 |
