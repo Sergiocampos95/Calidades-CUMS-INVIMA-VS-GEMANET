@@ -29,7 +29,7 @@ CAMPOS_COMPARADOS_COHERENCIA = [*_CAMPOS_DIRECTOS.keys(), "DESCRIPCION", "MARCA_
 | Campo | Cómo se arma |
 |---|---|
 | `DESCRIPCION` | `_descripcion_esperada_invima()` reconstruye la forma esperada a partir de los campos crudos de INVIMA |
-| `MARCA_MEDICAMENTO` | Gemma Net guarda un **código numérico**; se resuelve contra el catálogo (`sigla_por_codigo`) antes de comparar |
+| `MARCA_MEDICAMENTO` | Gemma Net guarda un **código numérico**; se resuelve contra el catálogo. **Dos lookups distintos**: `sigla_por_codigo` para COMPARAR y `texto_por_codigo` para MOSTRAR — ver §2 |
 | `UNIDAD_MEDIDA` | Igual: código numérico resuelto contra catálogo |
 
 ## 2. Un solo par normalizado por campo (línea ~2093 en adelante)
@@ -53,6 +53,33 @@ por sufijo societario o calificador de planta.
 línea 2127) — la normalización es para comparar, no para mostrar. Lo que
 viaja en las columnas `_GEMANET`/`_INVIMA` del resultado es el dato real tal
 como está guardado.
+
+### La marca se MUESTRA con otro lookup que el que la COMPARA
+
+`normalizar_entidad` trunca en el sufijo societario, y esa forma truncada no
+existe en ninguna de las dos fuentes. Usarla también para mostrar dejaba en
+pantalla una razón social inventada: el código 7 es
+`GLAXOSMITHKLINE COLOMBIA SAS` en `administrativo.tb_marca_medicamento` y
+salía como `GLAXOSMITHKLINE COLOMBIA` (reporte del usuario sobre el CUM
+19905376-7, 2026-09-09). Quien contrastaba la pantalla contra Gemma Net veía
+dos textos distintos del mismo dato — y el cruce existe justamente para
+comparar contra lo que hay guardado.
+
+```python
+gemanet["_MARCA_TEXTO"]          = sigla_marca.get(codigo)   # para COMPARAR
+gemanet["_MARCA_TEXTO_MOSTRAR"]  = texto_marca.get(codigo) or sigla_marca.get(codigo)
+crudos_gemanet["MARCA_MEDICAMENTO"] = combinado["_MARCA_TEXTO_MOSTRAR"]
+```
+
+`texto_por_codigo` devuelve `texto_original`, el texto crudo del catálogo con
+su puntuación (`INVERSIONES COMERFAR LTDA.`). El veredicto **no cambia**:
+se sigue decidiendo sobre el código y el conjunto de siglas (§3). El `or` es
+degradación explícita — un código huérfano cae al normalizado y, si tampoco
+está, queda vacío; los dos lookups salen de las mismas entradas, así que nunca
+se inventa un nombre.
+
+Medido tras refrescar: 4.619 de 199.615 filas pasan a mostrar su puntuación,
+sin mover ningún conteo de veredicto.
 
 ## 3. La matriz de diferencias (línea 2144)
 
