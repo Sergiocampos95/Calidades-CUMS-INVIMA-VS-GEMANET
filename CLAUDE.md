@@ -268,6 +268,42 @@ concreta.
 (https://github.com/soferf/gemma-cum.git). Un dia de trabajo sin push es un dia
 que vive unicamente en un disco. Antes de cerrar una sesion: commit + push.
 
+**Cierre obligatorio de sesion.** Regla del usuario, 2026-09-09. Cuando un
+cambio queda aplicado y verificado, la sesion NO termina en silencio: hay que
+PREGUNTARLE al usuario si se cumplio el objetivo, y con su confirmacion cerrar
+el ciclo entero -- **commit -> fusion a `master` -> push**. Los tres pasos, no
+el primero solo.
+
+Por que los tres, medido en este repositorio el 2026-09-09: habia 47 commits
+bien hechos, con su mensaje y su porque, y aun asi la pregunta del usuario fue
+"por que arreglo una cosa y se devuelven los avances de otra". Commitear no
+era el eslabon que faltaba. `master` seguia en `54ca88f` del 2026-09-04 y las
+ramas se habian ido apilando en CADENA -- cada una creada sobre la anterior,
+no sobre `master`. Consecuencias que el usuario vivio:
+
+- **`master` desplegable era falso.** 47 commits y 81 archivos de diferencia
+  (+6.597 / -1.554). Cualquier `git checkout master` devolvia la aplicacion al
+  4 de septiembre. El reflog registra dos de esos saltos el 2026-09-08: ahi es
+  donde "se devolvieron los avances".
+- **Pararse en una rama de mas atras de la cadena parece perdida de trabajo.**
+  No lo es -- lo posterior esta adelante en la cadena -- pero en pantalla es
+  indistinguible de un cambio revertido.
+- **Ramas que divergen sin que nadie lo note.**
+  `fix/concentracion-cruza-contra-concentracion-invima` acumulo un `Revert` y
+  un `Reapply` del mismo cambio, y quedo con un commit en `origin` que el
+  local no tenia.
+
+De ahi tambien la mitad que suele olvidarse: **cada rama nueva sale de
+`master` actualizado, nunca de la rama anterior.** Fusionar sin volver a
+`master` para la siguiente tanda reconstruye la misma cadena.
+
+Antes de dar por cumplido el objetivo, la verificacion es la de siempre: suite
+verde Y mirada en pantalla tras `.\reinicia_todo.ps1` (ver arriba). Una cifra
+contra un proceso viejo no cuenta como objetivo cumplido.
+
+Cuando el usuario responde que el objetivo NO se cumplio, no se fusiona: la
+rama se queda viva y la sesion sigue siendo la misma sesion.
+
 **Copias de seguridad.** Antes de una tanda que toque logica de negocio, una
 rama de respaldo (`respaldo/AAAA-MM-DD-<tema>`) publicada en `origin` deja un
 punto de retorno. Los datos NO se respaldan en git: `data/`, `data_runtime/` y
