@@ -273,8 +273,54 @@ def test_trio_de_columnas_por_campo_trae_los_dos_lados_y_el_veredicto():
     assert fila["PRINCIPIO_ACTIVO_GEMANET"] == "acetaminofen  "
     # ...pero el veredicto si usa la normalizacion
     assert fila["PRINCIPIO_ACTIVO_VALIDACION"] == "coincide"
-    assert fila["MARCA_MEDICAMENTO_GEMANET"] == normalizar_entidad("ACME SAS")
+    # La marca se muestra como la guarda el catalogo de Gemma Net, CON su
+    # sufijo societario -- no truncada por normalizar_entidad, que es lo que
+    # se usa para comparar. Ver el test de regresion de abajo.
+    assert fila["MARCA_MEDICAMENTO_GEMANET"] == "ACME SAS"
     assert fila["MARCA_MEDICAMENTO_INVIMA"] == "ACME SAS"
+
+
+def test_la_marca_mostrada_conserva_el_sufijo_societario_del_catalogo():
+    """Mostrar y comparar son dos cosas distintas.
+
+    `normalizar_entidad` trunca en el sufijo societario para poder comparar
+    contra el TITULAR de INVIMA sin falsos "difiere" por "SAS" vs "S.A.".
+    Usar ESA forma tambien para mostrar dejaba en pantalla una razon social
+    que no existe en ninguna de las dos fuentes: el CUM 19905376-7 (marca 7 =
+    "GLAXOSMITHKLINE COLOMBIA SAS" en administrativo.tb_marca_medicamento)
+    aparecia como "GLAXOSMITHKLINE COLOMBIA", y quien contrastaba la pantalla
+    contra Gemma Net veia dos textos distintos del mismo dato (reporte del
+    usuario, 2026-09-09).
+    """
+    catalogo = cargar_catalogo(
+        [(7, "GLAXOSMITHKLINE COLOMBIA SAS")],
+        normalizador=normalizar_entidad,
+        dividir_sigla_descripcion=False,
+    )
+    resultado = auditar_coherencia(
+        pd.DataFrame([_fila_gemanet("500-1", MARCA_MEDICAMENTO="7")]),
+        pd.DataFrame([_fila_invima("500-1", TITULAR="GLAXOSMITHKLINE BIOLOGICALS S.A.")]),
+        _CATALOGO_UNIDAD,
+        catalogo,
+    ).set_index("CODIGO_INTERNO")
+    fila = resultado.loc["500-1"]
+    assert fila["MARCA_MEDICAMENTO_GEMANET"] == "GLAXOSMITHKLINE COLOMBIA SAS"
+    assert fila["MARCA_MEDICAMENTO_INVIMA"] == "GLAXOSMITHKLINE BIOLOGICALS S.A."
+    # El veredicto no cambia: sigue decidiendose sobre el codigo y las siglas
+    # normalizadas, y GLAXOSMITHKLINE COLOMBIA no es GLAXOSMITHKLINE BIOLOGICALS.
+    assert fila["MARCA_MEDICAMENTO_VALIDACION"] == "difiere"
+
+
+def test_la_marca_de_un_codigo_huerfano_queda_vacia_y_no_se_inventa():
+    """Un codigo que el catalogo no conoce no tiene texto que mostrar.
+
+    Degradacion explicita: la columna queda vacia, no con el codigo crudo ni
+    con un nombre adivinado.
+    """
+    resultado = _auditar(
+        [_fila_gemanet("500-1", MARCA_MEDICAMENTO="999999")], [_fila_invima("500-1")]
+    )
+    assert resultado.loc["500-1"]["MARCA_MEDICAMENTO_GEMANET"] == ""
 
 
 def test_veredicto_es_sin_comparar_cuando_no_hay_correspondencia_en_invima():

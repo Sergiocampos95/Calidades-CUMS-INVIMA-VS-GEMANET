@@ -76,6 +76,7 @@ from gemma_cum_loader.catalogos.resolver import (
     EntradaCatalogo,
     sigla_por_codigo,
     siglas_por_codigo,
+    texto_por_codigo,
 )
 from gemma_cum_loader.normaliza.codigos import (
     PATRON_ATC,
@@ -2114,6 +2115,18 @@ def auditar_coherencia(
     # de arriba se sigue usando para MOSTRAR, que es lo unico que puede hacer.
     siglas_unidad = siglas_por_codigo(catalogo_unidad)
     siglas_marca = siglas_por_codigo(catalogo_marca)
+    # Y el texto TAL CUAL lo guarda el catalogo, solo para MOSTRAR la marca.
+    # `sigla_marca` pasa por normalizar_entidad, que trunca en el sufijo
+    # societario: el codigo 7 es "GLAXOSMITHKLINE COLOMBIA SAS" en
+    # administrativo.tb_marca_medicamento y salia en pantalla como
+    # "GLAXOSMITHKLINE COLOMBIA". Truncar es correcto para COMPARAR contra el
+    # TITULAR de INVIMA (ver normalizar_entidad), pero la columna
+    # MARCA_MEDICAMENTO_GEMANET mostraba entonces una razon social que no
+    # existe en ninguna de las dos fuentes, y quien contrastaba la pantalla
+    # contra Gemma Net veia dos textos distintos del mismo dato -- reporte del
+    # usuario sobre el CUM 19905376-7 (2026-09-09). Mostrar y comparar son dos
+    # cosas: el veredicto sigue decidiendose sobre el codigo y las siglas.
+    texto_marca = texto_por_codigo(catalogo_marca)
 
     # Normalizar indice: reporte_gemanet puede tener indice no contiguo
     # (ej. despues de filtrar filas). Si no normalizamos, las operaciones
@@ -2125,6 +2138,12 @@ def auditar_coherencia(
     gemanet["CODIGO_INTERNO"] = gemanet["CODIGO_INTERNO"].astype(str).str.strip()
     gemanet["_MARCA_TEXTO"] = _columna_o_vacia(gemanet, "MARCA_MEDICAMENTO").map(
         lambda c: sigla_marca.get(_a_entero(c), "")
+    )
+    # El de mostrar cae al normalizado si el codigo no esta en el catalogo por
+    # texto_original: los dos lookup salen de las mismas entradas, asi que un
+    # codigo huerfano queda vacio en ambos y no se inventa nada.
+    gemanet["_MARCA_TEXTO_MOSTRAR"] = _columna_o_vacia(gemanet, "MARCA_MEDICAMENTO").map(
+        lambda c: texto_marca.get(_a_entero(c), "") or sigla_marca.get(_a_entero(c), "")
     )
     gemanet["_UNIDAD_TEXTO"] = _columna_o_vacia(gemanet, "UNIDAD_MEDIDA").map(
         lambda c: sigla_unidad.get(_a_entero(c), "")
@@ -2247,8 +2266,13 @@ def auditar_coherencia(
     # codigo al lado del titular de INVIMA no dejaria comparar nada. Se
     # muestra el texto ya resuelto contra el catalogo; el codigo crudo sigue
     # en su columna original.
+    #
+    # De la marca se muestra `_MARCA_TEXTO_MOSTRAR` (texto_por_codigo) y no
+    # `_MARCA_TEXTO` (sigla_por_codigo): en pantalla tiene que aparecer la
+    # razon social que Gemma Net tiene guardada, no la forma truncada que se
+    # usa para comparar -- ver el comentario de `texto_marca` arriba.
     crudos_gemanet: dict[str, pd.Series] = {
-        "MARCA_MEDICAMENTO": combinado["_MARCA_TEXTO"],
+        "MARCA_MEDICAMENTO": combinado["_MARCA_TEXTO_MOSTRAR"],
         "UNIDAD_MEDIDA": combinado["_UNIDAD_TEXTO"],
     }
 
