@@ -262,8 +262,14 @@ CAMPOS_COMPARADOS_COHERENCIA = [*_CAMPOS_DIRECTOS.keys(), "DESCRIPCION", "MARCA_
 # No se descuenta automaticamente del conteo: eso ocultaria que la descripcion
 # guardada esta mal, que es un hecho. Se declara para que quien reparte el
 # trabajo sepa cual es causa y cual efecto.
+#
+# FORMA_FARMACEUTICA se agrego el 2026-09-10: la descripcion esperada se arma
+# con PA + CANTIDAD+UNIDAD + FORMA (ver _descripcion_esperada_invima), asi que
+# una forma farmaceutica distinta arrastra la descripcion igual que lo hace el
+# principio activo. Sin ella, la seccion "Descripcion" no avisaba que parte del
+# problema de fondo es la forma.
 CAMPOS_DERIVADOS = {
-    "DESCRIPCION": ("PRINCIPIO_ACTIVO", "UNIDAD_MEDIDA"),
+    "DESCRIPCION": ("PRINCIPIO_ACTIVO", "UNIDAD_MEDIDA", "FORMA_FARMACEUTICA"),
 }
 
 
@@ -992,6 +998,14 @@ def _descripcion_esperada_invima(invima: pd.DataFrame) -> pd.Series:
 
     El 25 % restante son diferencias reales, que es justo lo que la auditoria
     debe reportar.
+
+    Re-medido el 2026-09-10 contra la BASE de Gemma Net (no el export) y los
+    listados de julio 2026, sobre 46.002 CUMs activos con correspondencia en
+    Vigentes: 29.949 exactas (65,1 %) con esta formula, y el ejemplo que trae
+    la propia guia del SOP (20055054-1) esta guardado asi: "INSULINA GLARGINA
+    (RDNA) 100IU SOLUCION INYECTABLE". Es la forma de la plataforma. La forma
+    que la guia dicta por escrito se acepta ADEMAS -- ver
+    `_descripcion_segun_guia_invima`.
     """
     return (
         _columna_o_vacia(invima, "PRINCIPIO_ACTIVO").str.strip()
@@ -1001,6 +1015,56 @@ def _descripcion_esperada_invima(invima: pd.DataFrame) -> pd.Series:
         + " "
         + _columna_o_vacia(invima, "FORMA_FARMACEUTICA").str.strip()
     ).str.strip()
+
+
+def _descripcion_segun_guia_invima(invima: pd.DataFrame) -> pd.Series:
+    """La DESCRIPCION tal como la dicta la guia "PASO A PASO ACTUALIZACION Y/O
+    CREACION CUMS INVIMA" (documento del negocio, 2024-07-17):
+
+        PRINCIPIO_ACTIVO + UNIDAD_REFERENCIA
+
+    Ejemplo real: "ACETAMINOFEN AMPOLLA", "TINIDAZOL CADA 100 ML".
+
+    Es una SEGUNDA forma valida, no un reemplazo de `_descripcion_esperada_
+    invima`: medido el 2026-09-10 sobre la base real, 2.381 CUMs activos
+    (5,2 %) estan guardados exactamente asi -- son los que se crearon
+    siguiendo la guia al pie de la letra -- y salian como "difiere" contra la
+    forma de la plataforma. Un registro que cumple la guia del negocio no es
+    una diferencia. Instruccion del usuario (2026-09-10): la validacion debe
+    seguir la guia donde la guia lo especifica.
+
+    Queda vacia (y por tanto nunca coincide) cuando INVIMA no trae
+    UNIDAD_REFERENCIA (2.791 de 157.799 filas de Vigentes): sin ella la forma
+    de la guia seria solo el principio activo, y aceptar "ACETAMINOFEN" a secas
+    como descripcion completa seria decidir a ciegas.
+    """
+    principio = _columna_o_vacia(invima, "PRINCIPIO_ACTIVO").str.strip()
+    referencia = _columna_o_vacia(invima, "UNIDAD_REFERENCIA").str.strip()
+    return (principio + " " + referencia).str.strip().where(referencia.ne(""), "")
+
+
+def _sin_espacios(serie: pd.Series) -> pd.Series:
+    """Para comparar DESCRIPCION: "100 MG TABLETA" y "100MG TABLETA" son la
+    misma descripcion. La plataforma pega CANTIDAD+UNIDAD sin espacio y quien
+    digita a mano suele dejarlo; medido el 2026-09-10, 351 CUMs activos salian
+    como "difiere" solo por ese espacio. Solo se usa para el VEREDICTO de
+    DESCRIPCION: la similitud sigue viendo el texto con sus palabras."""
+    return serie.str.replace(" ", "", regex=False)
+
+
+def _descripcion_sigue_la_guia(
+    local_normalizada: pd.Series, esperada_cruda: pd.Series, guia_cruda: pd.Series
+) -> pd.Series:
+    """True donde la descripcion de Gemma Net iguala la forma de la guia
+    (`_descripcion_segun_guia_invima`) y NO la de la plataforma. Decide contra
+    cual de las dos formas se compara y se muestra esa fila: la que calzo. Si
+    calza con las dos (pasa cuando UNIDAD_REFERENCIA repite la forma
+    farmaceutica y no hay cantidad) gana la de la plataforma, que es la
+    mayoritaria."""
+    local = _sin_espacios(local_normalizada)
+    guia = _sin_espacios(_normalizada(guia_cruda))
+    esperada = _sin_espacios(_normalizada(esperada_cruda))
+    return local.ne("") & guia.ne("") & local.eq(guia) & local.ne(esperada)
 
 
 def _campos_en_pendiente_gyc(
@@ -1033,9 +1097,15 @@ def _campos_en_pendiente_gyc(
     diferencia real, no un combinado pegado. La deteccion se limita a
     `_CAMPOS_COMBINADO_GYC`.
 
-    `df_invima` es el dataset CRUDO de Vigentes, ANTES de deduplicar por
-    `CODIGO_INTERNO` -- por eso hay que pasarlo aparte y no reusar el
-    `invima` ya colapsado.
+    `df_invima` es el dataset CRUDO, ANTES de deduplicar por `CODIGO_INTERNO`
+    -- por eso hay que pasarlo aparte y no reusar el `invima` ya colapsado.
+    Desde el 2026-09-10 son los CUATRO listados apilados (ver
+    `_invima_crudo_de_todos_los_listados`): un combinado cuyo registro vive
+    en Vencidos / Otros Estados / Renovacion trae sus datos de INVIMA desde
+    ese listado y, mirando solo Vigentes, se comparaba como simple -- 2.135
+    filas reales salian "difiere" (el 23 % de la seccion "Descripcion"). Un
+    codigo repetido ENTRE listados con el mismo principio activo suma filas
+    pero no bloques distintos, asi que la condicion 2 lo deja fuera.
     """
     vacio = pd.Series(False, index=clave_cruce_por_fila.index)
     campos = [campo for campo in _CAMPOS_COMBINADO_GYC if campo in valores_locales]
@@ -1067,6 +1137,21 @@ def _campos_en_pendiente_gyc(
         )
         resultado[campo] = tiene_varias_filas & bloques_presentes.ge(2)
     return resultado
+
+
+def _invima_crudo_de_todos_los_listados(*listados: pd.DataFrame | None) -> pd.DataFrame:
+    """CODIGO_INTERNO + PRINCIPIO_ACTIVO de todos los listados que llegaron,
+    apilados y sin deduplicar -- lo unico que `_campos_en_pendiente_gyc`
+    necesita para reconocer un combinado, venga del listado que venga."""
+    columnas = ["CODIGO_INTERNO", "PRINCIPIO_ACTIVO"]
+    partes = [
+        df[[c for c in columnas if c in df.columns]]
+        for df in listados
+        if df is not None and not df.empty and "CODIGO_INTERNO" in df.columns
+    ]
+    if not partes:
+        return pd.DataFrame(columns=columnas)
+    return pd.concat(partes, ignore_index=True)
 
 
 def _bloques_distintos_en(bloques: set[str], texto_local: str) -> int:
@@ -1579,6 +1664,7 @@ def _completar_invima_desde_auxiliares(
         # desde varias suyas, asi que hay que calcularla tambien aca (el
         # dataset auxiliar trae las mismas 29 columnas que Vigentes).
         auxiliar["_DESCRIPCION_ESPERADA"] = _descripcion_esperada_invima(auxiliar)
+        auxiliar["_DESCRIPCION_GUIA"] = _descripcion_segun_guia_invima(auxiliar)
         auxiliar = auxiliar.set_index(auxiliar["CODIGO_INTERNO"].astype(str).str.strip())
         esta_en_auxiliar = claves.isin(auxiliar.index)
         if not esta_en_auxiliar.any():
@@ -2175,6 +2261,7 @@ def auditar_coherencia(
 
     invima = df_invima.drop_duplicates(subset="CODIGO_INTERNO", keep="first").copy()
     invima["_DESCRIPCION_ESPERADA"] = _descripcion_esperada_invima(invima)
+    invima["_DESCRIPCION_GUIA"] = _descripcion_segun_guia_invima(invima)
 
     # ESTADO_CUM y las tres fechas alimentan la dimension 10 (contraste de
     # vigencia). No participan de la comparacion campo a campo: viajan para
@@ -2184,6 +2271,7 @@ def auditar_coherencia(
         "TITULAR",
         "UNIDAD_MEDIDA",
         "_DESCRIPCION_ESPERADA",
+        "_DESCRIPCION_GUIA",
         "ESTADO_CUM",
         # Se trae para poder mostrar el ESTADO_REGISTRO tambien en las filas
         # que SI estan en Vigentes -- ver el arranque de
@@ -2227,10 +2315,19 @@ def auditar_coherencia(
         )
         for campo, (col_gemanet, col_invima) in _CAMPOS_DIRECTOS.items()
     }
-    pares["DESCRIPCION"] = (
-        _normalizada(_columna_o_vacia(combinado, "DESCRIPCION")),
-        _normalizada(_columna_o_vacia(combinado, "_DESCRIPCION_ESPERADA_INVIMA")),
+    # DESCRIPCION: INVIMA no publica ese campo, se arma. Hay DOS formas validas
+    # (ver _descripcion_esperada_invima y _descripcion_segun_guia_invima) y
+    # cada fila se compara -- y se muestra -- contra la que calzo. Asi el
+    # veredicto, la similitud y el texto que ve quien revisa salen del mismo
+    # par: "Coincide" nunca queda al lado de un texto distinto.
+    descripcion_local = _normalizada(_columna_o_vacia(combinado, "DESCRIPCION"))
+    descripcion_esperada_cruda = _columna_o_vacia(combinado, "_DESCRIPCION_ESPERADA_INVIMA")
+    descripcion_guia_cruda = _columna_o_vacia(combinado, "_DESCRIPCION_GUIA_INVIMA")
+    sigue_la_guia = _descripcion_sigue_la_guia(
+        descripcion_local, descripcion_esperada_cruda, descripcion_guia_cruda
     )
+    descripcion_oficial_cruda = descripcion_esperada_cruda.where(~sigue_la_guia, descripcion_guia_cruda)
+    pares["DESCRIPCION"] = (descripcion_local, _normalizada(descripcion_oficial_cruda))
     # normalizar_entidad, no normalizar: "_MARCA_TEXTO" (sigla_por_codigo del
     # catalogo de marca) ya paso por normalizar_entidad -- comparar contra
     # el TITULAR crudo de INVIMA con la misma normalizacion evita falsos
@@ -2258,7 +2355,7 @@ def auditar_coherencia(
         campo: _columna_o_vacia(combinado, f"{col_invima}_INVIMA")
         for campo, (_, col_invima) in _CAMPOS_DIRECTOS.items()
     }
-    crudos_invima["DESCRIPCION"] = _columna_o_vacia(combinado, "_DESCRIPCION_ESPERADA_INVIMA")
+    crudos_invima["DESCRIPCION"] = descripcion_oficial_cruda
     crudos_invima["MARCA_MEDICAMENTO"] = _columna_o_vacia(combinado, "TITULAR_INVIMA")
     crudos_invima["UNIDAD_MEDIDA"] = _columna_o_vacia(combinado, "UNIDAD_MEDIDA_INVIMA")
 
@@ -2300,6 +2397,14 @@ def auditar_coherencia(
         ) | local.eq(oficial)
         matriz_diferencias[campo] = ~coincide
 
+    # DESCRIPCION se decide sin espacios (ver _sin_espacios): el par sigue
+    # llevando el texto con sus palabras para la similitud, pero "100 MG
+    # TABLETA" contra "100MG TABLETA" no es una diferencia.
+    descripcion_local, descripcion_oficial = pares["DESCRIPCION"]
+    matriz_diferencias["DESCRIPCION"] = _sin_espacios(descripcion_local).ne(
+        _sin_espacios(descripcion_oficial)
+    )
+
     # Un campo sin dato en Gemma Net no "difiere" de INVIMA: no hay nada que
     # comparar. Se saca de las diferencias Y del denominador de
     # PORCENTAJE_CALIDAD, igual que una fila sin correspondencia queda vacia
@@ -2335,7 +2440,11 @@ def auditar_coherencia(
             "DESCRIPCION": _columna_o_vacia(combinado, "DESCRIPCION"),
             "PRINCIPIO_ACTIVO": _columna_o_vacia(combinado, "PRINCIPIO_ACTIVO"),
         },
-        df_invima,
+        # Los 4 listados crudos, no solo Vigentes: el combinado se reconoce
+        # en el listado donde de verdad vive el registro.
+        _invima_crudo_de_todos_los_listados(
+            df_invima, df_invima_vencidos, df_invima_otros_estados, df_invima_renovacion
+        ),
     )
     matriz_pendiente_gyc = pd.DataFrame(
         {

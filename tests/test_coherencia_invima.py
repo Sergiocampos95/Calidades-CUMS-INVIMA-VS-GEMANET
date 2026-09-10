@@ -2344,3 +2344,128 @@ def test_una_sola_fila_invima_nunca_va_a_gyc_aunque_el_principio_activo_tenga_va
 
     assert resultado["CAMPOS_PENDIENTE_GYC"] == ""
     assert resultado["PRINCIPIO_ACTIVO_VALIDACION"] == VALIDACION_COINCIDE
+
+
+# ---- DESCRIPCION: que se compara y contra que (2026-09-10) ----------------
+#
+# Medido contra la base real (replica de Gemma Net) y los listados de julio
+# 2026, sobre los 46.002 CUMs activos con correspondencia en Vigentes:
+#   PA + CANTIDAD+UNIDAD + FORMA (la plataforma)    29.949 exactas (65,1 %)
+#   PA + UNIDAD_REFERENCIA (la guia del SOP)         2.381 exactas ( 5,2 %)
+#   solo espacios ("100 MG" vs "100MG")                351
+# Las dos formas conviven en la base y las dos son "como debe ser": la primera
+# es la que trae el ejemplo de la propia guia (20055054-1), la segunda es la
+# que la guia dicta por escrito. Ninguna es una diferencia real.
+
+
+def test_descripcion_no_difiere_solo_por_el_espacio_entre_cantidad_y_unidad():
+    """"KETOPROFENO 100 MG TABLETA" y "KETOPROFENO 100MG TABLETA" son la misma
+    descripcion. 351 filas reales salian como "difiere" solo por ese espacio."""
+    resultado = _auditar(
+        [_fila_gemanet("500-1", DESCRIPCION="ACETAMINOFEN 500 MG TABLETA")],
+        [_fila_invima("500-1")],
+    )
+    fila = resultado.loc["500-1"]
+    assert "DESCRIPCION" not in fila["CAMPOS_CON_DIFERENCIA"]
+    assert fila["DESCRIPCION_VALIDACION"] == VALIDACION_COINCIDE
+
+
+def test_descripcion_armada_como_dice_la_guia_coincide_y_se_muestra_esa_forma():
+    """La guia del SOP (ACTUALIZACION CUMS INVIMA) dice: DESCRIPCION = principio
+    activo + unidad de referencia. Un registro creado siguiendola al pie de la
+    letra no puede salir como "difiere". Y el lado INVIMA de la fila tiene que
+    mostrar la forma con la que coincidio, no otra: si dijera "Coincide" al
+    lado de un texto distinto, nadie lo entenderia."""
+    resultado = _auditar(
+        [_fila_gemanet("500-1", DESCRIPCION="ACETAMINOFEN CADA TABLETA CONTIENE")],
+        [_fila_invima("500-1")],
+    )
+    fila = resultado.loc["500-1"]
+    assert "DESCRIPCION" not in fila["CAMPOS_CON_DIFERENCIA"]
+    assert fila["DESCRIPCION_VALIDACION"] == VALIDACION_COINCIDE
+    assert fila["DESCRIPCION_INVIMA"] == "ACETAMINOFEN CADA TABLETA CONTIENE"
+    assert fila["SIMILITUD_DESCRIPCION"] == 100
+
+
+def test_descripcion_que_no_sigue_ninguna_de_las_dos_formas_difiere():
+    """Sin la concentracion no es ni la forma de la plataforma ni la de la
+    guia: es una diferencia real. El lado INVIMA muestra la forma de la
+    plataforma, que es la mayoritaria en la base."""
+    resultado = _auditar(
+        [_fila_gemanet("500-1", DESCRIPCION="ACETAMINOFEN TABLETA")],
+        [_fila_invima("500-1")],
+    )
+    fila = resultado.loc["500-1"]
+    assert "DESCRIPCION" in fila["CAMPOS_CON_DIFERENCIA"]
+    assert fila["DESCRIPCION_VALIDACION"] == "difiere"
+    assert fila["DESCRIPCION_INVIMA"] == "ACETAMINOFEN 500mg TABLETA"
+
+
+def test_descripcion_segun_la_guia_tambien_vale_para_un_cum_de_un_listado_auxiliar():
+    """Los CUM que no viven en Vigentes traen sus datos de INVIMA desde
+    Vencidos/Otros Estados/Renovacion (ver _completar_invima_desde_auxiliares):
+    la forma de la guia tiene que armarse tambien desde ahi, o esos CUM
+    volverian a salir como "difiere" por la puerta de atras."""
+    resultado = _auditar(
+        [_fila_gemanet("999-9", DESCRIPCION="ACETAMINOFEN CADA TABLETA CONTIENE")],
+        [_fila_invima("500-1")],
+        vencidos_filas=[_fila_invima("999-9")],
+    )
+    fila = resultado.loc["999-9"]
+    assert fila["DESCRIPCION_VALIDACION"] == VALIDACION_COINCIDE
+    assert fila["DESCRIPCION_INVIMA"] == "ACETAMINOFEN CADA TABLETA CONTIENE"
+
+
+def test_descripcion_es_consecuencia_de_principio_activo_unidad_y_forma():
+    """La descripcion se arma con esos tres campos comparados: si uno de ellos
+    difiere, la descripcion difiere por consecuencia. Declararlo incompleto
+    hacia que la seccion "Descripcion" no avisara que muchas veces el problema
+    de fondo es la forma farmaceutica."""
+    from gemma_cum_loader.auditoria.coherencia_invima import CAMPOS_DERIVADOS
+
+    assert set(CAMPOS_DERIVADOS["DESCRIPCION"]) == {
+        "PRINCIPIO_ACTIVO",
+        "UNIDAD_MEDIDA",
+        "FORMA_FARMACEUTICA",
+    }
+
+
+def test_combinado_que_solo_vive_en_un_listado_auxiliar_tambien_va_a_gyc():
+    """La deteccion del combinado miraba SOLO el listado de Vigentes crudo. Un
+    combinado cuyo registro vive en Vencidos / Otros Estados / Renovacion
+    traia sus datos de INVIMA desde ese listado (ver
+    _completar_invima_desde_auxiliares) pero se comparaba contra UNA de sus
+    filas como si fuera simple: DESCRIPCION y PRINCIPIO_ACTIVO salian
+    "difiere". Medido el 2026-09-10 sobre la base real y los listados de
+    julio 2026: 2.135 filas (34 en Vencidos, 137 en Renovacion, 1.964 en Otros
+    Estados), el 23 % de la seccion "Descripcion", eran combinados sin
+    detectar."""
+    resultado = _auditar(
+        [
+            _fila_gemanet(
+                "20086888-11",
+                DESCRIPCION="IBUPROFENO 400MG TABLETA TIOCOLCHICOSIDO 4MG TABLETA",
+                PRINCIPIO_ACTIVO="IBUPROFENO TIOCOLCHICOSIDO",
+            )
+        ],
+        [_fila_invima("500-1")],
+        otros_estados_filas=_combinado_ibuprofeno_tiocolchicosido_invima(),
+    ).loc["20086888-11"]
+
+    assert resultado["DESCRIPCION_VALIDACION"] == VALIDACION_PENDIENTE_GYC
+    assert resultado["PRINCIPIO_ACTIVO_VALIDACION"] == VALIDACION_PENDIENTE_GYC
+    assert "DESCRIPCION" not in resultado["CAMPOS_CON_DIFERENCIA"]
+
+
+def test_el_mismo_codigo_en_dos_listados_con_el_mismo_principio_activo_no_es_combinado():
+    """INVIMA mueve registros de listado con los anos, asi que un codigo puede
+    estar en Vigentes y en Otros Estados a la vez. Dos filas con el MISMO
+    principio activo no son un combinado: se compara normal."""
+    resultado = _auditar(
+        [_fila_gemanet("500-1")],
+        [_fila_invima("500-1")],
+        otros_estados_filas=[_fila_invima("500-1")],
+    ).loc["500-1"]
+
+    assert resultado["DESCRIPCION_VALIDACION"] == VALIDACION_COINCIDE
+    assert resultado["CAMPOS_PENDIENTE_GYC"] == ""
