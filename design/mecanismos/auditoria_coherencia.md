@@ -28,7 +28,7 @@ CAMPOS_COMPARADOS_COHERENCIA = [*_CAMPOS_DIRECTOS.keys(), "DESCRIPCION", "MARCA_
 
 | Campo | Cómo se arma |
 |---|---|
-| `DESCRIPCION` | `_descripcion_esperada_invima()` reconstruye la forma esperada a partir de los campos crudos de INVIMA |
+| `DESCRIPCION` | INVIMA no la publica. Dos formas válidas: `_descripcion_esperada_invima()` (PA + CANTIDAD+UNIDAD + FORMA, la de la plataforma) y `_descripcion_segun_guia_invima()` (PA + UNIDAD_REFERENCIA, la de la guía del SOP). La fila se compara **y se muestra** contra la que calzó — ver §2 y `reglas_negocio.md` §4 |
 | `MARCA_MEDICAMENTO` | Gemma Net guarda un **código numérico**; se resuelve contra el catálogo. **Dos lookups distintos**: `sigla_por_codigo` para COMPARAR y `texto_por_codigo` para MOSTRAR — ver §2 |
 | `UNIDAD_MEDIDA` | Igual: código numérico resuelto contra catálogo |
 
@@ -40,7 +40,10 @@ binario como la similitud — nunca se recalculan por separado, así que no
 pueden contradecirse.
 
 ```python
-pares["DESCRIPCION"] = (_normalizada(...), _normalizada(...))
+sigue_la_guia = _descripcion_sigue_la_guia(local, _DESCRIPCION_ESPERADA_INVIMA, _DESCRIPCION_GUIA_INVIMA)
+descripcion_oficial_cruda = esperada.where(~sigue_la_guia, guia)   # la forma que calzó
+pares["DESCRIPCION"] = (_normalizada(local), _normalizada(descripcion_oficial_cruda))
+crudos_invima["DESCRIPCION"] = descripcion_oficial_cruda              # lo que ve la UI
 pares["MARCA_MEDICAMENTO"] = (combinado["_MARCA_TEXTO"], TITULAR_INVIMA.map(normalizar_entidad))
 pares["UNIDAD_MEDIDA"] = (_normalizada(...), _normalizada(...))
 ```
@@ -106,6 +109,18 @@ matriz_diferencias[campo] = ~coincide
 Coincide si INVIMA calza con **cualquiera** de las formas que ese código
 tiene en el catálogo — no solo con la que se muestra como representativa.
 
+### DESCRIPCION se decide sin espacios
+
+```python
+matriz_diferencias["DESCRIPCION"] = _sin_espacios(local).ne(_sin_espacios(oficial))
+```
+
+Solo el **veredicto** de este campo: el par conserva las palabras para que
+`token_set_ratio` (§4) siga midiendo similitud. `"100 MG TABLETA"` contra
+`"100MG TABLETA"` no es una diferencia (351 filas reales lo eran solo por ese
+espacio, 2026-09-10). `_descripcion_sigue_la_guia` usa el mismo criterio para
+decidir contra cuál de las dos formas se compara la fila.
+
 ### "Sin dato" se resta de la matriz, no cuenta como diferencia (línea 2168)
 
 ```python
@@ -122,7 +137,8 @@ dimensión de **completitud** (#4), no aquí — ver `_sin_dato_local()`.
 pendiente_gyc_por_campo = _campos_en_pendiente_gyc(
     combinado["_CLAVE_CRUCE_INVIMA"],
     {"DESCRIPCION": ..., "PRINCIPIO_ACTIVO": ...},
-    df_invima,          # el Vigentes CRUDO, ANTES del drop_duplicates
+    _invima_crudo_de_todos_los_listados(df_invima, vencidos, otros_estados, renovacion),
+    # los CUATRO listados CRUDOS apilados, ANTES del drop_duplicates
 )
 matriz_diferencias = matriz_diferencias & ~matriz_pendiente_gyc
 ```
@@ -132,8 +148,12 @@ plataforma Gemma Net lo guarda en **1 fila** con esos textos pegados. El merge
 se quedó con la primera fila de INVIMA, así que comparar campo a campo no dice
 nada. `_campos_en_pendiente_gyc()` marca un campo cuando pasan **las dos**:
 
-1. `df_invima["CODIGO_INTERNO"]` (crudo, sin deduplicar) tiene **>1 fila** para
-   esa clave de cruce.
+1. Los listados crudos apilados (sin deduplicar) tienen **>1 fila** para esa
+   clave de cruce. Desde el 2026-09-10 son los cuatro y no solo Vigentes: un
+   combinado que vive en Vencidos / Otros Estados / Renovación se comparaba
+   como simple (2.135 filas reales salían «difiere»). Un código repetido
+   *entre* listados con el mismo principio activo suma filas pero no bloques,
+   así que la condición 2 lo descarta.
 2. El valor local, normalizado, contiene como subcadena el **`PRINCIPIO_ACTIVO`**
    de **≥2** de esas filas (`_bloques_distintos_en()` descarta el bloque que
    es subcadena de otro más largo — "IBUPROFENO" dentro de "IBUPROFENO

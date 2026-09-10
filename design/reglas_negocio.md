@@ -115,6 +115,57 @@ INVIMA. Es una feature aparte, no un cambio de mapeo.
 El nombre técnico no se toca: viaja en el snapshot, en el trío
 `CONCENTRACION_GEMANET/_INVIMA/_VALIDACION` y en el Excel de cargue.
 
+### `DESCRIPCION`: INVIMA no la publica, se arma — y hay dos formas válidas
+
+INVIMA no tiene un campo Descripción. La auditoría **arma** la descripción
+esperada desde los campos de INVIMA y la compara contra
+`tb_medicamento.descripcion`. Medido el **2026-09-10** contra la **base** de
+Gemma Net (réplica Tableros_BI, no el export) y los listados de julio 2026,
+sobre 46.002 CUMs activos con correspondencia en Vigentes:
+
+| Forma | Fórmula | Coincidencias exactas |
+|---|---|---|
+| **Plataforma** | `PRINCIPIO_ACTIVO + CANTIDAD+UNIDAD_MEDIDA + FORMA_FARMACEUTICA` → `PREDNISOLONA 5MG TABLETA` | 29.949 (65,1 %) |
+| **Guía del SOP** ("PASO A PASO ACTUALIZACION Y/O CREACION CUMS INVIMA", 2024-07-17) | `PRINCIPIO_ACTIVO + UNIDAD_REFERENCIA` → `ACETAMINOFEN AMPOLLA` | 2.381 (5,2 %) |
+| Solo difieren por espacios (`100 MG` vs `100MG`) | — | 351 |
+
+Las dos conviven en la base y las dos son "como debe ser": el ejemplo que trae
+la propia guía (`20055054-1`) está guardado con la forma de la plataforma
+(`INSULINA GLARGINA (RDNA) 100IU SOLUCION INYECTABLE`); la guía dicta por
+escrito la otra.
+
+**Regla (2026-09-10, pedido del usuario: la validación sigue la guía donde la
+guía lo especifica):**
+
+- `DESCRIPCION` **coincide si iguala cualquiera de las dos formas**, y el
+  veredicto se decide **sin espacios** (`_sin_espacios`, solo para este
+  campo; la similitud sigue viendo las palabras).
+- `DESCRIPCION_INVIMA` muestra **la forma con la que se comparó**: "Coincide"
+  nunca queda al lado de un texto distinto. Si calza con las dos, gana la de
+  la plataforma (`_descripcion_sigue_la_guia`).
+- La forma de la guía queda vacía cuando INVIMA no trae `UNIDAD_REFERENCIA`
+  (2.791 de 157.799 filas de Vigentes): aceptar el principio activo a secas
+  como descripción sería decidir a ciegas.
+- `DESCRIPCION` es campo **derivado** de `PRINCIPIO_ACTIVO`, `UNIDAD_MEDIDA`
+  y `FORMA_FARMACEUTICA` (`CAMPOS_DERIVADOS`): si uno difiere, la descripción
+  difiere por consecuencia. Antes no declaraba la forma.
+
+Efecto medido sobre el mismo snapshot: la sección «Descripción» de
+"Diferencia de estado o campos" pasó de **9.211 a 3.907** filas. 2.742
+seguían la guía, 427 diferían solo por espacios y 2.135 eran combinados de
+listados auxiliares (ver el apartado siguiente). **Ninguna fila pasó de
+coincide a difiere.** Las 3.907 que quedan son diferencias reales: forma
+farmacéutica distinta a la del propio registro (`TABLETA DISPERSABLE` vs
+`TABLETA`), concentración ausente, principio activo escrito distinto, texto
+duplicado (`IVERMECTINA 3MG IVERMECTINA 3MG`), y **1.190 con caracteres
+corruptos guardados en la base** (`ACETAMINOFÃ‰N`: doble codificación UTF-8
+en Gemma Net, no un problema de pantalla).
+
+El flujo de **candidatos** (`armado/malla.py`) sigue armando la `DESCRIPCION`
+de los medicamentos nuevos como dicta la guía (PA + UNIDAD_REFERENCIA). No es
+una contradicción: crear sigue la guía; auditar acepta la guía y lo que la
+plataforma ya guarda.
+
 ### El mapeo completo de campos comparados
 
 `_CAMPOS_DIRECTOS` en `auditoria/coherencia_invima.py`:
@@ -161,6 +212,15 @@ combinado pegado—. Medido sobre el snapshot del 2026-09-08: ~12.500 filas
 marcan `DESCRIPCION` (la plataforma pega los principios activos en la
 descripción casi siempre) y solo 1 marca también `PRINCIPIO_ACTIVO` (ese
 campo casi nunca lo pega).
+
+**Desde el 2026-09-10 la detección mira los cuatro listados crudos, no solo
+Vigentes** (`_invima_crudo_de_todos_los_listados`). Un combinado cuyo registro
+vive en Vencidos / Otros Estados / Renovación traía sus 7 campos de INVIMA
+desde ese listado (`_completar_invima_desde_auxiliares`) pero se comparaba
+como simple: 2.135 filas (34 en Vencidos, 137 en Renovación, 1.964 en Otros
+Estados), el 23 % de la sección «Descripción», salían «difiere». Un código
+repetido *entre* listados con el mismo principio activo suma filas pero no
+bloques distintos, así que la condición (2) lo deja fuera.
 
 Pendiente de decisión de GyC (anotado 2026-09-08): `ESTADO_COHERENCIA` de la
 fila **no** se tocó —una fila cuyos únicos hallazgos son de este tipo puede
@@ -287,6 +347,19 @@ En `auditoria/calidades.py`. Todas miden sobre el **universo auditable**.
 7. **Diferencia de estado o campos** — discrepancia de vigencia en cualquier
    dirección (misma máscara `discrepancia_vigencia` que la calidad 6), o
    diferencias de otros campos
+
+**Cómo se explican (2026-09-10).** Cada calidad lleva, además del nombre, una
+frase (`explica`), la lista de **criterios** que la definen y un **qué hacer**,
+todo en lenguaje de negocio (`_definiciones` en `calidades.py`); y cada sección
+de diferencia lleva una explicación de *qué se compara contra qué*
+(`EXPLICACION_CAMPO_DIFERENCIA` / `EXPLICACION_FECHA_DIFERENCIA`). Viajan por
+la API (`CalidadResumen.criterios` / `que_hacer`, `SeccionCalidad.explica`) y
+la pantalla los pinta tal cual en el panel "Cómo se calcula": la UI no redacta
+reglas. Pedido del usuario: el sistema lo revisan áreas que no son técnicas y
+las descripciones anteriores traían nombres de columna. Hay una prueba que
+prohíbe la jerga (`test_cada_calidad_explica_sus_criterios_sin_jerga_tecnica`).
+Si cambia un criterio en la máscara, cambia el texto: son la misma regla dicha
+dos veces.
 
 ## 9. Fuentes de INVIMA: archivos o API
 
@@ -463,6 +536,25 @@ PRIORIDAD_ACCION                CALIDADES
   4_bajo             279          En otro estado en INVIMA       4.882
   5_informativo   43.199          No existe en INVIMA                2
                                   Diferencia de estado o campos 30.849
+```
+
+Medidas el **2026-09-10** con la **base** de Gemma Net (réplica Tableros_BI)
+y los listados de **julio 2026**, tras aceptar la forma de la guía en
+`DESCRIPCION` y detectar combinados en los cuatro listados:
+
+```
+universo auditable      57.476
+
+CALIDADES                                SECCIONES de "Diferencia de estado o campos"
+  Vigencia confirmada           43.161     Concentración    53.474
+  Registro vencido en INVIMA        32     Descripción       3.907   (antes 9.211)
+  En trámite de renovación         181     Principio activo  1.527
+  En otro estado en INVIMA       4.687     Unidad de medida  1.276
+  No existe en INVIMA                2     Marca               822
+  Estado                         9.413     Forma farmacéutica  786
+  Diferencia de estado o campos 56.107     Código ATC          250
+                                           Fecha inicio      4.686
+                                           Fecha fin         7.476
 ```
 
 ## Reglas heredadas que siguen vigentes

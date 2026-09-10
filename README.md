@@ -186,6 +186,14 @@ Cada una es un mensaje accionable, no solo un indicador:
 `PORCENTAJE_CALIDAD` queda **vacío** (no en 0%) cuando no hay correspondencia con
 INVIMA: no hay nada que comparar, y eso no es lo mismo que "0% de calidad".
 
+**La descripción de INVIMA se arma, no se publica.** Para compararla, la auditoría
+la construye con `PRINCIPIO_ACTIVO + CANTIDAD+UNIDAD_MEDIDA + FORMA_FARMACEUTICA`
+(como la guarda la plataforma) y acepta también `PRINCIPIO_ACTIVO + UNIDAD_REFERENCIA`
+(como dicta la guía de actualización de CUMS); coincide si la de Gemma Net iguala
+cualquiera de las dos, sin distinguir mayúsculas, tildes, puntos ni espacios. La
+columna `DESCRIPCION_INVIMA` muestra la forma con la que se comparó. Detalle y
+cifras en `design/reglas_negocio.md` §4.
+
 ### `-999` significa "sin dato"
 
 Gemma Net usa `-999` como centinela de campo vacío. Medido sobre el reporte real de
