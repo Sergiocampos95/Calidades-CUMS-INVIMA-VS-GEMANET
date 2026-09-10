@@ -281,9 +281,18 @@ class Calidad:
     medicamentos: int
     porcentaje_del_catalogo: float
     df_tabla: pd.DataFrame = field(repr=False)
+    # Lenguaje de negocio (pedido del usuario, 2026-09-10): la lista de
+    # condiciones que definen la calidad y que hacer con lo que sale. Van
+    # aparte de `explica` (la frase corta) para que la UI los pinte como
+    # lista, no como un parrafo con nombres de columna. Quien revisa esto no
+    # es tecnico -- son otras areas de la EPS.
+    criterios: tuple[str, ...] = ()
+    que_hacer: str = ""
 
 
-def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, list[str]]]:
+def _definiciones(
+    auditoria: pd.DataFrame,
+) -> list[tuple[str, str, tuple[str, ...], str, pd.Series, list[str]]]:
     """Definiciones de la auditoria del negocio -- REDISEÑO 2026-09-02.
 
     La regla clave ahora es estricta: ESTADO_CUM_INVIMA ("Activo"/"Inactivo")
@@ -368,12 +377,13 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
     return [
         (
             "Vigencia confirmada",
+            "Medicamentos activos en Gemma Net cuyo registro sanitario INVIMA confirma como vigente. La vigencia está bien; otros campos pueden necesitar actualización, y eso se ve en «Diferencia de estado o campos».",
             (
-                "CUMs activos en Gemma Net que INVIMA declara vigentes (ESTADO_CUM='Activo') "
-                "Y que ademas estan en el listado de VIGENTES. El estado de VIGENCIA es "
-                "correcto; algunos pueden requerir actualizar una fecha o algun campo, y eso "
-                "no les quita la vigencia."
+                "Está activo en Gemma Net.",
+                "Su código es un CUM (expediente-consecutivo) y aparece en el listado de Vigentes de INVIMA.",
+                "INVIMA marca el CUM como Activo.",
             ),
+            "Nada por la vigencia. Si alguna fecha o campo difiere, se revisa en «Diferencia de estado o campos».",
             # El listado tiene que ser EXACTAMENTE 'vigente' -- pedido
             # explicito y repetido del usuario (2026-09-02 y 2026-09-03):
             # "en este apartado meramente deben de aparecer los que
@@ -395,13 +405,12 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
         ),
         (
             "Registro vencido en INVIMA",
+            "Medicamentos activos en Gemma Net cuyo registro aparece en el listado de Vencidos de INVIMA.",
             (
-                "CUMs activos en Gemma Net que estan en el listado de VENCIDOS de INVIMA. "
-                "Mira la columna ESTADO_CUM_INVIMA para saber cual de los dos casos es: "
-                "'Inactivo' es vencido pleno (hay que inactivarlo en Gemma Net); 'Activo' "
-                "es gracia de lotes -- INVIMA lo deja autorizado mientras se agotan las "
-                "existencias, y pasara a vencido pleno cuando cambie el estado."
+                "Está activo en Gemma Net.",
+                "Aparece en el listado de Vencidos de INVIMA, sin importar si el CUM sigue Activo o ya está Inactivo.",
             ),
+            "Mirar «Estado CUM INVIMA»: Inactivo es vencido pleno y hay que inactivarlo en Gemma Net; Activo es gracia de lotes, INVIMA lo deja autorizado mientras se agotan existencias y caerá cuando cambie el estado.",
             # SOLO el listado, sin condicion sobre ESTADO_CUM -- decision del
             # usuario (2026-09-03), la misma del plan aprobado: el listado es
             # la UBICACION real donde alguien encontrara el registro si lo
@@ -420,19 +429,25 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
         ),
         (
             "En trámite de renovación",
+            "Medicamentos activos cuyo registro sanitario está en trámite de renovación ante INVIMA. Siguen vigentes mientras se resuelve.",
             (
-                "CUMs activos cuya renovacion sigue en tramite en INVIMA "
-                "(ESTADO_CUM='Activo', listado='renovacion')."
+                "Está activo en Gemma Net.",
+                "Aparece en el listado de En trámite de renovación de INVIMA.",
+                "INVIMA marca el CUM como Activo.",
             ),
+            "Esperar. Cada actualización los vuelve a clasificar cuando INVIMA resuelve el trámite.",
             solo_activos & es_cum & activo_invima & listado.eq("renovacion"),
             [*base, *vigencia, "CONSULTA_VERIFICACION_SQL"],
         ),
         (
             "En otro estado en INVIMA",
+            "Medicamentos activos que INVIMA tiene en un estado especial: cancelado, suspendido, negado, desistido u otro.",
             (
-                "CUMs activos en estados especiales dentro de INVIMA "
-                "(Cancelado, Suspendido, Inactivo, etc., listado='otros_estados')."
+                "Está activo en Gemma Net.",
+                "Aparece en el listado de Otros Estados de INVIMA.",
+                "INVIMA marca el CUM como Activo.",
             ),
+            "Ver el detalle en «Estado en INVIMA» y confirmar con Garantía y Calidad si debe seguir autorizándose.",
             solo_activos & es_cum & activo_invima & listado.eq("otros_estados"),
             [*base, *vigencia, "CONSULTA_VERIFICACION_SQL"],
         ),
@@ -456,31 +471,25 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
         # justo la alarma que importa.
         (
             "No existe en INVIMA",
+            "Medicamentos activos en Gemma Net que no aparecen en ninguno de los 4 listados de INVIMA. Es un hallazgo real, no un error de cruce.",
             (
-                "MEDICAMENTOS activos en Gemma Net que INVIMA no tiene en ninguno de sus "
-                "4 listados. Es un hallazgo real y hay que revisarlo: o el codigo esta mal "
-                "digitado, o el registro sanitario se anulo, o INVIMA no lo publica. "
-                "Se comprueba que de verdad sea un medicamento mirando CODIGO_ATC: lo que "
-                "no trae un ATC (los alimentos, por ejemplo, traen un Registro Sanitario "
-                "de ALIMENTOS 'RSA-...') no es un CUM, nunca entra a la auditoria y por "
-                "tanto tampoco aparece aca -- no es que se excluya, es que no aplica. "
-                "Si la cifra sube a miles, lo desactualizado es el catalogo de INVIMA."
+                "Está activo en Gemma Net y su código tiene formato de CUM.",
+                "No está en Vigentes, Vencidos, En trámite de renovación ni Otros Estados.",
+                "Solo entran medicamentos de verdad: lo que no trae un código ATC (por ejemplo un alimento con registro RSA) no se audita y no aparece aquí.",
             ),
+            "Revisar uno por uno: el código puede estar mal digitado, el registro pudo anularse o INVIMA no lo publica. Si la cifra sube a miles, el listado de INVIMA cargado está desactualizado.",
             solo_activos & es_cum & ~en_algun_listado,
             [*base, "CLASIFICADO", "TIPO_SIN_CORRESPONDENCIA", "CONSULTA_VERIFICACION_SQL"],
         ),
         (
             "Estado",
+            "Solo la discrepancia de vigencia entre Gemma Net e INVIMA, sin mirar ningún otro campo.",
             (
-                "SOLO la discrepancia de estado de vigencia entre Gemma Net e INVIMA, sin "
-                "mirar otros campos. CUMs que estan ACTIVOS en Gemma Net e INACTIVOS en "
-                "INVIMA (ESTADO_CUM_INVIMA='Inactivo'), y CUMs INACTIVOS en Gemma Net que "
-                "INVIMA todavia declara ACTIVOS -- este ultimo es el de mayor riesgo. "
-                "Mira ESTADO_CUM_INVIMA (el veredicto de vigencia) y ESTADO_LISTADO_INVIMA "
-                "(en cual archivo de INVIMA aparece) para ubicar el caso. Los que ademas "
-                "difieren en descripcion, fechas u otro campo salen en 'Diferencia de "
-                "estado o campos'; aca no se repiten esas columnas."
+                "Activo en Gemma Net e Inactivo según INVIMA (salvo los del listado de Vencidos, que ya tienen su propia calidad).",
+                "O inactivo en Gemma Net y Activo según INVIMA: el caso de mayor riesgo.",
+                "Aparece en algún listado de INVIMA; sin eso no hay contra qué comparar.",
             ),
+            "La columna «Responsable» dice quién actúa: Garantía y Calidad cuando está activo aquí sin vigencia en INVIMA; TIC cuando está inactivo aquí pero vigente en INVIMA.",
             # Subconjunto EXACTO de la parte de estado de "Diferencia de estado
             # o campos": misma mascara factorizada, sin el OR de diferencia_campos.
             es_cum & en_algun_listado & discrepancia_vigencia,
@@ -493,12 +502,14 @@ def _definiciones(auditoria: pd.DataFrame) -> list[tuple[str, str, pd.Series, li
         ),
         (
             "Diferencia de estado o campos",
+            "Medicamentos con alguna diferencia frente a INVIMA: en el estado de vigencia, en alguno de los 7 campos comparados o en las fechas.",
             (
-                "Medicamentos con discrepancia de estado de vigencia (activo/inactivo) entre "
-                "Gemma y INVIMA) o con diferencias en otros campos (CAMPOS_CON_DIFERENCIA, "
-                "fechas). Incluye tambien inactivos en Gemma pero activos en INVIMA. "
-                "La columna RESPONSABLE_DISCREPANCIA indica si es GyC o TIC."
+                "Discrepancia de vigencia en cualquier dirección (los mismos casos de la calidad «Estado»).",
+                "O activo en Gemma Net con al menos un campo que no coincide con INVIMA: descripción, principio activo, concentración, forma farmacéutica, unidad de medida, código ATC o marca.",
+                "O activo en Gemma Net con una fecha de inicio o de fin distinta de la de INVIMA.",
+                "Las comparaciones ignoran mayúsculas, tildes y puntos (en la descripción también los espacios). Un campo vacío en Gemma Net no cuenta como diferencia: cuenta como dato faltante.",
             ),
+            "Abrir el tipo de diferencia en la columna de la izquierda para ver, campo por campo, qué dice Gemma Net y qué dice INVIMA. La columna «Responsable» indica si actúa Garantía y Calidad o TIC.",
             es_cum & en_algun_listado & (
                 # Discrepancia de vigencia (misma mascara que usa la tarjeta "Estado"):
                 discrepancia_vigencia
@@ -565,7 +576,7 @@ def calidades_auditoria(auditoria: pd.DataFrame) -> list[Calidad]:
     )
     total = int((es_cum_auditable & activo_o_vigente_en_invima).sum())
     resultado = []
-    for nombre, explica, mascara, columnas_deseadas in _definiciones(auditoria):
+    for nombre, explica, criterios, que_hacer, mascara, columnas_deseadas in _definiciones(auditoria):
         columnas = tuple(c for c in columnas_deseadas if c in auditoria.columns)
         # El DataFrame lleva MAS columnas de las que la tabla muestra: las que
         # necesita cada seccion para armar su vista recortada (los trios
@@ -593,6 +604,8 @@ def calidades_auditoria(auditoria: pd.DataFrame) -> list[Calidad]:
                 medicamentos=medicamentos,
                 porcentaje_del_catalogo=porcentaje,
                 df_tabla=subconjunto[del_df].copy() if del_df else subconjunto.iloc[:, :0],
+                criterios=criterios,
+                que_hacer=que_hacer,
             )
         )
     return resultado
@@ -666,6 +679,60 @@ ETIQUETAS_CAMPO_DIFERENCIA = {
     "MARCA_MEDICAMENTO": "Marca",
 }
 
+#: Que se compara en cada seccion, dicho para quien no es tecnico (pedido del
+#: usuario, 2026-09-10: "no es claro que campos se tienen en cuenta"). Vive al
+#: lado de las etiquetas y se sirve por la API (SeccionCalidad.explica) para
+#: que la pantalla, el tooltip y cualquier reporte digan lo mismo. Lo que dice
+#: cada texto esta verificado contra `auditar_coherencia()` -- ver
+#: design/mecanismos/auditoria_coherencia.md; si cambia el mecanismo, cambia
+#: el texto.
+EXPLICACION_CAMPO_DIFERENCIA = {
+    "DESCRIPCION": (
+        "INVIMA no publica una descripción: se arma con principio activo + cantidad + "
+        "unidad de medida + forma farmacéutica, que es como la guarda la plataforma "
+        "(ejemplo: PREDNISOLONA 5MG TABLETA). También se acepta principio activo + "
+        "unidad de referencia, la forma que dicta la guía de actualización de CUMS "
+        "(ejemplo: ACETAMINOFEN AMPOLLA). Coincide si la descripción de Gemma Net "
+        "iguala cualquiera de las dos, sin distinguir mayúsculas, tildes, puntos ni "
+        "espacios; la columna de INVIMA muestra la forma con la que se comparó."
+    ),
+    "PRINCIPIO_ACTIVO": (
+        "El principio activo de Gemma Net contra el de INVIMA, texto contra texto, sin "
+        "distinguir mayúsculas, tildes ni puntos."
+    ),
+    "CONCENTRACION": (
+        "El campo Concentración de Gemma Net contra el campo Concentración de INVIMA, "
+        "tal cual vienen (decisión del negocio: comparar el campo contra su homónimo). "
+        "Ojo: INVIMA guarda ahí un código de una letra y la cifra real vive en cantidad "
+        "+ unidad, y Gemma Net suele guardar la presentación comercial, así que casi "
+        "todos difieren."
+    ),
+    "FORMA_FARMACEUTICA": (
+        "La forma farmacéutica de Gemma Net contra la de INVIMA, texto contra texto, "
+        "sin distinguir mayúsculas, tildes ni puntos."
+    ),
+    "UNIDAD_MEDIDA": (
+        "Gemma Net guarda un código de unidad; se traduce con el catálogo de unidades y "
+        "se compara contra la unidad de medida de INVIMA. Coincide si INVIMA calza con "
+        "cualquiera de las siglas de ese código (IU = UI, % = % PORCIENTO)."
+    ),
+    "CODIGO_ATC": "El código ATC de Gemma Net contra el ATC de INVIMA.",
+    "MARCA_MEDICAMENTO": (
+        "Gemma Net guarda un código de marca; se traduce con el catálogo de marcas y se "
+        "compara contra el titular del registro en INVIMA, ignorando el sufijo "
+        "societario (S.A., SAS, LTDA) y los calificadores entre paréntesis."
+    ),
+}
+
+EXPLICACION_FECHA_DIFERENCIA = {
+    "FECHA_INICIO": "La fecha de inicio en Gemma Net contra la fecha en que INVIMA activó el CUM.",
+    "FECHA_FIN": (
+        "La fecha de fin en Gemma Net contra la fecha de vencimiento del registro en "
+        "INVIMA. Las fechas comodín (1900-01-01, 2999-12-31 o cualquier año desde 2100) "
+        "cuentan como «sin dato», no como fecha."
+    ),
+}
+
 
 @dataclass(frozen=True)
 class SeccionDiferencia:
@@ -681,6 +748,9 @@ class SeccionDiferencia:
     etiqueta: str
     medicamentos: int
     derivado_de: tuple[str, ...] = ()
+    # Que se compara en esta seccion, en lenguaje de negocio (ver
+    # EXPLICACION_CAMPO_DIFERENCIA / EXPLICACION_FECHA_DIFERENCIA).
+    explica: str = ""
 
 
 def _mascara_campo(tabla: pd.DataFrame, campo: str) -> pd.Series:
@@ -702,24 +772,35 @@ def _mascara_fecha(tabla: pd.DataFrame, campo: str) -> pd.Series:
     return tabla["COHERENCIA_FECHAS_INVIMA"].fillna("").astype(str).str.contains(campo, regex=False)
 
 
-def _registro_secciones(tabla: pd.DataFrame) -> list[tuple[str, str, tuple[str, ...], pd.Series]]:
-    """(clave, etiqueta, derivado_de, mascara) para cada seccion posible.
+def _registro_secciones(
+    tabla: pd.DataFrame,
+) -> list[tuple[str, str, tuple[str, ...], str, pd.Series]]:
+    """(clave, etiqueta, derivado_de, explica, mascara) para cada seccion posible.
 
     UNICA fuente de las secciones: contar y filtrar salen de aca, para que no
     puedan discrepar (que la tarjeta diga 901 y la tabla muestre otra cosa)."""
-    registro: list[tuple[str, str, tuple[str, ...], pd.Series]] = []
+    registro: list[tuple[str, str, tuple[str, ...], str, pd.Series]] = []
     for campo in CAMPOS_COMPARADOS_COHERENCIA:
         registro.append(
             (
                 f"campo:{campo}",
                 ETIQUETAS_CAMPO_DIFERENCIA.get(campo, campo),
                 tuple(CAMPOS_DERIVADOS.get(campo, ())),
+                EXPLICACION_CAMPO_DIFERENCIA.get(campo, ""),
                 _mascara_campo(tabla, campo),
             )
         )
     # Inicio antes que Fin. Pedido del usuario (2026-09-03).
     for campo, etiqueta in (("FECHA_INICIO", "Fecha inicio diferencias"), ("FECHA_FIN", "Fecha fin diferencias")):
-        registro.append((f"fecha:{campo}", etiqueta, (), _mascara_fecha(tabla, campo)))
+        registro.append(
+            (
+                f"fecha:{campo}",
+                etiqueta,
+                (),
+                EXPLICACION_FECHA_DIFERENCIA.get(campo, ""),
+                _mascara_fecha(tabla, campo),
+            )
+        )
     return registro
 
 
@@ -739,8 +820,17 @@ def secciones_de_diferencia(tabla: pd.DataFrame) -> list[SeccionDiferencia]:
     tiene ninguna diferencia de campo que mostrar -- diez tarjetas en cero
     serian ruido justo en el espacio que se libero para ganar claridad."""
     secciones = [
-        (indice, SeccionDiferencia(clave=clave, etiqueta=etiqueta, medicamentos=int(mascara.sum()), derivado_de=derivado))
-        for indice, (clave, etiqueta, derivado, mascara) in enumerate(_registro_secciones(tabla))
+        (
+            indice,
+            SeccionDiferencia(
+                clave=clave,
+                etiqueta=etiqueta,
+                medicamentos=int(mascara.sum()),
+                derivado_de=derivado,
+                explica=explica,
+            ),
+        )
+        for indice, (clave, etiqueta, derivado, explica, mascara) in enumerate(_registro_secciones(tabla))
     ]
     # Ordena por grupo, manteniendo el orden de insercion dentro de cada grupo
     # (no por cantidad). Esto permite que Fecha inicio vaya antes que Fecha fin
@@ -757,7 +847,7 @@ def filtrar_por_seccion(tabla: pd.DataFrame, clave: str) -> pd.DataFrame:
     """Las filas de una seccion. Clave desconocida -> se devuelve la tabla
     entera, no un vacio: mejor mostrar de mas que fingir "no hay hallazgos"
     (que es como se lee una tabla vacia) por una clave vieja en un enlace."""
-    for clave_registro, _etiqueta, _derivado, mascara in _registro_secciones(tabla):
+    for clave_registro, _etiqueta, _derivado, _explica, mascara in _registro_secciones(tabla):
         if clave_registro == clave:
             return tabla[mascara]
     return tabla

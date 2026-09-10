@@ -1,24 +1,21 @@
 import { fechaLegible } from "../fechas";
-import { etiquetaEstadoListadoInvima, pildoraValidacion } from "../pildoras";
+import { ETIQUETA_CAMPO_COMPARADO, etiquetaEstadoListadoInvima, pildoraValidacion } from "../pildoras";
 
 // Los 7 campos que la auditoria compara lado a lado, en el orden en que se
-// leen (lo que identifica el medicamento primero, los codigos despues).
-// Mismo conjunto que CAMPOS_COMPARADOS_COHERENCIA en el backend; cada uno
-// llega con su trio <CAMPO>_GEMANET / _INVIMA / _VALIDACION ya resuelto.
-const CAMPOS_COMPARABLES = [
-  { columna: "DESCRIPCION", etiqueta: "Descripción" },
-  { columna: "PRINCIPIO_ACTIVO", etiqueta: "Principio activo" },
-  // Cruce homónimo: CONCENTRACION de Gemma Net contra CONCENTRACION de INVIMA
-  // (decisión del usuario 2026-09-09, ver _CAMPOS_DIRECTOS en
-  // coherencia_invima.py). El rótulo acompaña al nombre de la columna; antes
-  // decía "Presentación comercial" porque el cruce apuntaba a
-  // DESCRIPCION_COMERCIAL.
-  { columna: "CONCENTRACION", etiqueta: "Concentración" },
-  { columna: "FORMA_FARMACEUTICA", etiqueta: "Forma farmacéutica" },
-  { columna: "UNIDAD_MEDIDA", etiqueta: "Unidad de medida" },
-  { columna: "CODIGO_ATC", etiqueta: "Código ATC" },
-  { columna: "MARCA_MEDICAMENTO", etiqueta: "Marca" },
-];
+// leen. El vocabulario (y sus porques) vive en pildoras.ts, compartido con
+// las tablas de calidades y la cadena H1-H6; aca solo se le da la forma que
+// esta vista consume.
+const CAMPOS_COMPARABLES = Object.entries(ETIQUETA_CAMPO_COMPARADO).map(([columna, etiqueta]) => ({ columna, etiqueta }));
+
+// INVIMA no publica una descripcion: la auditoria la arma (ver
+// _descripcion_esperada_invima / _descripcion_segun_guia_invima en
+// coherencia_invima.py). Sin decirlo, la fila "Descripción" se lee como si
+// INVIMA tuviera ese campo y "Difiere" como un error de cruce (pedido del
+// usuario, 2026-09-10).
+const NOTA_DESCRIPCION_INVIMA =
+  "La descripción del lado INVIMA no existe como tal en INVIMA: se arma con principio activo + cantidad + " +
+  "unidad de medida + forma farmacéutica (como la guarda la plataforma) o con principio activo + unidad de " +
+  "referencia (como dicta la guía de actualización de CUMS). Se muestra la forma con la que se comparó.";
 
 interface RespuestaConsultaDetalle {
   invima: Record<string, unknown>[];
@@ -862,6 +859,7 @@ function crearComparacionEstadosHTML(
 
   return `
     ${dondeBuscarlo}
+    <p class="consulta-invima__nota">${escaparHTML(NOTA_DESCRIPCION_INVIMA)}</p>
     <div class="consulta-invima__envoltorio">
       <table class="consulta-invima__tabla consulta-invima__pares">
         <thead>

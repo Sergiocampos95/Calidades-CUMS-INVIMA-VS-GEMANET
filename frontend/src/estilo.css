@@ -662,3 +662,20 @@ tbody tr:hover { background: var(--accent-soft); }
 .tarjeta-metrica__abrir { display: block; margin-top: 6px; font-size: 0.68rem; color: var(--accent); opacity: 0; transition: opacity 0.15s ease; }
 .tarjeta-metrica--abrible:hover .tarjeta-metrica__abrir,
 .tarjeta-metrica--abrible.activo .tarjeta-metrica__abrir { opacity: 1; }
+
+/* "Como se calcula" de una calidad (vistas/auditoria.ts::panelCriterios):
+   la frase corta, los criterios como lista y que hacer, en dos columnas
+   cuando hay ancho. Tarjeta corta, no banner: dos a cuatro puntos. */
+.criterios { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radio-md); padding: 12px 14px; margin-bottom: 12px; font-size: 0.82rem; line-height: 1.45; color: var(--text-muted); }
+.criterios__explica { margin: 0 0 8px; color: var(--text); }
+.criterios__cuerpo { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 8px 22px; }
+.criterios__titulo { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-faint); margin-bottom: 3px; }
+.criterios__lista { margin: 0; padding-left: 18px; }
+.criterios__lista li { margin: 0 0 2px; }
+.criterios__texto { margin: 0; }
+.criterios__seccion { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
+.criterios__seccion strong { color: var(--text); }
+
+/* Nota bajo la comparacion campo a campo de "Consultar INVIMA": aclara que la
+   descripcion de INVIMA se arma, no se publica. */
+.consulta-invima__nota { margin: 0 0 8px; font-size: 0.76rem; color: var(--text-faint); line-height: 1.4; }

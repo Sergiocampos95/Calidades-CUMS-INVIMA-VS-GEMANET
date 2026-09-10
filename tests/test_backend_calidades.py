@@ -219,6 +219,7 @@ def test_secciones_de_una_calidad_llegan_agrupadas_por_tipo(tmp_path):
         assert por_clave["campo:DESCRIPCION"]["derivado_de"] == [
             "Principio activo",
             "Unidad de medida",
+            "Forma farmaceutica",
         ]
         assert por_clave["campo:CONCENTRACION"]["derivado_de"] == []
     finally:
@@ -520,5 +521,39 @@ def test_las_tarjetas_no_muestran_lo_que_la_auditoria_excluyo(tmp_path):
             filas = cliente.get(f"/auditoria/calidades/{nombre}").json()["filas"]
             codigos = {f.get("CODIGO_INTERNO") for f in filas}
             assert "20109427-1" not in codigos, f"aparece en '{nombre}'"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_listar_calidades_trae_criterios_y_que_hacer_en_lenguaje_de_negocio(tmp_path):
+    """Contrato nuevo (2026-09-10): ademas de `explica`, cada calidad viaja con
+    `criterios` (lista de condiciones en lenguaje de negocio) y `que_hacer`.
+    El frontend los pinta como panel "Como se calcula"; sin ellos la tarjeta
+    solo decia un parrafo con nombres de columna."""
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        escribir_snapshot({"auditoria": _auditoria_muestra()}, carpeta=carpeta)
+        r = cliente.get("/auditoria/calidades")
+        assert r.status_code == 200
+        for calidad in r.json():
+            assert calidad["explica"].strip()
+            assert isinstance(calidad["criterios"], list) and calidad["criterios"]
+            assert calidad["que_hacer"].strip()
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_secciones_traen_su_explicacion(tmp_path):
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        muestra = _auditoria_muestra()
+        muestra["CAMPOS_CON_DIFERENCIA"] = ["DESCRIPCION", "", "", ""]
+        escribir_snapshot({"auditoria": muestra}, carpeta=carpeta)
+        r = cliente.get("/auditoria/calidades/Diferencia%20de%20estado%20o%20campos/secciones")
+        assert r.status_code == 200
+        secciones = r.json()
+        assert secciones, "la fila 1-1 con DESCRIPCION distinta debe abrir una seccion"
+        for seccion in secciones:
+            assert seccion["explica"].strip(), seccion["clave"]
     finally:
         app.dependency_overrides.clear()

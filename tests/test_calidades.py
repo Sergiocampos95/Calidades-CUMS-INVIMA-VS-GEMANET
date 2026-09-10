@@ -386,7 +386,9 @@ def test_descripcion_se_marca_como_efecto_de_principio_activo():
     """Sin esta marca "Descripcion" parece el problema mas grande cuando en
     buena parte es la consecuencia de que el principio activo este mal."""
     secciones = {s.clave: s for s in secciones_de_diferencia(_tabla_con_diferencias())}
-    assert secciones["campo:DESCRIPCION"].derivado_de == ("PRINCIPIO_ACTIVO", "UNIDAD_MEDIDA")
+    # FORMA_FARMACEUTICA desde 2026-09-10: la descripcion se arma tambien con
+    # la forma (ver CAMPOS_DERIVADOS en coherencia_invima.py).
+    assert secciones["campo:DESCRIPCION"].derivado_de == ("PRINCIPIO_ACTIVO", "UNIDAD_MEDIDA", "FORMA_FARMACEUTICA")
     assert secciones["campo:CONCENTRACION"].derivado_de == ()
 
 
@@ -579,3 +581,40 @@ def test_la_consulta_de_verificacion_trae_el_estado_local_y_su_traduccion():
     assert "CASE WHEN sw_activo = 1 THEN 'Activo' ELSE 'Inactivo' END" in consulta
     assert consulta.startswith("SELECT ")
     assert consulta.endswith("WHERE codigo_interno = '500-1';")
+
+
+# --- Criterios en lenguaje de negocio (2026-09-10) -------------------------
+#
+# Pedido del usuario: las descripciones de las calidades eran largas, con
+# nombres de columna y jerga ("ESTADO_CUM='Activo'", "listado='renovacion'"),
+# y el sistema lo revisan otras areas que no son tecnicas. Cada calidad dice
+# en una frase que es, lista los criterios que la definen y que hacer.
+
+_JERGA_TECNICA = ("ESTADO_CUM=", "listado=", "_INVIMA", "CAMPOS_CON_DIFERENCIA", "ESTADO_LISTADO", "RESPONSABLE_DISCREPANCIA")
+
+
+def test_cada_calidad_explica_sus_criterios_sin_jerga_tecnica():
+    calidades = calidades_auditoria(pd.DataFrame([_fila("500-1")]))
+    for calidad in calidades:
+        assert calidad.explica.strip(), calidad.nombre
+        assert calidad.criterios, calidad.nombre
+        assert all(c.strip() for c in calidad.criterios), calidad.nombre
+        assert calidad.que_hacer.strip(), calidad.nombre
+        for texto in (calidad.explica, calidad.que_hacer, *calidad.criterios):
+            assert not any(jerga in texto for jerga in _JERGA_TECNICA), (calidad.nombre, texto)
+
+
+def test_cada_seccion_de_diferencia_explica_que_compara():
+    """Quien abre "Descripcion" tiene que poder leer que INVIMA no publica ese
+    campo y que se arma con principio activo + cantidad + unidad + forma, o
+    con principio activo + unidad de referencia (la forma de la guia)."""
+    from gemma_cum_loader.auditoria.calidades import EXPLICACION_CAMPO_DIFERENCIA
+
+    secciones = secciones_de_diferencia(_tabla_con_diferencias())
+    assert secciones
+    for seccion in secciones:
+        assert seccion.explica.strip(), seccion.clave
+    descripcion = EXPLICACION_CAMPO_DIFERENCIA["DESCRIPCION"].lower()
+    assert "principio activo" in descripcion
+    assert "unidad de referencia" in descripcion
+    assert "forma farmac" in descripcion

@@ -140,6 +140,8 @@ def listar_calidades(carpeta: Path = Depends(carpeta_snapshots)) -> list[Calidad
             medicamentos=c.medicamentos,
             porcentaje_del_catalogo=c.porcentaje_del_catalogo,
             columnas=list(c.columnas),
+            criterios=list(c.criterios),
+            que_hacer=c.que_hacer,
         )
         for c in cals
     ]
@@ -182,6 +184,7 @@ def listar_secciones_calidad(
             # calidades.py junto a los campos que nombra, y duplicarlo en TS
             # es garantia de que se desincronicen.
             derivado_de=[ETIQUETAS_CAMPO_DIFERENCIA.get(c, c) for c in s.derivado_de],
+            explica=s.explica,
         )
         for s in secciones_de_diferencia(calidad.df_tabla)
     ]

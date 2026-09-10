@@ -40,6 +40,11 @@ export interface CalidadResumen {
   medicamentos: number;
   porcentaje_del_catalogo: number;
   columnas: string[];
+  /** Condiciones que definen la calidad, en lenguaje de negocio, una por
+   * entrada -- la UI las pinta como lista en el panel "Cómo se calcula". */
+  criterios: string[];
+  /** Qué hacer con lo que sale en esta calidad. */
+  que_hacer: string;
 }
 
 /** Un TIPO de diferencia dentro de una calidad. Las secciones NO son
@@ -51,6 +56,9 @@ export interface SeccionCalidad {
   etiqueta: string;
   medicamentos: number;
   derivado_de: string[];
+  /** Qué se compara en esta sección (qué campo de Gemma Net contra qué de
+   * INVIMA y cómo), para quien no es técnico. */
+  explica: string;
 }
 
 export interface DimensionesCalidad {

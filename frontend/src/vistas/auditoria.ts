@@ -15,6 +15,7 @@ import { cabeceraConDescarga } from "../descargas";
 import {
   AYUDA_PRIORIDAD,
   ESTADOS_COHERENCIA,
+  ETIQUETAS_TRIO_CAMPOS_COMPARADOS,
   PRIORIDADES,
   etiquetaEstadoCoherencia,
   etiquetaPrioridad,
@@ -206,7 +207,11 @@ function tarjetaSeccion(seccion: SeccionCalidad, activa: boolean): string {
   const derivado = seccion.derivado_de.length
     ? `<div class="tarjeta-metrica__veredicto">↳ suele ser efecto de ${esc(seccion.derivado_de.join(" / "))}</div>`
     : "";
-  return `<button type="button" class="tarjeta-metrica tarjeta-metrica--abrible${activa ? " activo" : ""}" data-seccion="${esc(seccion.clave)}" title="Ver solo estos medicamentos">
+  // El tooltip dice QUE se compara en esta seccion (viene del backend, misma
+  // frase que se muestra al abrirla): quien pasa el mouse sabe que campo de
+  // Gemma Net se contrasta contra que de INVIMA antes de hacer clic.
+  const ayuda = seccion.explica ? seccion.explica : "Ver solo estos medicamentos";
+  return `<button type="button" class="tarjeta-metrica tarjeta-metrica--abrible${activa ? " activo" : ""}" data-seccion="${esc(seccion.clave)}" title="${esc(ayuda)}">
     <div class="tarjeta-metrica__encabezado"><span>${esc(seccion.etiqueta)}</span></div>
     <div class="tarjeta-metrica__numero">${seccion.medicamentos.toLocaleString("es-CO")}</div>
     ${derivado}
@@ -253,14 +258,40 @@ export async function montarAuditEntender(contenedor: HTMLElement): Promise<void
   let seccionActual: string | null = null;
   let seccionesDeCalidad: SeccionCalidad[] = [];
 
+  // "Como se calcula": la frase corta, los criterios que definen la calidad
+  // como lista y que hacer con lo que sale -- todo viene del backend
+  // (CalidadResumen.criterios / que_hacer), la vista no inventa reglas.
+  // Reemplaza al parrafo unico con nombres de columna que habia antes: el
+  // sistema lo revisan otras areas que no son tecnicas (pedido del usuario,
+  // 2026-09-10). Es una tarjeta corta con una lista de 2 a 4 puntos, no un
+  // banner largo; la seccion abierta agrega su propia linea de "que se
+  // compara" en el mismo bloque.
+  function panelCriterios(calidad: CalidadResumen, seccion: SeccionCalidad | null): string {
+    const criterios = calidad.criterios.map((c) => `<li>${esc(c)}</li>`).join("");
+    const bloqueSeccion = seccion
+      ? `<div class="criterios__seccion"><strong>Viendo solo ${esc(seccion.etiqueta)}</strong> — ${seccion.medicamentos.toLocaleString("es-CO")} de ${calidad.medicamentos.toLocaleString("es-CO")}.${seccion.explica ? ` ${esc(seccion.explica)}` : ""}</div>`
+      : "";
+    return `<div class="criterios">
+      <p class="criterios__explica">${esc(calidad.explica)}</p>
+      <div class="criterios__cuerpo">
+        <div>
+          <div class="criterios__titulo">Entra aquí un medicamento cuando</div>
+          <ul class="criterios__lista">${criterios}</ul>
+        </div>
+        <div>
+          <div class="criterios__titulo">Qué hacer</div>
+          <p class="criterios__texto">${esc(calidad.que_hacer)}</p>
+        </div>
+      </div>
+      ${bloqueSeccion}
+    </div>`;
+  }
+
   function dibujarTabla(calidad: CalidadResumen, seccion: SeccionCalidad | null): void {
-    columnaTabla.innerHTML = `<p class="vista__intro" style="margin-bottom:10px">${esc(calidad.explica)}</p>`;
+    columnaTabla.innerHTML = panelCriterios(calidad, seccion);
     if (calidad.medicamentos === 0) {
       columnaTabla.innerHTML += `<p class="tabla-filtrable__vacio">Ningún medicamento cae en esta calidad en la corrida actual.</p>`;
       return;
-    }
-    if (seccion) {
-      columnaTabla.innerHTML += `<p class="vista__intro" style="margin-bottom:10px">Viendo solo <strong>${esc(seccion.etiqueta)}</strong> — ${seccion.medicamentos.toLocaleString("es-CO")} de ${calidad.medicamentos.toLocaleString("es-CO")}.</p>`;
     }
     const tablaEl = document.createElement("div");
     columnaTabla.appendChild(tablaEl);
@@ -272,7 +303,10 @@ export async function montarAuditEntender(contenedor: HTMLElement): Promise<void
       idTabla: `calidad:${calidad.nombre}`,
       seccion: clave,
       formatearCelda: formatearCeldaCalidad,
-      etiquetasColumna: ETIQUETAS_ACTIVO_VS_INVIMA,
+      // Los trios <CAMPO>_GEMANET/_INVIMA/_VALIDACION se rotulan en lenguaje
+      // de negocio (ver ETIQUETAS_TRIO_CAMPOS_COMPARADOS): la cabecera cruda
+      // "DESCRIPCION_INVIMA" se leia como un campo que INVIMA publica.
+      etiquetasColumna: { ...ETIQUETAS_ACTIVO_VS_INVIMA, ...ETIQUETAS_TRIO_CAMPOS_COMPARADOS },
       cargarPagina: (p) => obtenerCalidad(calidad.nombre, { ...p, seccion: clave }),
       // Sin filtros ni pagina: el archivo trae la seccion completa (ver
       // urlDescargaCalidad).
@@ -473,6 +507,9 @@ export async function montarCadenaCalidad(contenedor: HTMLElement): Promise<void
     const columnas = [...identificadoras, ...eslabon.columnas_trio, eslabon.columna_estado];
     new TablaFiltrable(columnaTabla, {
       columnas,
+      // Mismos rotulos del trio que en las calidades: un campo no puede
+      // llamarse distinto segun la pantalla.
+      etiquetasColumna: { ...ETIQUETAS_ACTIVO_VS_INVIMA, ...ETIQUETAS_TRIO_CAMPOS_COMPARADOS },
       urlDescarga: (formato) => urlDescargaEslabon(eslabon.nombre, formato),
       formatearCelda: (columna, valor) => {
         if (valor === null || valor === undefined || valor === "") return null; // deja el "—" del default

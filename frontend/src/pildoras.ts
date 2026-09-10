@@ -215,6 +215,43 @@ export function pildoraValidacion(valor: unknown): string {
   return pildora(TIPO_POR_VALIDACION[v] ?? "neutro", ETIQUETA_VALIDACION[v] ?? v);
 }
 
+// Los 7 campos que la auditoria compara lado a lado, en el orden en que se
+// leen (lo que identifica el medicamento primero, los codigos despues). Mismo
+// conjunto que CAMPOS_COMPARADOS_COHERENCIA en el backend; cada uno llega con
+// su trio <CAMPO>_GEMANET / _INVIMA / _VALIDACION ya resuelto. Vive aca -- y
+// no en una vista -- porque lo usan la consulta puntual, las tablas de
+// calidades y la cadena H1-H6: un rotulo distinto por pantalla para el mismo
+// campo es justo lo que confunde a quien no es tecnico.
+//
+// CONCENTRACION: cruce homonimo, CONCENTRACION de Gemma Net contra
+// CONCENTRACION de INVIMA (decision del usuario 2026-09-09, ver
+// _CAMPOS_DIRECTOS en coherencia_invima.py). El rotulo acompana al nombre de
+// la columna; antes decia "Presentacion comercial" porque el cruce apuntaba a
+// DESCRIPCION_COMERCIAL.
+export const ETIQUETA_CAMPO_COMPARADO: Record<string, string> = {
+  DESCRIPCION: "Descripción",
+  PRINCIPIO_ACTIVO: "Principio activo",
+  CONCENTRACION: "Concentración",
+  FORMA_FARMACEUTICA: "Forma farmacéutica",
+  UNIDAD_MEDIDA: "Unidad de medida",
+  CODIGO_ATC: "Código ATC",
+  MARCA_MEDICAMENTO: "Marca",
+};
+
+// Rotulos de las columnas del trio, para las tablas que lo muestran. La
+// cabecera cruda decia "DESCRIPCION_INVIMA", que se lee como si INVIMA
+// publicara una descripcion -- no la publica: la auditoria la ARMA con varios
+// campos suyos (ver EXPLICACION_CAMPO_DIFERENCIA en calidades.py). Rotularla
+// "armada desde INVIMA" es lo que evita leer "Difiere" como un error de cruce
+// (pedido del usuario, 2026-09-10).
+export const ETIQUETAS_TRIO_CAMPOS_COMPARADOS: Record<string, string> = Object.fromEntries(
+  Object.entries(ETIQUETA_CAMPO_COMPARADO).flatMap(([campo, etiqueta]): [string, string][] => [
+    [`${campo}_GEMANET`, `${etiqueta} (Gemma Net)`],
+    [`${campo}_INVIMA`, campo === "DESCRIPCION" ? "Descripción armada desde INVIMA" : `${etiqueta} (INVIMA)`],
+    [`${campo}_VALIDACION`, `Veredicto: ${etiqueta.toLowerCase()}`],
+  ]),
+);
+
 // Resultado acumulado de un eslabon H1..H6 (cadena_calidad.py) -- "pasa"
 // quiere decir que la fila supero esta condicion Y todas las anteriores de
 // la cadena (interseccion, no solo la de este paso).

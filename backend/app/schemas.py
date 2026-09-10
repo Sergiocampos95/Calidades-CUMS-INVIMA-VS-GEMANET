@@ -63,6 +63,11 @@ class CalidadResumen(BaseModel):
     medicamentos: int
     porcentaje_del_catalogo: float
     columnas: list[str]
+    # Lenguaje de negocio (2026-09-10): las condiciones que definen la
+    # calidad, una por linea, y que hacer con lo que sale. Con valor por
+    # defecto para no romper a un cliente viejo que no los pida.
+    criterios: list[str] = []
+    que_hacer: str = ""
 
 
 class SeccionCalidad(BaseModel):
@@ -78,6 +83,8 @@ class SeccionCalidad(BaseModel):
     etiqueta: str
     medicamentos: int
     derivado_de: list[str]
+    # Que se compara en esta seccion, para quien no es tecnico.
+    explica: str = ""
 
 
 class DimensionesCalidad(BaseModel):
