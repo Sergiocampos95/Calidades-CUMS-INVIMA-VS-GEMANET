@@ -139,3 +139,32 @@ def test_guardar_descarga_publica_el_parquet_solo_al_terminar(monkeypatch, tmp_p
     assert resultado.ruta.read_bytes() == b"parquet"
     assert len(escrito) == 1
     assert not list(tmp_path.glob(".*.tmp"))
+
+
+# --- Carpeta de listados en el servidor (2026-09-14) ---------------------
+
+
+def test_la_carpeta_de_datos_sale_de_la_variable_de_entorno(monkeypatch, tmp_path):
+    """Produccion (2026-09-14): los listados viven en una carpeta del servidor
+    elegida por operaciones, no dentro del repo."""
+    from gemma_cum_loader.ingesta.almacen_local import carpeta_datos
+
+    monkeypatch.setenv("INVIMA_LISTADOS_DIR", str(tmp_path))
+    assert carpeta_datos() == tmp_path
+
+
+def test_sin_variable_la_carpeta_es_gemanet_invima_en_el_home(monkeypatch):
+    from pathlib import Path
+
+    from gemma_cum_loader.ingesta.almacen_local import carpeta_datos
+
+    monkeypatch.delenv("INVIMA_LISTADOS_DIR", raising=False)
+    assert carpeta_datos() == Path.home() / "gemanet" / "invima"
+
+
+def test_descubrir_usa_la_carpeta_del_entorno_cuando_no_le_pasan_una(monkeypatch, tmp_path):
+    from gemma_cum_loader.ingesta.almacen_local import descubrir
+
+    monkeypatch.setenv("INVIMA_LISTADOS_DIR", str(tmp_path))
+    _crear(tmp_path, "ListadoCodigoUnicoVigentes2026.xlsx")
+    assert descubrir("invima_vigentes").nombre == "ListadoCodigoUnicoVigentes2026.xlsx"

@@ -19,6 +19,7 @@ Entre varios candidatos gana el mas reciente por fecha de modificacion.
 from __future__ import annotations
 
 import fnmatch
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
@@ -28,19 +29,25 @@ from uuid import uuid4
 import pandas as pd
 
 RAIZ = Path(__file__).resolve().parents[3]
-CARPETA_DATOS = RAIZ / "data"
+VARIABLE_CARPETA = "INVIMA_LISTADOS_DIR"
 
-# LIMITACION CONOCIDA, asumida a proposito (2026-08-20): la carpeta vive DENTRO
-# del proyecto. Eso funciona mientras cada analista corra la aplicacion en su
-# maquina, pero NO sirve en produccion: este modulo va a cargarse en el host de
-# Gemma Net, donde el usuario no puede dejar archivos en el arbol del proyecto
-# y donde varios usuarios compartirian la misma carpeta.
-#
-# Se deja asi por decision explicita del usuario: quedan pocos dias de
-# desarrollo, la plataforma esta fallando, y prefiere un fallo conocido y
-# auditable a una solucion parcial. Cuando se module para produccion, este es
-# el unico punto que hay que cambiar -- el resto del flujo solo recibe rutas y
-# no sabe de donde salieron.
+
+def carpeta_datos() -> Path:
+    """La carpeta del servidor donde operaciones deja los 4 listados de INVIMA
+    (y donde el worker busca ademas el export de Gemma Net y la malla).
+
+    Hasta el 2026-09-14 era `data/` dentro del repo -- limitacion asumida
+    mientras cada analista corria la app en su maquina. En produccion la app
+    corre como servicio en Linux y la usan otras areas, asi que la carpeta la
+    elige operaciones con `INVIMA_LISTADOS_DIR`; sin la variable se usa
+    `~/gemanet/invima`, que existe sin permisos especiales. Se lee en cada
+    llamada (no al importar) para que las pruebas puedan cambiarla sin
+    recargar el modulo. Es el UNICO punto que sabe de donde salen los
+    archivos: el resto del flujo solo recibe rutas.
+    """
+    configurada = os.environ.get(VARIABLE_CARPETA, "").strip()
+    return Path(configurada) if configurada else Path.home() / "gemanet" / "invima"
+
 
 # Un tipo logico -> los patrones que lo reconocen, en orden de preferencia.
 # Los .parquet van primero: son las descargas que hace esta aplicacion, ya
@@ -128,7 +135,7 @@ def descubrir(
     refresco NO quiere. Filtrar aca y no en el llamador mantiene las
     EXCLUSIONES (los 4 listados se llaman casi igual) en un solo lugar.
     """
-    base = carpeta if carpeta is not None else CARPETA_DATOS
+    base = carpeta if carpeta is not None else carpeta_datos()
     if not base.is_dir():
         return None
 
@@ -224,7 +231,7 @@ def guardar_descarga(
             ),
         )
 
-    base = carpeta if carpeta is not None else CARPETA_DATOS
+    base = carpeta if carpeta is not None else carpeta_datos()
     base.mkdir(parents=True, exist_ok=True)
     ruta = base / f"{tipo}_{(fecha or date.today()).strftime('%Y%m%d')}.parquet"
 
@@ -264,12 +271,12 @@ def guardar_subida(archivo, nombre: str, carpeta: Path | None = None) -> Path | 
     contenido logra lo mismo que se buscaba (subir una vez y olvidarse) y
     ademas no se rompe si el usuario mueve o renombra el original.
 
-    `carpeta` por defecto es `data/`, que sirve cuando cada analista corre la
+    `carpeta` por defecto es `carpeta_datos()`, que sirve cuando cada analista corre la
     aplicacion en su maquina. Si algun dia se sirve al equipo, este es el
     unico punto que hay que volver por usuario -- el resto del flujo no se
     entera de donde salio el archivo.
     """
-    base = carpeta if carpeta is not None else CARPETA_DATOS
+    base = carpeta if carpeta is not None else carpeta_datos()
     try:
         base.mkdir(parents=True, exist_ok=True)
         destino = base / nombre
