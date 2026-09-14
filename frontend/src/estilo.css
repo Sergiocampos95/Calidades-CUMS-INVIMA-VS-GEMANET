@@ -1,85 +1,62 @@
-/* Diseño aprobado por el usuario sobre el prototipo (ver artifact "Gemma CUM
-   Loader"). Mantiene el azul primario real de Gemma Net (#2A4D8F,
-   design/design_tokens.json) llevado a un riel lateral profundo, con
-   tipografía y componentes más dinámicos por encima. */
+/* Sistema de diseño Pijaos -- el MISMO del dashboard "Auditoría de Calidades"
+   (auditoria_calidades/dashboard/app/static/pijaos.css), que a su vez toma la
+   paleta del tema Olympia blue-orange del ERP GemaNet: azul #2F5D7A / #82ADC9
+   / #B9D8EB / #DDECF5, resalte #FEDEBC / #F9CC9B con texto #726557, grises
+   #666 / #A6A6A6 / #DADADA / #F4F4F4. Rediseño del 2026-09-14 a pedido del
+   usuario: las dos aplicaciones las usan las mismas áreas y tienen que
+   verse y navegarse igual. Un solo tema (claro), como el dashboard.
+
+   Los nombres de clase que consumen los .ts se conservan; cambian los
+   valores. Los tokens semánticos (--accent, --ok, --warn, --danger y sus
+   -soft) se mapean sobre la paleta Pijaos para no tocar cada vista. */
 
 :root {
-  --bg: #f5f8fc;
-  --surface: #ffffff;
-  --surface-2: #eef2f8;
-  --border: #dee5f0;
-  --text: #16212e;
-  --text-muted: #5b6b80;
-  --text-faint: #93a0b3;
+  --azul-oscuro: #2F5D7A;
+  --azul-medio: #82ADC9;
+  --azul-claro: #B9D8EB;
+  --azul-fondo: #DDECF5;
+  --naranja: #FEDEBC;
+  --naranja-oscuro: #F9CC9B;
+  --naranja-texto: #726557;
+  --texto: #333333;
+  --texto-2: #666666;
+  --muted: #A6A6A6;
+  --borde: #DADADA;
+  --fondo: #F4F4F4;
+  --blanco: #FFFFFF;
+  --rojo: #FF8B8B;
+  --rojo-texto: #5d1f1f;
+  --amarillo: #FDC328;
+  --verde-suave: #D1E9E4;
+  --verde-texto: #1f5d4b;
 
-  --accent: #2a4d8f;
-  --accent-deep: #16305c;
-  --accent-soft: #e7effa;
-  --accent-2: #2f9e5b;
-  --accent-2-soft: #e4f5ea;
-
-  --ok: #1f8a4c;
-  --ok-soft: #e5f5ec;
-  --warn: #b8790a;
-  --warn-soft: #fbf1de;
-  --danger: #c62828;
-  --danger-soft: #fbe8e8;
-
-  --shadow-sm: 0 1px 2px rgba(22, 48, 92, 0.06);
-  --shadow-md: 0 8px 24px -8px rgba(22, 48, 92, 0.18);
-
-  --font-display: "Manrope", system-ui, -apple-system, sans-serif;
-  --font-body: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Code", monospace;
-
-  --radio-sm: 6px;
-  --radio-md: 10px;
-  --radio-pill: 999px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #0d1420;
-    --surface: #141c2b;
-    --surface-2: #1a2436;
-    --border: #29344a;
-    --text: #e9eef7;
-    --text-muted: #9aa8bd;
-    --text-faint: #67748a;
-    --accent: #7ea3ec;
-    --accent-soft: #1c2b46;
-    --accent-2: #57cf92;
-    --accent-2-soft: #143624;
-    --ok: #57cf92;
-    --ok-soft: #12331f;
-    --warn: #e3ac4c;
-    --warn-soft: #3a2c11;
-    --danger: #f18784;
-    --danger-soft: #3a1717;
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-    --shadow-md: 0 8px 28px -8px rgba(0, 0, 0, 0.55);
-  }
-}
-:root[data-theme="dark"] {
-  --bg: #0d1420;
-  --surface: #141c2b;
-  --surface-2: #1a2436;
-  --border: #29344a;
-  --text: #e9eef7;
-  --text-muted: #9aa8bd;
-  --text-faint: #67748a;
-  --accent: #7ea3ec;
-  --accent-soft: #1c2b46;
-  --accent-2: #57cf92;
-  --accent-2-soft: #143624;
-  --ok: #57cf92;
-  --ok-soft: #12331f;
-  --warn: #e3ac4c;
-  --warn-soft: #3a2c11;
-  --danger: #f18784;
-  --danger-soft: #3a1717;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 8px 28px -8px rgba(0, 0, 0, 0.55);
+  /* Tokens semánticos que usan las vistas */
+  --bg: var(--fondo);
+  --surface: var(--blanco);
+  --surface-2: #fbfdff;
+  --border: var(--borde);
+  --text: var(--texto);
+  --text-muted: var(--texto-2);
+  --text-faint: var(--muted);
+  --accent: var(--azul-oscuro);
+  --accent-deep: #244a62;
+  --accent-soft: var(--azul-fondo);
+  --accent-2: var(--verde-texto);
+  --accent-2-soft: var(--verde-suave);
+  --ok: var(--verde-texto);
+  --ok-soft: var(--verde-suave);
+  --warn: var(--naranja-texto);
+  --warn-soft: var(--naranja);
+  --danger: var(--rojo-texto);
+  --danger-soft: var(--rojo);
+  --shadow-sm: 0 1px 2px rgba(47, 93, 122, 0.08);
+  --shadow-md: 0 2px 10px rgba(47, 93, 122, 0.15);
+  --font-display: "Segoe UI", Roboto, Arial, sans-serif;
+  --font-body: "Segoe UI", Roboto, Arial, sans-serif;
+  --font-mono: Consolas, "Courier New", ui-monospace, monospace;
+  --radio-sm: 4px;
+  --radio-md: 8px;
+  --radio-pill: 10px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -88,616 +65,403 @@
 
 * { box-sizing: border-box; }
 html, body { height: 100%; }
-body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--font-body);
-  font-size: 14px;
-  -webkit-font-smoothing: antialiased;
-}
-h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; }
-button, select, input { font-family: inherit; }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+body { margin: 0; background: var(--fondo); color: var(--texto); font: 14px/1.45 var(--font-body); }
+h1, h2, h3 { margin: 0; text-wrap: balance; }
+a { color: var(--azul-oscuro); }
+button, select, input, textarea { font-family: inherit; }
+:focus-visible { outline: 2px solid var(--azul-medio); outline-offset: 2px; border-radius: 4px; }
 .oculto { display: none !important; }
 
-.app-shell { display: grid; grid-template-columns: 264px 1fr; min-height: 100vh; }
-
-/* ============================= RIEL LATERAL ============================= */
-.rail {
-  background: var(--accent-deep);
-  color: #eaf1fd;
-  padding: 20px 14px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  position: sticky;
-  top: 0;
-  height: 100vh;
-  overflow-y: auto;
-}
-.rail__marca { display: flex; align-items: center; gap: 10px; padding: 4px 8px 18px; }
-.rail__logo {
-  width: 30px; height: 30px; border-radius: 50%;
-  background: radial-gradient(circle at 32% 28%, var(--accent-2), #1f7a45 72%);
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08);
-  flex-shrink: 0;
-}
-.rail__marca-texto { display: flex; flex-direction: column; line-height: 1.15; }
-.rail__marca-texto strong { font-family: var(--font-display); font-weight: 800; font-size: 0.95rem; letter-spacing: -0.01em; }
-.rail__marca-texto span { font-size: 0.68rem; color: #9fb6dc; letter-spacing: 0.04em; }
-
-.rail__grupo-titulo {
-  font-size: 0.66rem; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase;
-  color: #7d97c2; padding: 14px 10px 6px;
-}
-.rail__item {
-  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
-  padding: 9px 10px; border: none; background: transparent; color: #d7e3f7;
-  border-radius: var(--radio-md); font-size: 0.86rem; font-weight: 600; cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-.rail__item:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
-.rail__item.activo { background: #fff; color: var(--accent-deep); box-shadow: var(--shadow-sm); }
-.rail__item .ic { width: 17px; text-align: center; flex-shrink: 0; opacity: 0.9; }
-.rail__item .badge {
-  margin-left: auto; font-family: var(--font-mono); font-size: 0.68rem; padding: 1px 6px;
-  border-radius: var(--radio-pill); background: rgba(255, 255, 255, 0.14); color: #fff;
-}
-.rail__item.activo .badge { background: var(--accent-soft); color: var(--accent); }
-
-.rail__pie { margin-top: auto; padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, 0.12); }
-.rail__beta { display: flex; align-items: center; gap: 8px; font-size: 0.72rem; color: #9fb6dc; padding: 8px 10px; }
-.rail__beta strong { color: #fff; background: var(--accent-2); padding: 1px 7px; border-radius: var(--radio-pill); font-size: 0.65rem; letter-spacing: 0.04em; }
-
-/* ============================= TOPBAR ============================= */
-.col-principal { display: flex; flex-direction: column; min-width: 0; }
+/* ============================= BARRA SUPERIOR ============================= */
+.app-shell { display: block; min-height: 100vh; }
 .topbar {
-  position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 18px;
-  padding: 12px 28px; background: color-mix(in srgb, var(--surface) 88%, transparent);
-  backdrop-filter: blur(8px); border-bottom: 1px solid var(--border);
+  background: var(--azul-oscuro); color: var(--blanco);
+  display: flex; align-items: center; gap: 14px; padding: 8px 18px;
+  position: sticky; top: 0; z-index: 5;
 }
+.topbar .logo { height: 44px; width: 44px; border-radius: 50%; background: var(--blanco); object-fit: cover; flex-shrink: 0; }
+.topbar .titulo { font-size: 17px; font-weight: 600; line-height: 1.2; white-space: nowrap; }
+.topbar .titulo small { display: block; font-size: 11px; font-weight: 400; color: var(--azul-claro); }
+.topbar nav { margin-left: auto; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.topbar nav a {
+  color: var(--azul-fondo); text-decoration: none; padding: 6px 10px; border-radius: 4px;
+  font-size: 13.5px; white-space: nowrap; cursor: pointer; border: 0; background: transparent; font-family: inherit;
+}
+.topbar nav a:hover, .topbar nav a.activo { background: var(--azul-medio); color: var(--blanco); }
+.topbar .usuario { display: flex; align-items: center; gap: 10px; color: var(--naranja); font-size: 13px; flex-shrink: 0; }
+.usuario__nombre { font-weight: 600; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topbar .usuario .btn, .topbar button.salir {
+  background: transparent; color: var(--azul-fondo); border: 1px solid var(--azul-medio);
+  border-radius: 4px; padding: 5px 10px; cursor: pointer; font-size: 13px; font-weight: 400;
+}
+.topbar .usuario .btn:hover, .topbar button.salir:hover { background: var(--azul-medio); color: var(--blanco); }
+
+/* ============================= CONTENIDO ============================= */
+.col-principal { display: block; }
+.contenido { max-width: 1400px; margin: 18px auto; padding: 0 16px; }
+
+/* Migas + título + acciones (refresco) en una fila, como h1.pagina del dashboard */
+.pagina-cabecera { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
 .miga { display: flex; flex-direction: column; gap: 2px; min-width: 0; margin-right: auto; }
-.miga__ruta { font-size: 0.72rem; color: var(--text-faint); font-weight: 600; letter-spacing: 0.02em; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.miga__sep { opacity: 0.55; }
-.miga__grupo, .miga__actual { color: var(--text-faint); }
-/* Botón, no <a>: la app es una sola página y navega por JS. Se despoja del
-   aspecto de botón para que lea como migaja, pero sigue siendo enfocable con
-   teclado, que un <span> con onclick no sería. */
+.miga__ruta, .migas { font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.miga__sep { opacity: 0.8; }
+.miga__grupo, .miga__actual { color: var(--muted); }
 .miga__enlace {
-  background: none; border: none; padding: 0; cursor: pointer;
-  font: inherit; letter-spacing: inherit; color: var(--text-muted);
-  text-decoration: underline; text-underline-offset: 2px;
-  text-decoration-color: transparent; transition: color 0.15s ease, text-decoration-color 0.15s ease;
+  background: none; border: none; padding: 0; cursor: pointer; font: inherit;
+  color: var(--azul-medio); text-decoration: underline; text-underline-offset: 2px;
 }
-.miga__enlace:hover { color: var(--accent); text-decoration-color: currentColor; }
-.miga__titulo { font-size: 1.28rem; font-weight: 800; letter-spacing: -0.015em; }
+.miga__enlace:hover { color: var(--azul-oscuro); }
+.miga__titulo, h1.pagina { color: var(--azul-oscuro); font-size: 19px; font-weight: 600; margin: 4px 0 0; }
+.pagina-acciones { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
-.refresco { display: flex; align-items: center; gap: 10px; padding: 6px 12px 6px 6px; border-radius: var(--radio-pill); background: var(--surface-2); border: 1px solid var(--border); flex-shrink: 0; }
-.refresco__anillo { width: 28px; height: 28px; border-radius: 50%; background: conic-gradient(var(--ok) var(--pct, 100%), var(--border) 0); display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: background 0.3s ease; }
-.refresco__anillo::after { content: ""; width: 20px; height: 20px; border-radius: 50%; background: var(--surface-2); }
+.refresco { display: flex; align-items: center; gap: 10px; padding: 5px 12px 5px 6px; border-radius: 4px; background: var(--blanco); border: 1px solid var(--borde); flex-shrink: 0; }
+.refresco__anillo { width: 26px; height: 26px; border-radius: 50%; background: conic-gradient(var(--verde-texto) var(--pct, 100%), var(--borde) 0); display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: background 0.3s ease; }
+.refresco__anillo::after { content: ""; width: 18px; height: 18px; border-radius: 50%; background: var(--blanco); }
 .refresco__texto { display: flex; flex-direction: column; line-height: 1.15; }
-.refresco__texto strong { font-size: 0.74rem; font-weight: 700; font-variant-numeric: tabular-nums; }
-.refresco__texto span { font-size: 0.66rem; color: var(--text-faint); }
-.refresco--warn .refresco__anillo { background: conic-gradient(var(--warn) var(--pct, 100%), var(--border) 0); }
-.refresco--danger .refresco__anillo { background: conic-gradient(var(--danger) var(--pct, 100%), var(--border) 0); }
+.refresco__texto strong { font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.refresco__texto span { font-size: 11px; color: var(--muted); }
+.refresco--warn .refresco__anillo { background: conic-gradient(var(--naranja-oscuro) var(--pct, 100%), var(--borde) 0); }
+.refresco--danger .refresco__anillo { background: conic-gradient(var(--rojo) var(--pct, 100%), var(--borde) 0); }
 
-.toggle-tema { border: 1px solid var(--border); background: var(--surface-2); color: var(--text-muted); border-radius: var(--radio-pill); padding: 6px 10px; cursor: pointer; font-size: 0.78rem; flex-shrink: 0; }
+/* ============================= AVISOS / BANNER / PROGRESO ============================= */
+.banner, .aviso, .flash { padding: 10px 14px; border-radius: 4px; font-size: 13px; margin-bottom: 12px; }
+.banner { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+.banner--desactualizado, .aviso--warn { background: var(--naranja); color: var(--naranja-texto); border-left: 4px solid var(--naranja-oscuro); }
+.banner--error, .aviso--error, .flash.error { background: var(--rojo); color: var(--rojo-texto); }
+.banner--sin_datos { background: var(--borde); color: var(--texto-2); }
+.aviso--info { background: var(--azul-fondo); color: var(--azul-oscuro); border-left: 4px solid var(--azul-medio); }
+.aviso-motor { background: var(--naranja); color: var(--naranja-texto); padding: 10px 14px; border-radius: 4px; margin-bottom: 14px; border-left: 4px solid var(--naranja-oscuro); }
 
-/* ============================= BANNER DE SALUD ============================= */
-.banner { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-radius: var(--radio-md); font-size: 0.82rem; font-weight: 600; margin: 14px 28px 0; }
-.banner-salud--desactualizado, .banner.banner--desactualizado { background: var(--warn-soft); color: var(--warn); }
-.banner-salud--error, .banner.banner--error { background: var(--danger-soft); color: var(--danger); }
-.banner-salud--sin_datos, .banner.banner--sin_datos { background: var(--surface-2); color: var(--text-muted); }
-
-/* ============================= PROGRESO DE REFRESCO MANUAL ============================= */
-/* Mismo lugar/ancho que .banner (franja completa bajo la topbar) -- pedido
-   del usuario (2026-08-27): "una pequeña lista mostrando uno a uno los
-   procesos que se van haciendo y su progreso, un ejemplo como cuando uno
-   descarga varias cosas en Google". */
-.panel-progreso { margin: 14px 28px 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radio-md); box-shadow: var(--shadow-sm); padding: 14px 16px; }
+.panel-progreso { margin: 0 0 14px; background: var(--blanco); border: 1px solid var(--borde); border-radius: 8px; padding: 14px 16px; }
 .panel-progreso.oculto { display: none; }
-.panel-progreso__titulo { font-weight: 700; font-size: 0.85rem; margin-bottom: 10px; }
+.panel-progreso__titulo { font-weight: 600; font-size: 14px; margin-bottom: 10px; color: var(--azul-oscuro); }
 .panel-progreso__lista { display: flex; flex-direction: column; gap: 7px; }
-.paso-progreso { display: flex; align-items: flex-start; gap: 10px; font-size: 0.82rem; }
-.paso-progreso__icono { width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.66rem; flex-shrink: 0; margin-top: 1px; }
-.paso-progreso--pendiente .paso-progreso__icono { background: var(--surface-2); color: var(--text-faint); }
-.paso-progreso--en_curso .paso-progreso__icono { background: var(--accent-soft); color: var(--accent); animation: paso-pulso 1.1s ease-in-out infinite; }
-.paso-progreso--hecho .paso-progreso__icono { background: var(--ok-soft); color: var(--ok); }
-.paso-progreso--error .paso-progreso__icono { background: var(--danger-soft); color: var(--danger); }
-.paso-progreso--pendiente .paso-progreso__nombre { color: var(--text-faint); }
-.paso-progreso__detalle { color: var(--danger); font-size: 0.76rem; margin-top: 2px; }
-@media (prefers-reduced-motion: reduce) { .paso-progreso__icono { animation: none; } }
+.paso-progreso { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; }
+.paso-progreso__icono { width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; flex-shrink: 0; margin-top: 1px; }
+.paso-progreso--pendiente .paso-progreso__icono { background: var(--fondo); color: var(--muted); }
+.paso-progreso--en_curso .paso-progreso__icono { background: var(--azul-fondo); color: var(--azul-oscuro); animation: paso-pulso 1.1s ease-in-out infinite; }
+.paso-progreso--hecho .paso-progreso__icono { background: var(--verde-suave); color: var(--verde-texto); }
+.paso-progreso--error .paso-progreso__icono { background: var(--rojo); color: var(--rojo-texto); }
+.paso-progreso--pendiente .paso-progreso__nombre { color: var(--muted); }
+.paso-progreso__detalle { color: var(--rojo-texto); font-size: 12px; margin-top: 2px; }
 @keyframes paso-pulso { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 
-/* ============================= SUBNAV ============================= */
-.subnav { display: flex; gap: 6px; flex-wrap: wrap; padding: 14px 28px 0; }
-.subnav__pill { border: 1px solid var(--border); background: var(--surface); color: var(--text-muted); padding: 7px 14px; border-radius: var(--radio-pill); font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: all 0.15s ease; }
-.subnav__pill:hover { border-color: var(--accent); color: var(--accent); }
-.subnav__pill.activo { background: var(--accent); border-color: var(--accent); color: #fff; }
+/* ============================= SUB-NAVEGACIÓN (chips) ============================= */
+.subnav, .chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 14px; }
+.subnav__pill, .chips a, .chips button, .chip {
+  display: inline-block; padding: 4px 11px; border-radius: 10px; font-size: 12.5px; font-weight: 600;
+  background: var(--blanco); color: var(--texto-2); border: 1px solid var(--borde); text-decoration: none;
+  cursor: pointer; font-family: inherit; line-height: 1.4; transition: background 0.12s ease, color 0.12s ease;
+}
+.subnav__pill:hover, .chips a:hover, .chips button:hover, .chip:hover { background: var(--azul-fondo); color: var(--azul-oscuro); border-color: var(--azul-claro); }
+.subnav__pill.activo, .chips a.activo, .chips button.activo, .chip.activo { background: var(--azul-oscuro); color: var(--blanco); border-color: var(--azul-oscuro); }
+.chip__num { font-weight: 400; opacity: 0.85; margin-left: 4px; font-variant-numeric: tabular-nums; }
+.chips__rotulo { font-size: 11.5px; color: var(--texto-2); align-self: center; margin-right: 4px; }
 
-.vista { padding: 18px 28px 48px; animation: entrar 0.22s ease both; }
-@keyframes entrar { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-.vista__intro { max-width: 68ch; color: var(--text-muted); font-size: 0.88rem; margin-bottom: 18px; line-height: 1.5; }
-/* Fila intro + boton de descarga -- mismo lugar que ocupaba
-   st.download_button en Streamlit, arriba de la seccion, no enterrado
-   junto a la tabla. */
-.vista__cabecera { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.vista { padding: 0 0 48px; }
+.vista__intro { max-width: 80ch; color: var(--texto-2); font-size: 13.5px; margin: 0 0 14px; line-height: 1.5; }
+.vista__cabecera { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
 .vista__cabecera .vista__intro { margin-bottom: 0; }
 .btn--descarga { flex-shrink: 0; white-space: nowrap; }
 
-/* ============================= TARJETAS METRICA (tarjetas.ts) ============================= */
-.fila-tarjetas { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 20px; }
-.tarjeta-metrica { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radio-md); padding: 14px 16px; box-shadow: var(--shadow-sm); transition: transform 0.15s ease, box-shadow 0.15s ease; }
-.tarjeta-metrica:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
-.tarjeta-metrica__encabezado { display: flex; align-items: center; gap: 6px; color: var(--text-muted); font-size: 0.76rem; font-weight: 600; margin-bottom: 6px; }
-.tarjeta-metrica__ayuda { width: 15px; height: 15px; border-radius: 50%; border: 1px solid var(--border); color: var(--text-faint); font-size: 0.62rem; display: inline-flex; align-items: center; justify-content: center; cursor: help; flex-shrink: 0; }
-.tarjeta-metrica__numero { font-family: var(--font-display); font-size: 1.7rem; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
-.tarjeta-metrica--riesgo { border-left: 3px solid var(--danger); }
-.tarjeta-metrica--atencion { border-left: 3px solid var(--warn); }
-.tarjeta-metrica--ok { border-left: 3px solid var(--ok); }
-.tarjeta-metrica--acento { border-color: var(--accent); }
+/* ============================= BANDEJA: tarjetas de calidad ============================= */
+h2.proceso { color: var(--azul-oscuro); border-bottom: 2px solid var(--azul-claro); padding-bottom: 6px; margin: 22px 0 14px; font-size: 16px; text-transform: uppercase; letter-spacing: .5px; font-weight: 600; }
+h2.proceso:first-child { margin-top: 0; }
+.tarjetas { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
+.tarjeta {
+  background: var(--blanco); border: 1px solid var(--borde); border-radius: 8px;
+  padding: 14px 16px; border-top: 4px solid var(--azul-medio); display: flex; flex-direction: column; gap: 6px;
+}
+.tarjeta.sev-ALTA { border-top-color: var(--rojo); }
+.tarjeta.sev-MEDIA { border-top-color: var(--naranja-oscuro); }
+.tarjeta.sev-BAJA { border-top-color: var(--azul-medio); }
+.tarjeta .id { color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 8px; }
+.tarjeta h3 { margin: 0; font-size: 15px; color: var(--azul-oscuro); font-weight: 600; }
+.tarjeta h3 a, .tarjeta h3 button { color: inherit; font: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; text-decoration: none; }
+.tarjeta h3 a:hover, .tarjeta h3 button:hover { text-decoration: underline; }
+.tarjeta .explica { color: var(--texto-2); font-size: 12.5px; margin: 0; line-height: 1.45; }
+.tarjeta .cifras { display: flex; gap: 8px; margin-top: auto; padding-top: 8px; flex-wrap: wrap; }
+.cifra {
+  flex: 1 1 90px; text-align: center; text-decoration: none; border-radius: 6px; padding: 8px 6px;
+  background: var(--fondo); border: 1px solid var(--borde); color: var(--texto); cursor: pointer; font-family: inherit;
+}
+.cifra b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
+.cifra span { font-size: 11px; color: var(--texto-2); }
+.cifra.pendientes { background: var(--naranja); border-color: var(--naranja-oscuro); }
+.cifra.pendientes b { color: var(--naranja-texto); }
+.cifra.nuevos b { color: var(--azul-oscuro); }
+.cifra.corregidos { background: var(--verde-suave); }
+.cifra.corregidos b { color: var(--verde-texto); }
+.cifra.riesgo { background: var(--rojo); border-color: var(--rojo); }
+.cifra.riesgo b { color: var(--rojo-texto); }
+.cifra:hover { outline: 2px solid var(--azul-medio); }
 
-/* ============================= TARJETAS DE ALERTA ============================= */
-.tarjeta-alerta { display: flex; align-items: flex-start; gap: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radio-md); padding: 12px 14px; margin-bottom: 8px; }
-.tarjeta-alerta__icono { font-size: 1rem; margin-top: 1px; }
+/* ============================= TARJETAS MÉTRICA (tarjetas.ts) ============================= */
+.fila-tarjetas { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 18px; }
+.tarjeta-metrica { background: var(--blanco); border: 1px solid var(--borde); border-radius: 8px; padding: 12px 14px; border-top: 4px solid var(--azul-medio); }
+.tarjeta-metrica__encabezado { display: flex; align-items: center; gap: 6px; color: var(--texto-2); font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+.tarjeta-metrica__ayuda { width: 15px; height: 15px; border-radius: 50%; border: 1px solid var(--borde); color: var(--muted); font-size: 10px; display: inline-flex; align-items: center; justify-content: center; cursor: help; flex-shrink: 0; }
+.tarjeta-metrica__numero { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--texto); }
+.tarjeta-metrica__veredicto { font-size: 11.5px; color: var(--texto-2); margin-top: 4px; line-height: 1.3; }
+.tarjeta-metrica--riesgo { border-top-color: var(--rojo); }
+.tarjeta-metrica--atencion { border-top-color: var(--naranja-oscuro); }
+.tarjeta-metrica--ok { border-top-color: var(--verde-suave); }
+.tarjeta-metrica--acento { border-color: var(--azul-medio); }
+.tarjeta-metrica--abrible { width: 100%; text-align: left; cursor: pointer; font: inherit; color: inherit; display: block; }
+.tarjeta-metrica--abrible:hover { outline: 2px solid var(--azul-medio); }
+.tarjeta-metrica--abrible.activo { background: var(--azul-fondo); border-color: var(--azul-medio); }
+
+.tarjeta-alerta { display: flex; align-items: flex-start; gap: 10px; background: var(--blanco); border: 1px solid var(--borde); border-radius: 8px; padding: 12px 14px; margin-bottom: 8px; }
+.tarjeta-alerta__icono { font-size: 16px; margin-top: 1px; }
 .tarjeta-alerta__cuerpo { flex: 1; min-width: 0; }
-.tarjeta-alerta__titulo { font-weight: 700; font-size: 0.84rem; }
-.tarjeta-alerta__meta { color: var(--text-faint); font-size: 0.74rem; margin-top: 1px; }
-.tarjeta-alerta--warning { border-left: 3px solid var(--warn); }
-.tarjeta-alerta--ok { border-left: 3px solid var(--ok); }
+.tarjeta-alerta__titulo { font-weight: 600; font-size: 13.5px; }
+.tarjeta-alerta__meta { color: var(--muted); font-size: 12px; margin-top: 1px; }
+.tarjeta-alerta--warning { border-left: 4px solid var(--naranja-oscuro); }
+.tarjeta-alerta--ok { border-left: 4px solid var(--verde-suave); }
+.tarjeta-alerta--info { border-left: 4px solid var(--azul-medio); }
 
-/* ============================= PILDORAS ============================= */
-.pildora { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: var(--radio-pill); font-size: 0.72rem; font-weight: 700; white-space: nowrap; }
-.pildora--ok { background: var(--ok-soft); color: var(--ok); }
-.pildora--warn { background: var(--warn-soft); color: var(--warn); }
-.pildora--danger { background: var(--danger-soft); color: var(--danger); }
-.pildora--neutro { background: var(--surface-2); color: var(--text-muted); }
-.pildora--acento { background: var(--accent-soft); color: var(--accent); }
+/* ============================= BADGES (pildora) ============================= */
+.pildora, .badge { display: inline-block; padding: 2px 9px; border-radius: 10px; font-size: 11.5px; font-weight: 600; white-space: nowrap; line-height: 1.5; }
+.pildora--ok, .badge.OK { background: var(--verde-suave); color: var(--verde-texto); }
+.pildora--warn { background: var(--naranja); color: var(--naranja-texto); }
+.pildora--danger, .badge.ERROR { background: var(--rojo); color: var(--rojo-texto); }
+.pildora--neutro { background: var(--borde); color: var(--texto-2); }
+.pildora--acento { background: var(--azul-fondo); color: var(--azul-oscuro); }
+.badge.sev-ALTA { background: var(--rojo); color: var(--rojo-texto); }
+.badge.sev-MEDIA { background: var(--naranja); color: var(--naranja-texto); }
+.badge.sev-BAJA { background: var(--azul-fondo); color: var(--azul-oscuro); }
 
-/* ============================= SELECTOR MULTIPLE (selector-multiple.ts) ============================= */
+/* ============================= SELECTOR MÚLTIPLE ============================= */
 .selector-multiple { position: relative; }
 .selector-multiple__boton {
-  border: 1px solid var(--border); background: var(--surface); color: var(--text);
-  border-radius: var(--radio-pill); padding: 6px 12px; font-size: 0.8rem; cursor: pointer;
+  border: 1px solid var(--borde); background: var(--blanco); color: var(--texto);
+  border-radius: 4px; padding: 7px 10px; font-size: 13px; cursor: pointer;
   display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
 }
-.selector-multiple__boton:hover { border-color: var(--accent); }
+.selector-multiple__boton:hover { border-color: var(--azul-medio); }
 .selector-multiple__panel {
   position: absolute; top: calc(100% + 4px); left: 0; z-index: 20; min-width: 240px; max-height: 300px;
-  overflow-y: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radio-md);
+  overflow-y: auto; background: var(--blanco); border: 1px solid var(--borde); border-radius: 8px;
   box-shadow: var(--shadow-md); padding: 6px;
 }
 .selector-multiple__panel.oculto { display: none; }
-.selector-multiple__opcion { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; font-size: 0.8rem; cursor: pointer; }
-.selector-multiple__opcion:hover { background: var(--accent-soft); }
+.selector-multiple__opcion { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 4px; font-size: 13px; cursor: pointer; }
+.selector-multiple__opcion:hover { background: var(--azul-fondo); }
 
-/* ============================= CELDA SQL (auditoria.ts) ============================= */
-/* CONSULTA_VERIFICACION_SQL -- pedido del usuario (2026-08-28): poder
-   copiar la consulta para corroborar el dato directo en Gemma Net. */
+/* ============================= CELDAS ESPECIALES ============================= */
+.celda-mono { font-family: var(--font-mono); font-size: 12.5px; }
+.celda-muda { color: var(--muted); }
 .celda-sql { display: inline-flex; align-items: center; gap: 6px; }
-.celda-sql code { font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-muted); }
+.celda-sql code { font-family: var(--font-mono); font-size: 11.5px; color: var(--texto-2); }
 .btn-copiar-sql {
-  flex-shrink: 0; width: 22px; height: 22px; border-radius: 5px; border: 1px solid var(--border);
-  background: var(--surface-2); cursor: pointer; font-size: 0.7rem; padding: 0;
-  display: inline-flex; align-items: center; justify-content: center; transition: border-color 0.15s ease;
+  flex-shrink: 0; width: 22px; height: 22px; border-radius: 4px; border: 1px solid var(--borde);
+  background: var(--fondo); cursor: pointer; font-size: 11px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
 }
-.btn-copiar-sql:hover { border-color: var(--accent); }
-
-/* DETALLE_DIFERENCIAS -- lleva a "Consultar INVIMA" con el codigo de esa
-   fila precargado (pedido del usuario, 2026-09-01). Pildora solida, no un
-   link subrayado -- pedido explicito: "quiero que se vea como un boton". */
+.btn-copiar-sql:hover { border-color: var(--azul-medio); }
 .btn-ver-diferencias {
-  border: 1px solid transparent; background: var(--accent-soft); color: var(--accent);
-  font-size: 0.78rem; font-weight: 700; font-family: inherit; cursor: pointer;
-  border-radius: var(--radio-pill); padding: 4px 10px; white-space: nowrap;
-  transition: background 0.15s ease, color 0.15s ease;
+  border: 1px solid var(--azul-medio); background: var(--blanco); color: var(--azul-oscuro);
+  font-size: 12.5px; font-weight: 600; font-family: inherit; cursor: pointer;
+  border-radius: 4px; padding: 3px 9px; white-space: nowrap;
 }
-.btn-ver-diferencias:hover { background: var(--accent); color: #fff; }
-
-/* CODIGO_INTERNO en CUALQUIER tabla (tabla.ts::formatearCeldaDefecto) --
-   boton chico para saltar directo a "Consultar INVIMA" con ese codigo
-   (pedido del usuario, 2026-09-01: "en todas las filas en las que pueda
-   tener un efecto positivo"). Mismo tamaño/forma que btn-copiar-sql --
-   icono discreto, no compite con el codigo mono que acompaña. */
+.btn-ver-diferencias:hover { background: var(--azul-oscuro); color: var(--blanco); }
 .celda-codigo { display: inline-flex; align-items: center; gap: 6px; }
 .btn-consultar-invima {
-  flex-shrink: 0; width: 20px; height: 20px; border-radius: 5px; border: 1px solid transparent;
-  background: transparent; cursor: pointer; font-size: 0.68rem; padding: 0; opacity: 0.55;
+  flex-shrink: 0; width: 20px; height: 20px; border-radius: 4px; border: 1px solid transparent;
+  background: transparent; cursor: pointer; font-size: 11px; padding: 0; opacity: 0.6;
   display: inline-flex; align-items: center; justify-content: center;
-  transition: opacity 0.15s ease, border-color 0.15s ease, background 0.15s ease;
 }
-.btn-consultar-invima:hover { opacity: 1; border-color: var(--accent); background: var(--accent-soft); }
+.btn-consultar-invima:hover { opacity: 1; border-color: var(--azul-medio); background: var(--azul-fondo); }
 
-/* ============================= CONSULTAR INVIMA (vistas/consulta_detalle.ts) ============================= */
-/* Reescrito 2026-09-01: la version original tenia TODO en estilos inline
-   con hex fijos (#f9f9f9, #333, #666...) pensados solo para tema claro --
-   en modo oscuro el texto de la tabla quedaba casi invisible (gris claro
-   sobre fondo oscuro) y las tarjetas de diagnostico se veian como recortes
-   de papel blanco flotando en la pagina. Todo pasa a los mismos tokens que
-   usa el resto de la app (--surface/--text/--border/--ok/--warn/--danger),
-   que ya tienen su variante oscura resuelta en :root con prefers-color-
-   scheme y [data-theme] (ver arriba en este archivo). */
-.consulta-invima__separador { border: none; border-top: 1px solid var(--border); margin: 28px 0 18px; }
-.consulta-invima__form { margin-bottom: 20px; display: flex; gap: 8px; }
-.consulta-invima__input {
-  flex: 1; padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--radio-sm);
-  background: var(--surface); color: var(--text); font-size: 0.86rem; font-family: inherit;
-}
-.consulta-invima__input::placeholder { color: var(--text-faint); }
+/* ============================= PANEL GENÉRICO ============================= */
+.panel { background: var(--blanco); border: 1px solid var(--borde); border-radius: 8px; padding: 14px 16px; margin-bottom: 14px; }
+.panel__cab { padding: 0; }
+.panel__titulo { font-size: 15px; font-weight: 600; color: var(--azul-oscuro); margin: 0 0 10px; }
+.panel__cuerpo { padding: 0; }
+.panel h3 { color: var(--azul-oscuro); font-size: 15px; font-weight: 600; margin: 0 0 10px; }
 
-.consulta-invima__mensaje { font-size: 0.86rem; padding: 8px 0; margin: 0; }
-.consulta-invima__mensaje--espera { color: var(--text-muted); }
-.consulta-invima__mensaje--advertencia { color: var(--warn); }
+/* "Qué detecta esta calidad": misma caja que .regla-info del dashboard */
+.regla-info, .criterios { background: var(--azul-fondo); border-left: 4px solid var(--azul-medio); padding: 10px 14px; border-radius: 4px; margin-bottom: 12px; font-size: 13px; color: var(--texto); }
+.regla-info h4, .criterios__titulo { margin: 0 0 4px; color: var(--azul-oscuro); font-size: 13px; font-weight: 600; text-transform: none; letter-spacing: 0; }
+.criterios__explica { margin: 0 0 8px; color: var(--texto); font-weight: 600; }
+.criterios__cuerpo { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 8px 24px; }
+.criterios__lista { margin: 0; padding-left: 18px; }
+.criterios__lista li { margin: 0 0 2px; }
+.criterios__texto { margin: 0; }
+.criterios__seccion { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--azul-claro); }
+.criterios__seccion strong { color: var(--azul-oscuro); }
 
-.consulta-invima__diagnostico {
-  border-radius: var(--radio-md); border-left: 4px solid var(--accent); background: var(--accent-soft);
-  padding: 14px 16px; margin-bottom: 18px;
-}
-.consulta-invima__diagnostico h3 { margin: 0 0 6px; font-size: 1rem; color: var(--accent); }
-.consulta-invima__diagnostico p { margin: 0 0 4px; font-size: 0.88rem; color: var(--text); }
-.consulta-invima__diagnostico p:last-child { margin-bottom: 0; color: var(--text-muted); }
-.consulta-invima__diagnostico--ok { border-left-color: var(--ok); background: var(--ok-soft); }
-.consulta-invima__diagnostico--ok h3 { color: var(--ok); }
-.consulta-invima__diagnostico--advertencia { border-left-color: var(--warn); background: var(--warn-soft); }
-.consulta-invima__diagnostico--advertencia h3 { color: var(--warn); }
-.consulta-invima__diagnostico--critico { border-left-color: var(--danger); background: var(--danger-soft); }
-.consulta-invima__diagnostico--critico h3 { color: var(--danger); }
-.consulta-invima__diagnostico--informativo { border-left-color: var(--accent); background: var(--accent-soft); }
-.consulta-invima__diagnostico--informativo h3 { color: var(--accent); }
+/* Filtros de página, como .filtros del dashboard */
+.filtros { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; }
+.filtros label { font-size: 11.5px; color: var(--texto-2); display: block; margin-bottom: 3px; }
+.filtros input, .filtros select { padding: 7px 9px; border: 1px solid var(--borde); border-radius: 4px; font-size: 13px; }
 
-.consulta-invima__pasos {
-  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radio-md);
-  padding: 14px 16px; margin-bottom: 18px;
-}
-.consulta-invima__pasos h4 { margin: 0 0 8px; font-size: 0.88rem; color: var(--text); }
-.consulta-invima__pasos ol { margin: 0; padding-left: 20px; color: var(--text); font-size: 0.85rem; }
-.consulta-invima__pasos li { margin-bottom: 6px; }
-.consulta-invima__pasos li:last-child { margin-bottom: 0; }
-
-.consulta-invima__bloque { margin-bottom: 26px; }
-.consulta-invima__bloque-titulo {
-  font-size: 0.9rem; font-weight: 700; padding-bottom: 8px; margin: 0 0 12px;
-  border-bottom: 3px solid var(--accent); color: var(--text);
-}
-.consulta-invima__bloque-titulo--gemma { border-bottom-color: var(--accent-2); }
-
-/* Donde buscar el registro en los Excel de INVIMA. Va FUERA de la tabla de
-   comparacion a proposito: es un dato informativo, no un par que se contraste
-   contra Gemma Net (que no guarda el listado). */
-.consulta-invima__ubicacion {
-  margin: 0 0 10px; padding: 8px 12px; font-size: 0.85rem;
-  background: var(--surface-2); border: 1px solid var(--border);
-  border-radius: var(--radio-md); color: var(--text-muted);
-}
-.consulta-invima__ubicacion strong { color: var(--text); }
-.consulta-invima__envoltorio { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radio-md); }
-.consulta-invima__tabla { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
-.consulta-invima__tabla th {
-  border: 1px solid var(--border); padding: 8px 10px; text-align: left; font-weight: 700;
-  background: var(--surface-2); color: var(--text); position: sticky; top: 0;
-}
-.consulta-invima__tabla td {
-  border: 1px solid var(--border); padding: 8px 10px; color: var(--text); background: var(--surface);
-  /* Envuelve en vez de cortar (pedido del usuario, 2026-09-01): esta tabla
-     existe para comparar campos a ojo, un valor largo (ej. CONCENTRACION)
-     truncado en silencio escondia justo la diferencia que se buscaba. El
-     ancho maximo evita que una sola celda larga estire toda la tabla. */
-  max-width: 320px; white-space: normal; word-break: break-word;
-}
-.consulta-invima__tabla-td--vacio { color: var(--text-faint); }
-.consulta-invima__tabla-td--comodin {
-  color: var(--alert); font-style: italic;
-  background-color: var(--surface-warning-subtle);
-}
-
-/* Comparacion lado a lado Gemma Net vs INVIMA (fechas + estado) -- pedido
-   del usuario (2026-09-01): que ambas fuentes se vean juntas sin tener que
-   ir a buscarlas en las tablas de detalle de mas abajo. */
-.consulta-invima__comparacion {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
-  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radio-md);
-  padding: 14px 16px; margin-bottom: 18px;
-}
-.consulta-invima__comparacion-col h4 {
-  margin: 0 0 8px; font-size: 0.85rem; color: var(--text); border-bottom: 2px solid var(--border); padding-bottom: 6px;
-}
-.consulta-invima__comparacion-col--gemma h4 { border-bottom-color: var(--accent-2); }
-.consulta-invima__comparacion-col--invima h4 { border-bottom-color: var(--accent); }
-.consulta-invima__comparacion-fila { display: flex; justify-content: space-between; gap: 8px; font-size: 0.83rem; padding: 4px 0; color: var(--text); }
-.consulta-invima__comparacion-fila span:first-child { color: var(--text-muted); }
-.consulta-invima__comparacion-fila span:last-child { font-weight: 600; text-align: right; }
-@media (max-width: 640px) { .consulta-invima__comparacion { grid-template-columns: 1fr; } }
-
-
-.consulta-invima__error {
-  background: var(--danger-soft); border-left: 4px solid var(--danger); padding: 14px 16px;
-  border-radius: var(--radio-md);
-}
-.consulta-invima__error p:first-child { margin: 0; font-weight: 700; color: var(--danger); }
-.consulta-invima__error p { margin: 8px 0 0; font-size: 0.85rem; color: var(--text-muted); }
-.consulta-invima__error ul { margin: 4px 0 0; padding-left: 20px; }
-
-/* ============================= PANEL GENERICO ============================= */
-.panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radio-md); box-shadow: var(--shadow-sm); overflow: hidden; margin-bottom: 16px; }
-.panel__cab { padding: 14px 16px 0; }
-.panel__titulo { font-size: 0.95rem; font-weight: 700; margin-bottom: 10px; }
-.panel__cuerpo { padding: 0 16px 16px; }
-
-/* ============================= TABLA FILTRABLE (tabla.ts) ============================= */
-.tabla-filtrable { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radio-md); box-shadow: var(--shadow-sm); overflow: hidden; }
-.tabla-filtrable__busqueda { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 14px 16px 10px; }
+/* ============================= TABLAS ============================= */
+.tabla-filtrable { background: var(--blanco); border: 1px solid var(--borde); border-radius: 8px; overflow: hidden; margin-bottom: 14px; }
+.tabla-filtrable__busqueda { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 14px 10px; }
 .tabla-filtrable__busqueda input[type="search"] {
-  flex: 1; min-width: 200px; background: var(--surface-2); border: 1px solid var(--border);
-  border-radius: var(--radio-pill); padding: 7px 14px; outline: none; color: var(--text); font-size: 0.85rem;
+  flex: 1; min-width: 200px; background: var(--blanco); border: 1px solid var(--borde);
+  border-radius: 4px; padding: 7px 9px; outline: none; color: var(--texto); font-size: 13px;
 }
-.tabla-filtrable__busqueda select {
-  border: 1px solid var(--border); background: var(--surface); color: var(--text);
-  border-radius: var(--radio-pill); padding: 6px 12px; font-size: 0.8rem; cursor: pointer;
-}
-.tabla-filtrable__leyenda { font-size: 0.74rem; color: var(--text-faint); padding: 0 16px 8px; margin: 0; }
-/* Casilla suelta bajo la leyenda (hoy solo 'Mostrar la consulta SQL'). Se
-   llamaba __cargar-todo por el checkbox que se elimino; renombrada para que
-   el nombre no prometa algo que ya no existe. */
-.tabla-filtrable__casilla { display: flex; align-items: center; gap: 6px; font-size: 0.78rem; color: var(--text-muted); padding: 0 16px 10px; }
-
-/* Pie de tabla: navegar por paginas + descargar. Reemplaza al checkbox
-   "Cargar la tabla completa", que para ver la fila 1.001 obligaba a traerse
-   decenas de miles de una vez y trababa el equipo. Va DEBAJO de la tabla:
-   se usa despues de mirar las filas, no antes. */
-.tabla-filtrable__pie {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 12px; flex-wrap: wrap; padding: 10px 16px 14px;
-  border-top: 1px solid var(--border);
-}
-.tabla-filtrable__paginacion { display: flex; align-items: center; gap: 8px; }
-.tabla-filtrable__pagina-actual { font-size: 0.78rem; color: var(--text-muted); white-space: nowrap; }
+.tabla-filtrable__busqueda input[type="search"]:focus { border-color: var(--azul-medio); outline: 2px solid var(--azul-medio); }
+.tabla-filtrable__busqueda select { border: 1px solid var(--borde); background: var(--blanco); color: var(--texto); border-radius: 4px; padding: 7px 9px; font-size: 13px; cursor: pointer; }
+.tabla-filtrable__leyenda { font-size: 12px; color: var(--muted); padding: 0 14px 8px; margin: 0; }
+.tabla-filtrable__casilla { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--texto-2); padding: 0 14px 10px; }
+.tabla-filtrable__pie { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 14px 12px; border-top: 1px solid var(--borde); font-size: 13px; color: var(--texto-2); }
+.tabla-filtrable__paginacion { display: flex; align-items: center; gap: 6px; }
+.tabla-filtrable__paginacion .btn { padding: 4px 10px; font-size: 12.5px; }
+.tabla-filtrable__pagina-actual { font-size: 12.5px; color: var(--texto-2); white-space: nowrap; }
 .tabla-filtrable__descargas { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.tabla-filtrable__descargas-rotulo { font-size: 0.78rem; color: var(--text-muted); }
-.tabla-filtrable__descargas-aviso { font-size: 0.74rem; color: var(--warn); white-space: nowrap; }
-/* Los botones de descarga son <a>, no <button>: el navegador dispara la
-   descarga solo. Sin esto heredarian el subrayado de enlace. */
+.tabla-filtrable__descargas-rotulo { font-size: 12.5px; color: var(--texto-2); }
+.tabla-filtrable__descargas-aviso { font-size: 12px; color: var(--naranja-texto); white-space: nowrap; }
 .tabla-filtrable__descargas .btn { text-decoration: none; }
-.tabla-filtrable__cargando { color: var(--text-faint); padding: 0 16px 14px; margin: 0; }
-.tabla-filtrable__envoltorio {
-  overflow-x: auto; overflow-y: auto; max-height: 460px; border-top: 1px solid var(--border);
-  /* Aisla el repintado de la tabla del resto de la pagina durante el
-     scroll -- junto con table-layout:fixed de abajo es lo que arregla el
-     scroll lento reportado: antes el navegador media el contenido de cada
-     celda (una de COMO_VERIFICAR con un parrafo entero) para decidir el
-     ancho de columna en CADA frame. */
-  contain: layout paint;
-}
-.tabla-filtrable__vacio { text-align: center; color: var(--text-faint); padding: 20px !important; }
+.tabla-filtrable__cargando { color: var(--muted); padding: 0 14px 14px; margin: 0; }
+.tabla-filtrable__envoltorio, .tabla-scroll { overflow-x: auto; overflow-y: auto; max-height: 520px; border-top: 1px solid var(--borde); contain: layout paint; }
+.tabla-filtrable__vacio { text-align: center; color: var(--muted); padding: 20px !important; }
 
-table { border-collapse: collapse; width: 100%; font-size: 0.8rem; }
-/* Ancho de columna FIJO (viene del <colgroup>, ver tabla.ts) en vez de
-   "lo que pida el contenido mas largo" -- soluciona a la vez el ancho
-   descontrolado y el costo de layout que hacia lento el scroll. */
+table { border-collapse: collapse; width: 100%; font-size: 13px; background: var(--blanco); }
 table.tabla-ancho-fijo { table-layout: fixed; }
 thead th {
-  position: sticky; top: 0; background: var(--surface-2); text-align: left; padding: 0;
-  font-weight: 700; font-size: 0.68rem; letter-spacing: 0.04em; text-transform: uppercase;
-  color: var(--text-muted); border-bottom: 1px solid var(--border); z-index: 1;
+  position: sticky; top: 0; background: var(--azul-oscuro); color: var(--blanco); text-align: left; padding: 0;
+  font-weight: 600; font-size: 12.5px; white-space: nowrap; z-index: 1;
 }
-/* .th-fila: etiqueta + boton de filtro en una fila flex -- .th-manija
-   sigue siendo hijo directo de <th> (absolute, borde derecho completo),
-   no de .th-fila. */
-.th-fila { display: flex; align-items: center; gap: 2px; padding: 8px 6px 8px 12px; }
-.th-etiqueta {
-  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.th-filtro-boton {
-  flex-shrink: 0; border: none; background: transparent; color: var(--text-faint); cursor: pointer;
-  padding: 1px 3px; border-radius: 4px; font-size: 0.6rem; line-height: 1.4;
-}
-.th-filtro-boton:hover { background: var(--accent-soft); color: var(--accent); }
-.th-filtro-boton.activo { color: var(--accent); }
-.th-manija {
-  position: absolute; top: 0; right: 0; bottom: 0; width: 8px; cursor: col-resize;
-  touch-action: none; transition: background 0.1s ease;
-}
-.th-manija:hover, .th-manija.redimensionando { background: var(--accent); opacity: 0.55; }
-/* `position: sticky` en thead th ya establece el contenedor de posicion
-   para `.th-manija` (absolute) -- un elemento sticky es tan valido como
-   "relative" para eso, no hace falta agregar nada mas. */
+.th-fila { display: flex; align-items: center; gap: 2px; padding: 8px 6px 8px 10px; }
+.th-etiqueta { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.th-filtro-boton { flex-shrink: 0; border: none; background: transparent; color: var(--azul-claro); cursor: pointer; padding: 1px 4px; border-radius: 4px; font-size: 10px; line-height: 1.4; }
+.th-filtro-boton:hover { background: var(--azul-medio); color: var(--blanco); }
+.th-filtro-boton.activo { color: var(--naranja); }
+.th-manija { position: absolute; top: 0; right: 0; bottom: 0; width: 8px; cursor: col-resize; touch-action: none; }
+.th-manija:hover, .th-manija.redimensionando { background: var(--azul-medio); opacity: 0.7; }
 
-/* ============================= POPOVER DE FILTRO POR COLUMNA (tabla.ts) ============================= */
-/* Estilo Excel -- pedido del usuario (2026-08-28): "un filtro como los de
-   excel que permite buscar especificamente aprox y ordenar". Se ancla con
-   position:fixed y se agrega a document.body (no como descendiente de la
-   tabla) para escapar del overflow-x:auto del envoltorio -- si viviera
-   adentro, un overflow:auto tambien recorta el eje Y y el popover se veria
-   cortado. */
 .th-popover {
   position: fixed; z-index: 50; width: 240px; max-height: 360px; display: flex; flex-direction: column;
-  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radio-md);
-  box-shadow: var(--shadow-md); font-size: 0.8rem; text-transform: none; letter-spacing: normal; font-weight: 400;
-  color: var(--text);
+  background: var(--blanco); border: 1px solid var(--borde); border-radius: 8px;
+  box-shadow: var(--shadow-md); font-size: 13px; text-transform: none; letter-spacing: normal; font-weight: 400; color: var(--texto);
 }
-.th-popover__mensaje { padding: 12px; color: var(--text-muted); font-size: 0.78rem; margin: 0; }
-.th-popover__orden { display: flex; flex-direction: column; padding: 6px; border-bottom: 1px solid var(--border); }
-.th-popover__orden button {
-  border: none; background: transparent; text-align: left; padding: 6px 8px; border-radius: 6px;
-  cursor: pointer; font-size: 0.78rem; color: var(--text);
-}
-.th-popover__orden button:hover { background: var(--accent-soft); color: var(--accent); }
-.th-popover__buscar {
-  margin: 6px; width: calc(100% - 12px); background: var(--surface-2); border: 1px solid var(--border);
-  border-radius: var(--radio-pill); padding: 6px 12px; font-size: 0.78rem; color: var(--text); outline: none;
-}
+.th-popover__mensaje { padding: 12px; color: var(--texto-2); font-size: 12.5px; margin: 0; }
+.th-popover__orden { display: flex; flex-direction: column; padding: 6px; border-bottom: 1px solid var(--borde); }
+.th-popover__orden button { border: none; background: transparent; text-align: left; padding: 6px 8px; border-radius: 4px; cursor: pointer; font-size: 12.5px; color: var(--texto); }
+.th-popover__orden button:hover { background: var(--azul-fondo); color: var(--azul-oscuro); }
+.th-popover__buscar { margin: 6px; width: calc(100% - 12px); background: var(--blanco); border: 1px solid var(--borde); border-radius: 4px; padding: 6px 9px; font-size: 12.5px; color: var(--texto); outline: none; }
 .th-popover__lista { overflow-y: auto; flex: 1; padding: 0 6px; min-height: 40px; }
-.th-popover__opcion { display: flex; align-items: center; gap: 6px; padding: 5px 6px; border-radius: 6px; cursor: pointer; }
-.th-popover__opcion:hover { background: var(--surface-2); }
+.th-popover__opcion { display: flex; align-items: center; gap: 6px; padding: 5px 6px; border-radius: 4px; cursor: pointer; }
+.th-popover__opcion:hover { background: var(--azul-fondo); }
 .th-popover__valor { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.th-popover__conteo { flex-shrink: 0; font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-faint); }
-.th-popover__botones { display: flex; justify-content: flex-end; gap: 8px; padding: 8px; border-top: 1px solid var(--border); }
-.th-popover__botones .btn { padding: 5px 12px; font-size: 0.76rem; }
-td {
-  padding: 8px 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  border-bottom: 1px solid var(--border); color: var(--text); max-width: 0;
-}
-tbody tr { transition: background 0.1s ease; }
-tbody tr:hover { background: var(--accent-soft); }
+.th-popover__conteo { flex-shrink: 0; font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+.th-popover__botones { display: flex; justify-content: flex-end; gap: 8px; padding: 8px; border-top: 1px solid var(--borde); }
+.th-popover__botones .btn { padding: 5px 12px; font-size: 12.5px; }
+
+td { padding: 7px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-top: 1px solid var(--borde); color: var(--texto); max-width: 0; vertical-align: top; }
+tbody tr:nth-child(even) td { background: #fbfdff; }
+tbody tr:hover td { background: var(--azul-fondo); }
 
 /* ============================= BOTONES ============================= */
-.btn { display: inline-flex; align-items: center; gap: 7px; border-radius: var(--radio-pill); padding: 8px 16px; font-size: 0.82rem; font-weight: 700; border: 1px solid transparent; cursor: pointer; transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.15s ease; }
-.btn:active { transform: scale(0.97); }
-.btn--primario { background: var(--accent); color: #fff; }
-.btn--primario:hover { background: var(--accent-deep); box-shadow: var(--shadow-md); }
-.btn--suave { background: var(--accent-soft); color: var(--accent); }
-.btn--suave:hover { background: var(--accent); color: #fff; }
+.btn {
+  display: inline-flex; align-items: center; gap: 7px; background: var(--azul-oscuro); color: var(--blanco);
+  border: 1px solid var(--azul-oscuro); border-radius: 4px; padding: 8px 14px; font-size: 13.5px; font-weight: 600;
+  cursor: pointer; text-decoration: none; transition: background 0.12s ease, color 0.12s ease;
+}
+.btn:hover { background: var(--azul-medio); border-color: var(--azul-medio); color: var(--blanco); }
+.btn--primario { background: var(--azul-oscuro); color: var(--blanco); }
+.btn--suave, .btn.secundario { background: var(--blanco); color: var(--azul-oscuro); border-color: var(--azul-medio); }
+.btn--suave:hover, .btn.secundario:hover { background: var(--azul-fondo); color: var(--azul-oscuro); }
+.btn.naranja { background: var(--naranja-oscuro); color: var(--naranja-texto); border-color: var(--naranja-oscuro); }
+.btn.chico { padding: 5px 10px; font-size: 12.5px; }
 .btn[disabled] { opacity: 0.45; cursor: not-allowed; }
 
-/* Eleccion de fuente al pulsar "Actualizar ahora". Se pregunta cada vez en
-   vez de dejar un selector con memoria: las dos fuentes dan cifras muy
-   distintas y el snapshot se ve igual de sano con cualquiera de las dos, asi
-   que la decision tiene que ser consciente (ver refresco-manual.ts). */
-.eleccion-fuente { display: flex; gap: 10px; flex-wrap: wrap; margin: 4px 0 8px; }
-.eleccion-fuente__opcion {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 3px;
-  text-align: left;
-  flex: 1 1 260px;
-  padding: 10px 12px;
-  line-height: 1.35;
-}
-.eleccion-fuente__opcion span { font-size: 0.72rem; opacity: 0.75; font-weight: 400; }
-.eleccion-fuente__cancelar {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  font-size: 0.75rem;
-  font-family: inherit;
-  cursor: pointer;
-  padding: 0;
-  text-decoration: underline;
-}
-
 /* ============================= VARIOS ============================= */
-.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
-
-/* Patron "seleccionar arriba, detalle abajo" -- pedido del usuario
-   (2026-09-01): las CALIDADES (lo que se elige) van arriba en fila
-   organizada, y las estadisticas de solo lectura pasan a la columna
-   lateral. Antes era al reves: lo elegible vivia apretado en una columna
-   angosta y las cifras que nadie clickea ocupaban todo el ancho superior.
-   Se usa en las DOS vistas que comparten el patron (calidades y cadena
-   H1-H6) para que se vean igual -- "este cambio debe ser normalizado". */
-.selector-fila { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; margin-bottom: 18px; }
-/* .cadena-paso trae margin-bottom para cuando se apila; dentro de la
-   rejilla el gap ya separa, y el margen extra desalinea las filas. */
+.selector-fila { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; margin-bottom: 14px; }
 .selector-fila .cadena-paso { margin-bottom: 0; }
-
-/* Aside de estadisticas + contenido principal. El aside es angosto y de
-   ancho fijo: son cifras de una linea, no necesitan mas, y asi la tabla
-   -- que si tiene muchas columnas -- se queda con todo el ancho util. */
-.grid-lateral { display: grid; grid-template-columns: minmax(190px, 230px) 1fr; gap: 16px; align-items: start; }
-/* Solo la calidad de diferencias se secciona; en las otras el aside sobra y
-   la tabla (que es ancha: 30+ columnas) se queda con todo el ancho, en vez
-   de dejar una columna vacia al lado. */
+.grid-lateral { display: grid; grid-template-columns: minmax(190px, 230px) 1fr; gap: 14px; align-items: start; }
 .grid-lateral--sin-aside { grid-template-columns: 1fr; }
 .grid-lateral--sin-aside .grid-lateral__aside { display: none; }
 .grid-lateral__aside { display: grid; gap: 10px; min-width: 0; }
 .grid-lateral__principal { min-width: 0; }
-@media (max-width: 900px) {
-  .grid-lateral { grid-template-columns: 1fr; }
-  /* En pantalla angosta el aside vuelve a fila: apilado ocuparia toda la
-     altura visible antes de llegar a la tabla. */
-  .grid-lateral__aside { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
-}
-.celda-mono { font-family: var(--font-mono); font-size: 0.78rem; color: var(--text-muted); }
-.celda-muda { color: var(--text-faint); }
-.mini-barra { height: 6px; border-radius: var(--radio-pill); background: var(--surface-2); overflow: hidden; margin-top: 4px; }
-.mini-barra > span { display: block; height: 100%; background: var(--accent); border-radius: var(--radio-pill); }
-.fila-metodo { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 0.82rem; }
-.fila-metodo:last-child { border-bottom: none; }
-.fila-metodo__num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--text-muted); flex-shrink: 0; }
-.fila-metodo__nombre { display: flex; flex-direction: column; gap: 2px; flex: 1; }
 
-.trio { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: center; padding: 10px 14px; border-radius: var(--radio-sm); background: var(--surface-2); margin-bottom: 8px; }
-.trio__lado { display: flex; flex-direction: column; gap: 1px; }
-.trio__lado span { font-size: 0.66rem; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.04em; }
-.trio__lado strong { font-size: 0.83rem; }
-
-.cadena-paso { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radio-md); background: var(--surface); margin-bottom: 8px; cursor: pointer; transition: border 0.15s ease; }
-.cadena-paso:hover { border-color: var(--accent); }
-.cadena-paso.activo { border-color: var(--accent); background: var(--accent-soft); }
-.cadena-paso__marca { width: 34px; height: 34px; border-radius: 50%; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-family: var(--font-display); font-weight: 800; font-size: 0.8rem; flex-shrink: 0; }
+/* Eslabones H1-H6: misma tarjeta que una calidad */
+.cadena-paso { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--borde); border-radius: 8px; background: var(--blanco); margin-bottom: 8px; cursor: pointer; border-top: 4px solid var(--azul-medio); }
+.cadena-paso:hover { outline: 2px solid var(--azul-medio); }
+.cadena-paso.activo { border-color: var(--azul-medio); background: var(--azul-fondo); }
+.cadena-paso__marca { width: 34px; height: 34px; border-radius: 50%; background: var(--azul-oscuro); color: var(--blanco); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12.5px; flex-shrink: 0; }
 .cadena-paso__cuerpo { flex: 1; min-width: 0; }
-.cadena-paso__titulo { font-weight: 700; font-size: 0.85rem; }
-.cadena-paso__campos { font-size: 0.72rem; color: var(--text-faint); margin-top: 1px; }
-.cadena-paso__pct { font-family: var(--font-mono); font-weight: 600; font-size: 0.95rem; flex-shrink: 0; }
+.cadena-paso__titulo { font-weight: 600; font-size: 13.5px; color: var(--azul-oscuro); }
+.cadena-paso__campos { font-size: 12px; color: var(--texto-2); margin-top: 1px; }
+.cadena-paso__pct { font-family: var(--font-mono); font-weight: 600; font-size: 14px; flex-shrink: 0; }
 
-.placeholder { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 28px; border: 1px dashed var(--border); border-radius: var(--radio-md); color: var(--text-muted); background: var(--surface); }
-.placeholder strong { color: var(--text); font-family: var(--font-display); }
+.placeholder { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 28px; border: 1px dashed var(--borde); border-radius: 8px; color: var(--texto-2); background: var(--blanco); }
+.placeholder strong { color: var(--azul-oscuro); }
 
-.aviso { padding: 0.6rem 0.9rem; border-radius: var(--radio-sm); font-size: 0.82rem; }
-.aviso--error { background: var(--danger-soft); color: var(--danger); }
-.aviso--info { background: var(--accent-soft); color: var(--text-muted); }
-.aviso--info strong { color: var(--text); }
+.fila-metodo { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 0; border-top: 1px solid var(--borde); font-size: 13px; }
+.fila-metodo:first-child { border-top: 0; }
+.fila-metodo__nombre { flex: 1; min-width: 0; }
+.fila-metodo__num { font-family: var(--font-mono); font-size: 12.5px; color: var(--texto-2); white-space: nowrap; }
+.mini-barra { height: 6px; background: var(--fondo); border-radius: 3px; overflow: hidden; margin-top: 4px; }
+.mini-barra span { display: block; height: 100%; background: var(--azul-medio); }
 
-/* Tabla de comparacion emparejada de "Consultar INVIMA" -- cada fila es un
-   campo con su valor de CADA fuente y el veredicto al lado, en vez de dos
-   listas sueltas donde no se veia que corresponde con que. */
-.consulta-invima__pares th[scope="row"] { text-align: left; font-weight: 600; color: var(--text-muted); white-space: nowrap; }
-.consulta-invima__pares td { font-variant-numeric: tabular-nums; }
-.consulta-invima__par--difiere { background: var(--warn-soft); }
+/* ============================= CONSULTAR INVIMA / DETALLE DE CASO ============================= */
+.consulta-invima__separador { border: none; border-top: 1px solid var(--borde); margin: 22px 0 14px; }
+.consulta-invima__form { margin-bottom: 14px; display: flex; gap: 8px; }
+.consulta-invima__input { flex: 1; padding: 8px 10px; border: 1px solid var(--borde); border-radius: 4px; background: var(--blanco); color: var(--texto); font-size: 13.5px; font-family: inherit; }
+.consulta-invima__input::placeholder { color: var(--muted); }
+.consulta-invima__mensaje { font-size: 13.5px; padding: 8px 0; margin: 0; }
+.consulta-invima__mensaje--espera { color: var(--texto-2); }
+.consulta-invima__mensaje--advertencia { color: var(--naranja-texto); }
+.consulta-invima__mensaje--error { color: var(--rojo-texto); }
 
-/* Veredicto en lenguaje llano bajo el numero de cada dimension -- el numero
-   solo no dice si esta bien o mal (pedido del usuario, 2026-09-01). */
-.tarjeta-metrica__veredicto { font-size: 0.7rem; color: var(--text-muted); margin-top: 4px; line-height: 1.25; }
-.tarjeta-metrica--ok .tarjeta-metrica__veredicto { color: var(--ok); }
-.tarjeta-metrica--atencion .tarjeta-metrica__veredicto { color: var(--warn); }
+.caso-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 14px; align-items: start; }
+@media (max-width: 900px) { .caso-grid { grid-template-columns: 1fr; } }
+.caso-cabecera { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 12px; }
+.caso-cabecera h1 { color: var(--azul-oscuro); font-size: 19px; font-weight: 600; margin: 0; }
 
-/* Las tarjetas de dimension son botones: se abren a los medicamentos que las
-   componen (pedido del usuario, 2026-09-01). Heredan el look de
-   .tarjeta-metrica; esto solo agrega el afford de "clickeable". */
-.tarjeta-metrica--abrible { width: 100%; text-align: left; cursor: pointer; font: inherit; color: inherit; display: block; }
-.tarjeta-metrica--abrible:hover { border-color: var(--accent); }
-.tarjeta-metrica--abrible.activo { border-color: var(--accent); background: var(--accent-soft); }
-.tarjeta-metrica__abrir { display: block; margin-top: 6px; font-size: 0.68rem; color: var(--accent); opacity: 0; transition: opacity 0.15s ease; }
-.tarjeta-metrica--abrible:hover .tarjeta-metrica__abrir,
-.tarjeta-metrica--abrible.activo .tarjeta-metrica__abrir { opacity: 1; }
+.consulta-invima__diagnostico { border-radius: 4px; border-left: 4px solid var(--azul-medio); background: var(--azul-fondo); padding: 10px 14px; margin-bottom: 12px; font-size: 13px; }
+.consulta-invima__diagnostico h3 { margin: 0 0 4px; font-size: 14px; color: var(--azul-oscuro); }
+.consulta-invima__diagnostico p { margin: 0 0 4px; color: var(--texto); }
+.consulta-invima__diagnostico p:last-child { margin-bottom: 0; color: var(--texto-2); }
+.consulta-invima__diagnostico--ok { border-left-color: var(--verde-texto); background: var(--verde-suave); }
+.consulta-invima__diagnostico--ok h3 { color: var(--verde-texto); }
+.consulta-invima__diagnostico--advertencia { border-left-color: var(--naranja-oscuro); background: var(--naranja); }
+.consulta-invima__diagnostico--advertencia h3 { color: var(--naranja-texto); }
+.consulta-invima__diagnostico--critico { border-left-color: #d64545; background: var(--rojo); }
+.consulta-invima__diagnostico--critico h3 { color: var(--rojo-texto); }
+.consulta-invima__diagnostico--informativo { border-left-color: var(--azul-medio); background: var(--azul-fondo); }
 
-/* "Como se calcula" de una calidad (vistas/auditoria.ts::panelCriterios):
-   la frase corta, los criterios como lista y que hacer, en dos columnas
-   cuando hay ancho. Tarjeta corta, no banner: dos a cuatro puntos. */
-.criterios { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radio-md); padding: 12px 14px; margin-bottom: 12px; font-size: 0.82rem; line-height: 1.45; color: var(--text-muted); }
-.criterios__explica { margin: 0 0 8px; color: var(--text); }
-.criterios__cuerpo { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 8px 22px; }
-.criterios__titulo { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-faint); margin-bottom: 3px; }
-.criterios__lista { margin: 0; padding-left: 18px; }
-.criterios__lista li { margin: 0 0 2px; }
-.criterios__texto { margin: 0; }
-.criterios__seccion { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
-.criterios__seccion strong { color: var(--text); }
+.consulta-invima__pasos { background: var(--blanco); border: 1px solid var(--borde); border-radius: 8px; padding: 14px 16px; margin-bottom: 14px; }
+.consulta-invima__pasos h4 { margin: 0 0 8px; font-size: 15px; color: var(--azul-oscuro); font-weight: 600; }
+.consulta-invima__pasos ol { margin: 0; padding-left: 20px; color: var(--texto); font-size: 13px; }
+.consulta-invima__pasos li { margin-bottom: 6px; }
+.consulta-invima__pasos li:last-child { margin-bottom: 0; }
 
-/* Nota bajo la comparacion campo a campo de "Consultar INVIMA": aclara que la
-   descripcion de INVIMA se arma, no se publica. */
-.consulta-invima__nota { margin: 0 0 8px; font-size: 0.76rem; color: var(--text-faint); line-height: 1.4; }
+.consulta-invima__ubicacion { margin: 0 0 10px; padding: 8px 12px; font-size: 13px; background: var(--fondo); border: 1px solid var(--borde); border-radius: 4px; color: var(--texto-2); }
+.consulta-invima__ubicacion strong { color: var(--texto); }
+.consulta-invima__nota { margin: 0 0 8px; font-size: 12px; color: var(--muted); line-height: 1.4; }
+.consulta-invima__envoltorio { overflow-x: auto; border: 1px solid var(--borde); border-radius: 4px; background: var(--blanco); }
+.consulta-invima__tabla { width: 100%; border-collapse: collapse; font-size: 13px; }
+.consulta-invima__tabla th { background: var(--azul-oscuro); color: var(--blanco); padding: 8px 10px; text-align: left; font-weight: 600; position: static; }
+.consulta-invima__pares th[scope="row"] { background: var(--fondo); color: var(--texto-2); font-weight: 600; white-space: nowrap; border-top: 1px solid var(--borde); }
+.consulta-invima__tabla td { border-top: 1px solid var(--borde); padding: 8px 10px; color: var(--texto); background: var(--blanco); max-width: 320px; white-space: normal; word-break: break-word; font-variant-numeric: tabular-nums; }
+.consulta-invima__par--difiere td { background: #fff4f4; }
+.consulta-invima__tabla-td--vacio { color: var(--muted); }
+.consulta-invima__error { background: var(--rojo); border-left: 4px solid #d64545; padding: 14px 16px; border-radius: 4px; }
+.consulta-invima__error p:first-child { margin: 0; font-weight: 600; color: var(--rojo-texto); }
+.consulta-invima__error p { margin: 8px 0 0; font-size: 13px; color: var(--rojo-texto); }
 
-/* Pantalla de ingreso (sesion.ts): misma caja que el dashboard de Auditoria
-   de Calidades, con los tokens de esta app. */
-.pantalla-ingreso { min-height: 100vh; display: flex; align-items: flex-start; justify-content: center; background: var(--bg); padding-top: 8vh; }
-.ingreso { width: min(380px, 92vw); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radio-md); box-shadow: var(--shadow-md); padding: 28px 30px; text-align: center; display: flex; flex-direction: column; gap: 10px; }
+/* ============================= INGRESO ============================= */
+.pantalla-ingreso { min-height: 100vh; display: flex; align-items: flex-start; justify-content: center; background: var(--fondo); padding-top: 8vh; }
+.ingreso { width: min(380px, 92vw); background: var(--blanco); border: 1px solid var(--borde); border-radius: 8px; box-shadow: var(--shadow-md); padding: 28px 30px; text-align: center; display: flex; flex-direction: column; gap: 10px; }
 .ingreso__logo { height: 90px; width: 90px; object-fit: cover; border-radius: 50%; margin: 0 auto 4px; }
-.ingreso__titulo { font-family: var(--font-display); font-size: 1.2rem; font-weight: 800; margin: 0; color: var(--accent); }
-.ingreso__sub { margin: 0 0 8px; font-size: 0.82rem; color: var(--text-muted); }
-.ingreso__campo { width: 100%; padding: 10px 12px; font-size: 0.9rem; border: 1px solid var(--border); border-radius: var(--radio-sm); background: var(--surface); color: var(--text); font-family: var(--font-body); }
-.ingreso__campo:focus { outline: 2px solid var(--accent); border-color: var(--accent); }
-.ingreso__error { margin: 0; font-size: 0.8rem; color: var(--danger); background: var(--danger-soft); padding: 8px 10px; border-radius: var(--radio-sm); }
+.ingreso__titulo { font-size: 19px; font-weight: 600; margin: 0; color: var(--azul-oscuro); }
+.ingreso__sub { margin: 0 0 8px; font-size: 13px; color: var(--texto-2); }
+.ingreso__campo { width: 100%; padding: 10px 12px; font-size: 14px; border: 1px solid var(--borde); border-radius: 4px; background: var(--blanco); color: var(--texto); }
+.ingreso__campo:focus { outline: 2px solid var(--azul-medio); border-color: var(--azul-medio); }
+.ingreso__error { margin: 0; font-size: 13px; color: var(--rojo-texto); background: var(--rojo); padding: 8px 10px; border-radius: 4px; }
 .ingreso__boton { justify-content: center; width: 100%; }
-.usuario { display: flex; align-items: center; gap: 10px; font-size: 0.8rem; color: var(--text-muted); }
-.usuario__nombre { font-weight: 600; color: var(--text); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* Administracion > Permisos (vistas/admin.ts) */
+/* ============================= ADMINISTRACIÓN › PERMISOS ============================= */
 .permisos__barra { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 12px; }
-.permisos__buscar { flex: 1; min-width: 220px; padding: 8px 12px; font-size: 0.85rem; border: 1px solid var(--border); border-radius: var(--radio-sm); background: var(--surface); color: var(--text); font-family: var(--font-body); }
-.permisos__buscar:focus { outline: 2px solid var(--accent); border-color: var(--accent); }
-.permisos__resumen { font-size: 0.8rem; color: var(--text-muted); }
-.permiso { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.8rem; }
-.permiso input { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+.permisos__buscar { flex: 1; min-width: 220px; padding: 7px 9px; font-size: 13px; border: 1px solid var(--borde); border-radius: 4px; background: var(--blanco); color: var(--texto); }
+.permisos__buscar:focus { outline: 2px solid var(--azul-medio); border-color: var(--azul-medio); }
+.permisos__resumen { font-size: 12.5px; color: var(--texto-2); }
+.permiso { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; }
+.permiso input { width: 18px; height: 18px; accent-color: var(--azul-oscuro); cursor: pointer; }

@@ -4,49 +4,42 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Calidades CUMS</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
-    />
     <link rel="stylesheet" href="/src/estilo.css" />
   </head>
   <body>
     <div class="pantalla-ingreso oculto" id="pantalla-ingreso"></div>
     <div class="app-shell">
-      <aside class="rail" id="rail">
-        <div class="rail__marca">
-          <div class="rail__logo"></div>
-          <div class="rail__marca-texto">
-            <strong>Gemma CUM Loader</strong>
-            <span>Pijao Salud · EPSI</span>
-          </div>
-        </div>
-        <nav id="rail-nav"></nav>
-      </aside>
+      <header class="topbar">
+        <img class="logo" src="logo-pijaos.jpg" alt="Pijaos Salud EPSI" />
+        <div class="titulo">Calidades CUMS<small>Pijaos Salud EPSI · GemaNet</small></div>
+        <nav id="nav-principal"></nav>
+        <div class="usuario" id="usuario-sesion"></div>
+      </header>
 
       <div class="col-principal">
-        <header class="topbar">
-          <button class="btn btn--suave oculto" id="boton-volver" title="Volver a la pestaña anterior">← Volver</button>
-          <div class="miga">
-            <span class="miga__ruta" id="miga-ruta">Candidatos para cargue</span>
-            <h1 class="miga__titulo" id="miga-titulo">Resumen de resolución</h1>
+        <main class="contenido">
+          <div class="pagina-cabecera">
+            <div class="miga">
+              <div class="miga__ruta" id="miga-ruta">Bandeja</div>
+              <h1 class="miga__titulo" id="miga-titulo">Bandeja de calidades</h1>
+            </div>
+            <div class="pagina-acciones">
+              <button class="btn btn--suave oculto" id="boton-volver" title="Volver a la pantalla anterior">← Volver</button>
+              <div class="refresco" id="refresco" title="Antigüedad de los datos (se recalculan cada 50 min)">
+                <div class="refresco__anillo" id="anillo-refresco"></div>
+                <div class="refresco__texto"><strong id="texto-refresco">—</strong><span id="subtexto-refresco">consultando…</span></div>
+              </div>
+              <button class="btn btn--suave" id="boton-actualizar-ahora" title="Actualizar los datos ahora, sin esperar al ciclo automático">⟳ Actualizar ahora</button>
+            </div>
           </div>
-          <div class="refresco" id="refresco" title="Antigüedad del snapshot que dejó el worker (se recalcula cada ~50 min).">
-            <div class="refresco__anillo" id="anillo-refresco"></div>
-            <div class="refresco__texto"><strong id="texto-refresco">—</strong><span id="subtexto-refresco">consultando…</span></div>
-          </div>
-          <button class="btn btn--suave" id="boton-actualizar-ahora" title="Pedirle al worker que actualice los datos ahora, sin esperar al ciclo automático de 50 minutos">⟳ Actualizar ahora</button>
-          <div class="usuario" id="usuario-sesion"></div>
-          <button class="toggle-tema" id="toggle-tema" title="Cambiar tema">◐</button>
-        </header>
 
-        <div class="banner oculto" id="banner-salud"></div>
-        <div class="panel-progreso oculto" id="panel-progreso"></div>
+          <div class="banner oculto" id="banner-salud"></div>
+          <div class="panel-progreso oculto" id="panel-progreso"></div>
 
-        <nav class="subnav" id="subnav"></nav>
+          <nav class="subnav" id="subnav"></nav>
 
-        <main class="vista" id="vista"></main>
+          <div class="vista" id="vista"></div>
+        </main>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>

@@ -1,4 +1,5 @@
 import { fechaLegible } from "../fechas";
+import { ENCABEZADOS_FETCH, urlAbsoluta } from "../api";
 import { ETIQUETA_CAMPO_COMPARADO, etiquetaEstadoListadoInvima, pildoraValidacion } from "../pildoras";
 
 // Los 7 campos que la auditoria compara lado a lado, en el orden en que se
@@ -98,10 +99,10 @@ export async function montarConsultarInvima(contenedor: HTMLElement): Promise<vo
     divEnVivo.innerHTML =
       '<p class="consulta-invima__mensaje consulta-invima__mensaje--espera">⏳ Consultando los 4 listados de INVIMA en vivo...</p>';
     try {
-      const baseUrl = `${window.location.protocol}//${window.location.hostname}:8000`;
-      const resp = await fetch(
-        `${baseUrl}/consulta-detalle/invima-en-vivo?codigo=${encodeURIComponent(codigo)}`,
-      );
+      const resp = await fetch(urlAbsoluta(`/consulta-detalle/invima-en-vivo?codigo=${encodeURIComponent(codigo)}`), {
+        credentials: "include",
+        headers: ENCABEZADOS_FETCH,
+      });
       const datos = await resp.json();
       divEnVivo.innerHTML = renderEnVivo(datos.resultados ?? [], datos.error ?? "");
     } catch (e) {
@@ -135,12 +136,13 @@ export async function montarConsultarInvima(contenedor: HTMLElement): Promise<vo
 
     while (intento < maxReintentos) {
       try {
-        const baseUrl = `${window.location.protocol}//${window.location.hostname}:8000`;
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
 
-        const resp = await fetch(`${baseUrl}/consulta-detalle/medicamento?codigo=${encodeURIComponent(codigo)}`, {
+        const resp = await fetch(urlAbsoluta(`/consulta-detalle/medicamento?codigo=${encodeURIComponent(codigo)}`), {
           signal: controller.signal,
+          credentials: "include",
+          headers: ENCABEZADOS_FETCH,
         });
 
         clearTimeout(timeoutId);
@@ -184,7 +186,7 @@ export async function montarConsultarInvima(contenedor: HTMLElement): Promise<vo
         <p>
           Verifica que:
           <ul>
-            <li>El backend esté corriendo en puerto 8000</li>
+            <li>La API esté arriba (el servicio gemanet-cums-api)</li>
             <li>Tu conexión esté activa</li>
           </ul>
         </p>
@@ -617,21 +619,28 @@ function mostrarResultado(contenedor: HTMLElement, datos: RespuestaConsultaDetal
     // criterio que esc() en auditoria.ts/tabla.ts).
     const codigosTexto = escaparHTML(codigos_consultados.join(", ") || "—");
 
-    let html = `
+    // Detalle de caso con la anatomia del dashboard de Auditoria (caso.html):
+    // cabecera con el codigo y su estado, la caja "que detecta" (diagnostico),
+    // y dos columnas -- izquierda los datos del hallazgo (Gemma Net contra
+    // INVIMA campo a campo), derecha que hacer. Sin fila de Gemma Net no hay
+    // comparacion y el diagnostico ocupa todo el ancho.
+    const comparacion = crearComparacionEstadosHTML(gemma_net);
+    const cabecera = `<div class="caso-cabecera"><h1>CUM ${codigosTexto}</h1>${estadoCasoHTML(gemma_net)}</div>`;
+    const diagnosticoHtml = `
       <div class="consulta-invima__diagnostico consulta-invima__diagnostico--${diagnostico.nivel}">
         <h3>${diagnostico.icono} ${escaparHTML(diagnostico.titulo)}</h3>
         <p>${escaparHTML(diagnostico.mensaje)}</p>
-        <p>Código(s): <strong>${codigosTexto}</strong></p>
-      </div>
-
+      </div>`;
+    const pasosHtml = `
       <div class="consulta-invima__pasos">
-        <h4>📋 Pasos a seguir:</h4>
+        <h4>Qué hacer</h4>
         <ol>
           ${diagnostico.pasos.map((paso) => `<li>${escaparHTML(paso)}</li>`).join("")}
         </ol>
-      </div>
-      ${crearComparacionEstadosHTML(gemma_net)}
-    `;
+      </div>`;
+    let html = comparacion
+      ? `${cabecera}<div class="caso-grid"><div class="panel"><h3>Gemma Net contra INVIMA, campo a campo</h3>${comparacion}</div><div>${diagnosticoHtml}${pasosHtml}</div></div>`
+      : `${cabecera}${diagnosticoHtml}${pasosHtml}`;
 
     // Ya NO se dibujan las dos tablas horizontales (una por fuente) que iban
     // debajo -- pedido del usuario (2026-09-02): "esas dos tablas las vamos a
@@ -668,6 +677,21 @@ function mostrarResultado(contenedor: HTMLElement, datos: RespuestaConsultaDetal
 // quito por redundante (Gemma Net no lo guarda y la fila "Marca" ya compara
 // contra el mismo dato). Todo lo demas sale de la fila de auditoria, que trae
 // los dos lados en su trio <CAMPO>_GEMANET / _INVIMA / _VALIDACION.
+/** Badges de cabecera del caso: estado en Gemma Net y estado del CUM en
+ * INVIMA, leidos tal cual de la fila de auditoria (nunca recalculados). */
+function estadoCasoHTML(gemmaNet: Record<string, unknown>[] | null): string {
+  if (!gemmaNet || gemmaNet.length === 0) return "";
+  const fila = gemmaNet[0];
+  const activo = String(fila["ACTIVO"] ?? "").toUpperCase() === "SI";
+  const cumInvima = String(fila["ESTADO_CUM_INVIMA"] ?? "").trim();
+  const listado = String(fila["ESTADO_LISTADO_INVIMA"] ?? "").trim();
+  return (
+    `<span class="badge ${activo ? "pildora--ok" : "pildora--neutro"}">${activo ? "Activo en Gemma Net" : "Inactivo en Gemma Net"}</span>` +
+    (cumInvima ? `<span class="badge ${cumInvima.toLowerCase() === "activo" ? "pildora--ok" : "pildora--danger"}">CUM ${escaparHTML(cumInvima)} en INVIMA</span>` : "") +
+    (listado ? `<span class="badge pildora--acento">${escaparHTML(etiquetaEstadoListadoInvima(listado))}</span>` : "")
+  );
+}
+
 function crearComparacionEstadosHTML(
   gemmaNet: Record<string, unknown>[] | null,
 ): string {

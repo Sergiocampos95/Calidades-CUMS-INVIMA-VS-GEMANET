@@ -171,6 +171,19 @@ Los archivos reales son la fuente para medir rendimiento, no para versionar.
 
 ## UI (Vite + TypeScript)
 
+**Sistema de diseno (2026-09-14): el MISMO del dashboard "Auditoria de
+Calidades"** (`auditoria_calidades/dashboard/app/static/pijaos.css`, paleta
+Olympia de GemaNet): barra superior azul `#2F5D7A` con logo y enlaces planos,
+fondo `#F4F4F4`, Segoe UI 14px, tarjetas blancas con borde superior por
+riesgo, tablas con cabecera azul, badges, cajas "que detecta" azules. Un solo
+tema claro (no hay modo oscuro). Los tokens semanticos (`--accent`, `--ok`,
+`--warn`, `--danger`, `-soft`) siguen existiendo en `estilo.css` mapeados a esa
+paleta: una vista nueva usa esos tokens, nunca hex sueltos. Navegacion: la
+portada es la **Bandeja de calidades** (una tarjeta por calidad), de ahi a
+"Casos por calidad" (chips de calidad y de tipo de diferencia sobre la tabla)
+y de una fila a "Consultar INVIMA" (detalle del caso, Gemma Net contra INVIMA
+campo a campo y que hacer).
+
 **La app real es el frontend Vite en http://localhost:5173, servido por la API
 FastAPI de `backend/app/` en el 8000.** `ui_revision/app_streamlit.py` esta
 DESCARTADO: no se toca ni se le agregan funcionalidades (regla dura, ver

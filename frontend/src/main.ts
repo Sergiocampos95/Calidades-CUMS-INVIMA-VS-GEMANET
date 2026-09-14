@@ -4,7 +4,7 @@ import { montarSalud } from "./salud";
 import { mostrarIngreso, pintarUsuario, sesionActual } from "./sesion";
 import type { UsuarioSesion } from "./tipos";
 import { montarAdminPermisos } from "./vistas/admin";
-import { montarAuditEntender, montarAuditExplorar, montarAuditPriorizar, montarCadenaCalidad } from "./vistas/auditoria";
+import { montarAuditEntender, montarAuditExplorar, montarAuditPriorizar, montarBandeja, montarCadenaCalidad } from "./vistas/auditoria";
 import { montarCargueEstructura, montarCargueExcel } from "./vistas/cargue";
 import { montarDecision } from "./vistas/decision";
 import { montarConsultarInvima } from "./vistas/consulta_detalle";
@@ -25,36 +25,40 @@ interface Seccion {
 
 // Misma fuente de verdad que SUBVISTAS_POR_SECCION en ui_revision/app_streamlit.py.
 const SECCIONES: Seccion[] = [
+  // Rediseño 2026-09-14 (sistema de diseño de Auditoría de Calidades): la
+  // BANDEJA de calidades es la portada, y la navegación es una barra
+  // superior con pocas entradas cortas, como en ese dashboard.
   {
-    id: "resumen", etiqueta: "Resumen de resolución", icono: "▤", grupo: "Candidatos para cargue",
+    id: "auditoria", etiqueta: "Bandeja", icono: "✓", grupo: "Medicamentos ya cargados",
     sub: [
-      { id: "principal", etiqueta: "Resumen", montar: montarResumenPrincipal },
+      { id: "bandeja", etiqueta: "Bandeja de calidades", montar: montarBandeja },
+      { id: "entender", etiqueta: "Casos por calidad", montar: montarAuditEntender },
+      { id: "priorizar", etiqueta: "Priorizar por riesgo", montar: montarAuditPriorizar },
+      { id: "explorar", etiqueta: "Explorar todos los hallazgos", montar: montarAuditExplorar },
+      { id: "cadena", etiqueta: "Trazabilidad H1-H6", montar: montarCadenaCalidad },
+    ],
+  },
+  {
+    id: "invima", etiqueta: "Consultar INVIMA", icono: "⌕", grupo: "Medicamentos ya cargados",
+    sub: [{ id: "unica", etiqueta: "Consulta de un CUM", montar: montarConsultarInvima }],
+  },
+  {
+    id: "resumen", etiqueta: "Candidatos", icono: "▤", grupo: "Candidatos para cargue",
+    sub: [
+      { id: "principal", etiqueta: "Resumen de resolución", montar: montarResumenPrincipal },
       { id: "metodo", etiqueta: "Cómo se resolvió", montar: montarComoSeResolvio },
       { id: "detalle", etiqueta: "Detalle por registro", montar: montarDetalleRegistro },
     ],
   },
   {
-    id: "decision", etiqueta: "Casos que requieren decisión", icono: "◆", grupo: "Candidatos para cargue",
-    sub: [{ id: "bandeja", etiqueta: "Bandeja de casos", montar: montarDecision }],
+    id: "decision", etiqueta: "Decisiones", icono: "◆", grupo: "Candidatos para cargue",
+    sub: [{ id: "bandeja", etiqueta: "Casos que requieren decisión", montar: montarDecision }],
   },
   {
-    id: "cargue", etiqueta: "Cargue a Gemma Net", icono: "⇪", grupo: "Candidatos para cargue",
+    id: "cargue", etiqueta: "Cargue", icono: "⇪", grupo: "Candidatos para cargue",
     sub: [
       { id: "estructura", etiqueta: "Auditoría de estructura", montar: montarCargueEstructura },
       { id: "excel", etiqueta: "Excel de cargue final", montar: montarCargueExcel },
-    ],
-  },
-  {
-    id: "invima", etiqueta: "Consultar INVIMA", icono: "⌕", grupo: "Medicamentos ya cargados",
-    sub: [{ id: "unica", etiqueta: "Consulta", montar: montarConsultarInvima }],
-  },
-  {
-    id: "auditoria", etiqueta: "Auditoría de coherencia", icono: "✓", grupo: "Medicamentos ya cargados",
-    sub: [
-      { id: "priorizar", etiqueta: "Priorizar lo que requiere acción", montar: montarAuditPriorizar },
-      { id: "entender", etiqueta: "Entender la calidad del catálogo", montar: montarAuditEntender },
-      { id: "explorar", etiqueta: "Explorar todos los hallazgos", montar: montarAuditExplorar },
-      { id: "cadena", etiqueta: "Trazabilidad de calidad (H1-H6)", montar: montarCadenaCalidad },
     ],
   },
 ];
@@ -63,7 +67,7 @@ const SECCIONES: Seccion[] = [
 // con una sesion admin (ver iniciarApp). Un usuario normal ni la ve en el
 // riel ni puede llegar a ella: el backend responde 403 de todas formas.
 const SECCION_ADMIN: Seccion = {
-  id: "admin", etiqueta: "Permisos de acceso", icono: "⚙", grupo: "Administración",
+  id: "admin", etiqueta: "Permisos", icono: "⚙", grupo: "Administración",
   sub: [{ id: "permisos", etiqueta: "Usuarios con acceso", montar: montarAdminPermisos }],
 };
 
@@ -117,23 +121,25 @@ window.addEventListener("gemma:navegar", (evento) => {
 });
 
 function pintarRail(): void {
-  const nav = document.getElementById("rail-nav");
+  // Barra superior con enlaces planos (sistema de diseño de Auditoría de
+  // Calidades), sin grupos: los grupos siguen viviendo en las migas.
+  const nav = document.getElementById("nav-principal");
   if (!nav) return;
-  const grupos = [...new Set(SECCIONES.map((s) => s.grupo))];
-  nav.innerHTML = grupos
-    .map(
-      (grupo) => `
-      <div class="rail__grupo-titulo">${grupo}</div>
-      ${SECCIONES.filter((s) => s.grupo === grupo)
-        .map((s) => `<button class="rail__item ${s.id === seccionActual.id ? "activo" : ""}" data-seccion="${s.id}"><span class="ic">${s.icono}</span>${s.etiqueta}</button>`)
-        .join("")}`,
-    )
-    .join("");
-  nav.querySelectorAll<HTMLButtonElement>("[data-seccion]").forEach((b) =>
-    b.addEventListener("click", () => {
+  nav.innerHTML = SECCIONES.map(
+    (s) => `<a role="button" tabindex="0" class="${s.id === seccionActual.id ? "activo" : ""}" data-seccion="${s.id}">${s.etiqueta}</a>`,
+  ).join("");
+  nav.querySelectorAll<HTMLElement>("[data-seccion]").forEach((b) => {
+    const ir = () => {
       if (b.dataset.seccion) navegarA(b.dataset.seccion);
-    }),
-  );
+    };
+    b.addEventListener("click", ir);
+    b.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        ir();
+      }
+    });
+  });
 }
 
 function pintarSubnav(): void {
@@ -268,11 +274,6 @@ window.addEventListener("keydown", (e) => {
     e.preventDefault();
     volver();
   }
-});
-
-document.getElementById("toggle-tema")?.addEventListener("click", () => {
-  const raiz = document.documentElement;
-  raiz.setAttribute("data-theme", raiz.getAttribute("data-theme") === "dark" ? "light" : "dark");
 });
 
 // ---- Arranque con sesion (2026-09-14): nada se monta sin login ----------

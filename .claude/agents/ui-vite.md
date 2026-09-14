@@ -60,13 +60,16 @@ abajo) solo se puede seguir si sabes que columna leer y que significa.
    `tabla.ts`) con la opcion explicita de "Cargar la tabla completa". El
    recorte es solo de lo que se manda al navegador; las descargas siempre
    usan el dataset completo.
-4. **Tema claro/oscuro: SIEMPRE variables CSS (`var(--token)`), nunca hex
-   fijo.** `estilo.css` define `--bg/--surface/--text/--border/--accent/
-   --ok/--warn/--danger` (+ `-soft`/`-deep`) con su variante oscura resuelta
-   via `prefers-color-scheme` y `[data-theme]`. Un color hardcodeado
-   (`#f9f9f9`, `color: #333`) se ve bien en el tema en que se escribio y
-   roto en el otro -- bug real corregido 2026-09-01 en
-   `vistas/consulta_detalle.ts`, que tenia TODO en estilos inline light-only.
+4. **SIEMPRE variables CSS (`var(--token)`), nunca hex fijo.** Desde el
+   2026-09-14 el sistema de diseno es el del dashboard de Auditoria de
+   Calidades (paleta Pijaos/Olympia, un solo tema claro): `estilo.css` define
+   `--azul-oscuro/--azul-medio/--azul-fondo/--naranja/--rojo/--verde-suave...`
+   y los tokens semanticos `--bg/--surface/--text/--border/--accent/--ok/
+   --warn/--danger` (+ `-soft`) mapeados sobre ella. Un color hardcodeado se
+   sale de la paleta que comparten las dos aplicaciones y las areas notan
+   la diferencia. Componentes: `.chips`/`.chip`, `.tarjeta`/`.cifra`,
+   `.criterios` (caja "que detecta"), `.badge`/`.pildora`, `.panel`,
+   `.caso-grid`.
 5. **Nunca insertar HTML sin escapar.** Cualquier texto que pueda originar
    en input de usuario o en datos de origen externo (codigo consultado,
    mensaje de error, valor de celda) pasa por `esc()`/`escaparHTML()` antes

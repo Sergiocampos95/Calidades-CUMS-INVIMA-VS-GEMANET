@@ -25,7 +25,7 @@ const BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? ""
 // (un formulario de otro sitio no puede ponerlo). Ver backend/app/auth.
 export const ENCABEZADOS_FETCH: Record<string, string> = { "X-Requested-With": "fetch" };
 
-function urlAbsoluta(ruta: string): URL {
+export function urlAbsoluta(ruta: string): URL {
   return new URL(`${BASE_URL}${ruta}`, window.location.origin);
 }
 
@@ -277,7 +277,7 @@ export function urlDescargaCalidad(
   formato: "xlsx" | "csv" | "txt",
   seccion?: string,
 ): string {
-  const url = new URL(`${BASE_URL}/descargas/calidad/${encodeURIComponent(nombre)}`);
+  const url = urlAbsoluta(`/descargas/calidad/${encodeURIComponent(nombre)}`);
   url.searchParams.set("formato", formato);
   if (seccion) url.searchParams.set("seccion", seccion);
   return url.toString();
@@ -287,7 +287,7 @@ export function urlDescargaCalidad(
  * Igual que `urlDescargaCalidad`: trae el eslabon entero, sin la paginacion
  * ni los filtros de pantalla. */
 export function urlDescargaEslabon(nombre: string, formato: "xlsx" | "csv" | "txt"): string {
-  const url = new URL(`${BASE_URL}/descargas/cadena/${encodeURIComponent(nombre)}`);
+  const url = urlAbsoluta(`/descargas/cadena/${encodeURIComponent(nombre)}`);
   url.searchParams.set("formato", formato);
   return url.toString();
 }

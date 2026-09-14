@@ -199,79 +199,136 @@ export async function montarAuditPriorizar(contenedor: HTMLElement): Promise<voi
 // El problema que resuelve: la tarjeta "Diferencia de estado o campos" trae
 // 59.005 filas de las que 57.255 son un unico problema (FECHA_FIN). En una
 // sola tabla, los seis problemas chicos de abajo son invisibles.
-function tarjetaSeccion(seccion: SeccionCalidad, activa: boolean): string {
-  // "Efecto de X" y no un conteo descontado: la descripcion guardada SI esta
-  // mal (es un hecho), pero corregir el principio activo arregla las dos de
-  // una vez. Sin esta marca, Descripcion parece el problema mas grande
-  // cuando en buena parte es la consecuencia de otro.
-  const derivado = seccion.derivado_de.length
-    ? `<div class="tarjeta-metrica__veredicto">↳ suele ser efecto de ${esc(seccion.derivado_de.join(" / "))}</div>`
-    : "";
-  // El tooltip dice QUE se compara en esta seccion (viene del backend, misma
-  // frase que se muestra al abrirla): quien pasa el mouse sabe que campo de
-  // Gemma Net se contrasta contra que de INVIMA antes de hacer clic.
-  const ayuda = seccion.explica ? seccion.explica : "Ver solo estos medicamentos";
-  return `<button type="button" class="tarjeta-metrica tarjeta-metrica--abrible${activa ? " activo" : ""}" data-seccion="${esc(seccion.clave)}" title="${esc(ayuda)}">
-    <div class="tarjeta-metrica__encabezado"><span>${esc(seccion.etiqueta)}</span></div>
-    <div class="tarjeta-metrica__numero">${seccion.medicamentos.toLocaleString("es-CO")}</div>
-    ${derivado}
-  </button>`;
+function chipSeccion(seccion: SeccionCalidad, activa: boolean): string {
+  // Un chip por tipo de diferencia (mismo .chips del dashboard de Auditoría).
+  // "suele ser efecto de X" va al tooltip junto con qué se compara: la
+  // descripción guardada SÍ está mal (es un hecho), pero corregir el
+  // principio activo arregla las dos de una vez.
+  const derivado = seccion.derivado_de.length ? ` Suele ser efecto de ${seccion.derivado_de.join(" / ")}.` : "";
+  const ayuda = `${seccion.explica || "Ver solo estos medicamentos"}${derivado}`;
+  return `<button type="button" class="chip${activa ? " activo" : ""}" data-seccion="${esc(seccion.clave)}" title="${esc(ayuda)}">${esc(seccion.etiqueta)}<span class="chip__num">${seccion.medicamentos.toLocaleString("es-CO")}</span></button>`;
+}
+
+// Riesgo con el que se pinta cada calidad en la bandeja (borde superior de la
+// tarjeta, como la severidad en el dashboard de Auditoría). Por NOMBRE porque
+// la severidad no viaja en la API: es una lectura de negocio fija.
+const RIESGO_POR_CALIDAD: Record<string, { sev: "ALTA" | "MEDIA" | "BAJA"; rotulo: string }> = {
+  "Vigencia confirmada": { sev: "BAJA", rotulo: "Sin riesgo" },
+  "Registro vencido en INVIMA": { sev: "ALTA", rotulo: "Riesgo alto" },
+  "En trámite de renovación": { sev: "BAJA", rotulo: "Seguimiento" },
+  "En otro estado en INVIMA": { sev: "MEDIA", rotulo: "Revisar" },
+  "No existe en INVIMA": { sev: "ALTA", rotulo: "Riesgo alto" },
+  Estado: { sev: "ALTA", rotulo: "Riesgo alto" },
+  "Diferencia de estado o campos": { sev: "MEDIA", rotulo: "Actualizar datos" },
+};
+
+// La calidad con la que debe abrirse "Casos por calidad" la próxima vez
+// (una tarjeta de la bandeja la elige). Variable de módulo, mismo patrón que
+// precargarConsultaInvima en consulta_detalle.ts.
+let _calidadPendiente: string | null = null;
+
+export function abrirCalidad(nombre: string): void {
+  _calidadPendiente = nombre;
+  window.dispatchEvent(new CustomEvent("gemma:navegar", { detail: { seccion: "auditoria", sub: "entender" } }));
+}
+
+/** Portada: una tarjeta por calidad con su cifra, como la bandeja del
+ * dashboard de Auditoría de Calidades. Cada cifra se abre a sus casos. */
+export async function montarBandeja(contenedor: HTMLElement): Promise<void> {
+  contenedor.innerHTML = `<p class="vista__intro">Cada tarjeta es una calidad: qué medicamentos cumplen o incumplen una condición frente a INVIMA. Abrí la cifra para ver los casos uno a uno, con lo que dice Gemma Net, lo que dice INVIMA y qué hacer.</p>`;
+  const cuerpo = document.createElement("div");
+  contenedor.appendChild(cuerpo);
+  let calidades: CalidadResumen[];
+  let resumen: Record<string, number> = {};
+  try {
+    [calidades, resumen] = await Promise.all([obtenerCalidades(), obtenerResumenAuditoria().catch(() => ({}))]);
+  } catch (error) {
+    cuerpo.innerHTML = `<p class="aviso aviso--error">${esc(error instanceof Error ? error.message : String(error))}</p>`;
+    return;
+  }
+  const tarjetas = calidades
+    .map((c) => {
+      const riesgo = RIESGO_POR_CALIDAD[c.nombre] ?? { sev: "BAJA", rotulo: "" };
+      return `<div class="tarjeta sev-${riesgo.sev}">
+        <span class="id">Calidad <span class="badge sev-${riesgo.sev}">${esc(riesgo.rotulo)}</span></span>
+        <h3><button type="button" data-calidad="${esc(c.nombre)}">${esc(c.nombre)}</button></h3>
+        <p class="explica">${esc(c.explica)}</p>
+        <div class="cifras">
+          <button type="button" class="cifra ${riesgo.sev === "ALTA" ? "riesgo" : riesgo.sev === "MEDIA" ? "pendientes" : "corregidos"}" data-calidad="${esc(c.nombre)}" title="Ver los medicamentos de esta calidad"><b>${c.medicamentos.toLocaleString("es-CO")}</b><span>Medicamentos</span></button>
+          <div class="cifra"><b>${c.porcentaje_del_catalogo.toFixed(1)}%</b><span>del catálogo auditado</span></div>
+        </div>
+      </div>`;
+    })
+    .join("");
+  const niveles = PRIORIDADES.filter((p) => (resumen[p] ?? 0) > 0)
+    .map(
+      (p) => `<button type="button" class="cifra ${p === "1_critico" || p === "2_alto" ? "riesgo" : p === "3_medio" ? "pendientes" : ""}" data-prioridad="${esc(p)}" title="${esc(AYUDA_PRIORIDAD[p])}"><b>${(resumen[p] ?? 0).toLocaleString("es-CO")}</b><span>${esc(etiquetaPrioridad(p))}</span></button>`,
+    )
+    .join("");
+  cuerpo.innerHTML = `<h2 class="proceso">Calidades del catálogo</h2><div class="tarjetas">${tarjetas}</div>` +
+    (niveles ? `<h2 class="proceso">Priorizar por riesgo</h2><div class="tarjeta sev-ALTA"><span class="id">Cada medicamento activo lleva un nivel, del 1 (crítico) al 5 (informativo). Los niveles suman el total.</span><div class="cifras">${niveles}</div></div>` : "");
+  cuerpo.addEventListener("click", (evento) => {
+    const objetivo = evento.target as HTMLElement;
+    const calidad = objetivo.closest<HTMLElement>("[data-calidad]")?.dataset.calidad;
+    if (calidad) {
+      abrirCalidad(calidad);
+      return;
+    }
+    if (objetivo.closest<HTMLElement>("[data-prioridad]")) {
+      window.dispatchEvent(new CustomEvent("gemma:navegar", { detail: { seccion: "auditoria", sub: "priorizar" } }));
+    }
+  });
 }
 
 export async function montarAuditEntender(contenedor: HTMLElement): Promise<void> {
-  contenedor.innerHTML = `<p class="vista__intro">Elegí una calidad arriba para ver los medicamentos que la componen. Si esa calidad mezcla varios tipos de diferencia, la columna de la izquierda los separa — cada cifra se puede <strong>abrir</strong>, no solo mirar.</p>`;
+  // Flujo vertical, como la página de una calidad en el dashboard de
+  // Auditoría: (1) elegir la calidad (chips), (2) "qué detecta" (caja azul),
+  // (3) tipo de diferencia (chips), (4) la tabla de casos. Antes las
+  // calidades eran tarjetas grandes y las secciones una columna lateral:
+  // había que mirar en tres sitios para saber qué se estaba viendo.
+  contenedor.innerHTML = "";
 
-  // Layout (pedido del usuario, 2026-09-01): las calidades -- que son lo que
-  // se ELIGE -- van arriba en fila organizada. Antes era al reves: lo
-  // clickeable vivia apretado en una columna angosta y las cifras que nadie
-  // abre se llevaban todo el ancho superior.
-  // La columna lateral la ocupaban las 6 dimensiones de solo lectura; desde
-  // 2026-09-02 la ocupan las secciones de la calidad abierta (ver
-  // `tarjetaSeccion`), que si son clickeables y acotan la tabla.
   const filaCalidades = document.createElement("div");
-  filaCalidades.className = "selector-fila";
+  filaCalidades.className = "chips";
   contenedor.appendChild(filaCalidades);
 
-  const grid = document.createElement("div");
-  grid.className = "grid-lateral";
-  contenedor.appendChild(grid);
+  const cabeceraCalidad = document.createElement("div");
+  contenedor.appendChild(cabeceraCalidad);
 
   const secciones = document.createElement("div");
-  secciones.className = "grid-lateral__aside";
+  secciones.className = "chips oculto";
+  contenedor.appendChild(secciones);
+
   const columnaTabla = document.createElement("div");
-  columnaTabla.className = "grid-lateral__principal";
-  grid.append(secciones, columnaTabla);
+  contenedor.appendChild(columnaTabla);
   habilitarCopiarSQL(columnaTabla);
 
   let calidades: CalidadResumen[];
   try {
     calidades = await obtenerCalidades();
   } catch (error) {
-    grid.innerHTML = `<p class="aviso aviso--error">${esc(error instanceof Error ? error.message : String(error))}</p>`;
+    columnaTabla.innerHTML = `<p class="aviso aviso--error">${esc(error instanceof Error ? error.message : String(error))}</p>`;
     return;
   }
 
   // Que se esta viendo AHORA. La seccion es un corte DENTRO de la calidad, no
-  // algo paralelo: cambiar de calidad la resetea, si no se quedaria filtrando
-  // por un tipo de diferencia que la calidad nueva puede no tener.
+  // algo paralelo: cambiar de calidad la resetea.
   let calidadActual: CalidadResumen | null = null;
   let seccionActual: string | null = null;
   let seccionesDeCalidad: SeccionCalidad[] = [];
 
-  // "Como se calcula": la frase corta, los criterios que definen la calidad
-  // como lista y que hacer con lo que sale -- todo viene del backend
-  // (CalidadResumen.criterios / que_hacer), la vista no inventa reglas.
-  // Reemplaza al parrafo unico con nombres de columna que habia antes: el
-  // sistema lo revisan otras areas que no son tecnicas (pedido del usuario,
-  // 2026-09-10). Es una tarjeta corta con una lista de 2 a 4 puntos, no un
-  // banner largo; la seccion abierta agrega su propia linea de "que se
-  // compara" en el mismo bloque.
+  // "Que detecta": la frase corta, los criterios y que hacer -- todo viene
+  // del backend (CalidadResumen.criterios / que_hacer), la vista no inventa
+  // reglas. La seccion abierta agrega su linea de "que se compara".
   function panelCriterios(calidad: CalidadResumen, seccion: SeccionCalidad | null): string {
     const criterios = calidad.criterios.map((c) => `<li>${esc(c)}</li>`).join("");
     const bloqueSeccion = seccion
       ? `<div class="criterios__seccion"><strong>Viendo solo ${esc(seccion.etiqueta)}</strong> — ${seccion.medicamentos.toLocaleString("es-CO")} de ${calidad.medicamentos.toLocaleString("es-CO")}.${seccion.explica ? ` ${esc(seccion.explica)}` : ""}</div>`
       : "";
-    return `<div class="criterios">
+    const riesgo = RIESGO_POR_CALIDAD[calidad.nombre];
+    return `<div class="caso-cabecera"><h1>${esc(calidad.nombre)}</h1>${riesgo ? `<span class="badge sev-${riesgo.sev}">${esc(riesgo.rotulo)}</span>` : ""}<span class="badge pildora--neutro">${calidad.medicamentos.toLocaleString("es-CO")} medicamentos · ${calidad.porcentaje_del_catalogo.toFixed(1)}%</span></div>
+    <div class="criterios">
+      <div class="criterios__titulo">Qué detecta esta calidad</div>
       <p class="criterios__explica">${esc(calidad.explica)}</p>
       <div class="criterios__cuerpo">
         <div>
@@ -288,9 +345,10 @@ export async function montarAuditEntender(contenedor: HTMLElement): Promise<void
   }
 
   function dibujarTabla(calidad: CalidadResumen, seccion: SeccionCalidad | null): void {
-    columnaTabla.innerHTML = panelCriterios(calidad, seccion);
+    cabeceraCalidad.innerHTML = panelCriterios(calidad, seccion);
+    columnaTabla.innerHTML = "";
     if (calidad.medicamentos === 0) {
-      columnaTabla.innerHTML += `<p class="tabla-filtrable__vacio">Ningún medicamento cae en esta calidad en la corrida actual.</p>`;
+      columnaTabla.innerHTML = `<div class="panel"><p class="vista__intro" style="margin:0">Ningún medicamento cae en esta calidad en la corrida actual. ✔</p></div>`;
       return;
     }
     const tablaEl = document.createElement("div");
@@ -298,18 +356,15 @@ export async function montarAuditEntender(contenedor: HTMLElement): Promise<void
     const clave = seccion?.clave;
     new TablaFiltrable(tablaEl, {
       columnas: calidad.columnas,
-      // La identidad incluye la calidad, no solo "calidad": son 6 tablas
+      // La identidad incluye la calidad, no solo "calidad": son 7 tablas
       // distintas y compartir id les haria compartir cache y posicion.
       idTabla: `calidad:${calidad.nombre}`,
       seccion: clave,
       formatearCelda: formatearCeldaCalidad,
       // Los trios <CAMPO>_GEMANET/_INVIMA/_VALIDACION se rotulan en lenguaje
-      // de negocio (ver ETIQUETAS_TRIO_CAMPOS_COMPARADOS): la cabecera cruda
-      // "DESCRIPCION_INVIMA" se leia como un campo que INVIMA publica.
+      // de negocio (ver ETIQUETAS_TRIO_CAMPOS_COMPARADOS).
       etiquetasColumna: { ...ETIQUETAS_ACTIVO_VS_INVIMA, ...ETIQUETAS_TRIO_CAMPOS_COMPARADOS },
       cargarPagina: (p) => obtenerCalidad(calidad.nombre, { ...p, seccion: clave }),
-      // Sin filtros ni pagina: el archivo trae la seccion completa (ver
-      // urlDescargaCalidad).
       urlDescarga: (formato) => urlDescargaCalidad(calidad.nombre, formato, clave),
       obtenerValoresColumna: (columna) =>
         obtenerValoresColumna(`/auditoria/calidades/${encodeURIComponent(calidad.nombre)}/valores`, columna, clave),
@@ -317,79 +372,63 @@ export async function montarAuditEntender(contenedor: HTMLElement): Promise<void
   }
 
   function dibujarSecciones(lista: SeccionCalidad[]): void {
-    // Sin secciones se ESCONDE la columna y la tabla toma todo el ancho. No
-    // se deja un mensaje: solo la calidad de diferencias se secciona, asi que
-    // en las otras cinco el aviso apareceria siempre y seria ruido fijo.
-    grid.classList.toggle("grid-lateral--sin-aside", lista.length === 0);
+    // Sin secciones se ESCONDE la fila: solo la calidad de diferencias se
+    // secciona, y un rotulo fijo en las otras seis seria ruido.
+    secciones.classList.toggle("oculto", lista.length === 0);
     if (lista.length === 0) {
       secciones.innerHTML = "";
       return;
     }
-    const total = calidadActual?.medicamentos ?? 0;
     secciones.innerHTML =
-      `<p class="vista__intro" style="margin:0 0 8px">Tipos de diferencia. Un medicamento puede caer en varios, así que los números no suman ${total.toLocaleString("es-CO")}.</p>` +
-      lista.map((s) => tarjetaSeccion(s, s.clave === seccionActual)).join("");
+      `<span class="chips__rotulo" title="Un medicamento puede caer en varios tipos, así que los números no suman el total de la calidad.">Tipo de diferencia:</span>` +
+      `<button type="button" class="chip${seccionActual === null ? " activo" : ""}" data-seccion="">Todos</button>` +
+      lista.map((s) => chipSeccion(s, s.clave === seccionActual)).join("");
   }
 
   async function mostrarCalidad(calidad: CalidadResumen): Promise<void> {
     calidadActual = calidad;
     seccionActual = null;
-    filaCalidades.querySelectorAll(".cadena-paso").forEach((el) => el.classList.toggle("activo", el.getAttribute("data-nombre") === calidad.nombre));
+    filaCalidades.querySelectorAll(".chip").forEach((el) => el.classList.toggle("activo", el.getAttribute("data-nombre") === calidad.nombre));
     dibujarTabla(calidad, null);
-    // Se arranca con la columna escondida y se abre solo si llegan secciones:
-    // al reves, las cinco calidades que no se seccionan mostrarian un
-    // "Cargando…" que parpadea y desaparece cada vez que se las abre.
-    grid.classList.add("grid-lateral--sin-aside");
+    secciones.classList.add("oculto");
     secciones.innerHTML = "";
     try {
       seccionesDeCalidad = await obtenerSeccionesCalidad(calidad.nombre);
-      // Otra calidad gano la carrera mientras esta pedia sus secciones: se
-      // descarta la respuesta vieja en vez de pintar secciones que no
-      // corresponden a lo que se esta viendo.
+      // Otra calidad gano la carrera mientras esta pedia sus secciones.
       if (calidadActual !== calidad) return;
       dibujarSecciones(seccionesDeCalidad);
     } catch (error) {
-      // Un fallo si se muestra: no poder cargar las secciones no es lo mismo
-      // que esta calidad no tenga, y callarlo dejaria la columna vacia como
-      // si fuera lo normal.
-      grid.classList.remove("grid-lateral--sin-aside");
+      secciones.classList.remove("oculto");
       secciones.innerHTML = `<p class="aviso aviso--error">${esc(error instanceof Error ? error.message : String(error))}</p>`;
     }
   }
 
-  // Delegado en el contenedor: el innerHTML se rehace en cada calidad y un
-  // listener por tarjeta se perderia.
+  // Delegado: el innerHTML se rehace en cada calidad.
   secciones.addEventListener("click", (evento) => {
-    const tarjeta = (evento.target as HTMLElement).closest<HTMLElement>("[data-seccion]");
-    if (!tarjeta || !calidadActual) return;
-    // Volver a la tabla completa = click en la seccion ya activa. Reemplaza a
-    // la tarjeta "Todos" que encabezaba la lista (el usuario la pidio fuera,
-    // 2026-09-02): ocupaba un lugar en la columna repitiendo un numero que ya
-    // esta arriba, en la tarjeta de la calidad.
-    const clave = tarjeta.dataset.seccion ?? "";
+    const chip = (evento.target as HTMLElement).closest<HTMLElement>("[data-seccion]");
+    if (!chip || !calidadActual) return;
+    const clave = chip.dataset.seccion ?? "";
     seccionActual = clave === "" || clave === seccionActual ? null : clave;
     dibujarSecciones(seccionesDeCalidad);
     dibujarTabla(calidadActual, seccionesDeCalidad.find((s) => s.clave === seccionActual) ?? null);
   });
 
-  filaCalidades.innerHTML = calidades
-    .map(
-      (c) => `<div class="cadena-paso" data-nombre="${esc(c.nombre)}">
-        <div class="cadena-paso__marca">${c.porcentaje_del_catalogo.toFixed(0)}%</div>
-        <div class="cadena-paso__cuerpo">
-          <div class="cadena-paso__titulo">${esc(c.nombre)}</div>
-          <div class="cadena-paso__campos">${c.medicamentos.toLocaleString("es-CO")} medicamentos</div>
-        </div>
-      </div>`,
-    )
-    .join("");
-  filaCalidades.querySelectorAll(".cadena-paso").forEach((el) => {
+  filaCalidades.innerHTML =
+    `<span class="chips__rotulo">Calidad:</span>` +
+    calidades
+      .map((c) => `<button type="button" class="chip" data-nombre="${esc(c.nombre)}" title="${esc(c.explica)}">${esc(c.nombre)}<span class="chip__num">${c.medicamentos.toLocaleString("es-CO")}</span></button>`)
+      .join("");
+  filaCalidades.querySelectorAll(".chip").forEach((el) => {
     el.addEventListener("click", () => {
       const calidad = calidades.find((c) => c.nombre === el.getAttribute("data-nombre"));
       if (calidad) void mostrarCalidad(calidad);
     });
   });
-  if (calidades.length) void mostrarCalidad(calidades[0]);
+  // La tarjeta de la bandeja que trajo hasta aqui elige la calidad inicial;
+  // si no, la primera.
+  const inicial = calidades.find((c) => c.nombre === _calidadPendiente) ?? calidades[0];
+  _calidadPendiente = null;
+  if (inicial) void mostrarCalidad(inicial);
 }
 
 export async function montarAuditExplorar(contenedor: HTMLElement): Promise<void> {
