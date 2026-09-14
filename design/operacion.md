@@ -205,3 +205,24 @@ degrada a cero en silencio. Antes de reportar un arreglo como terminado:
 3. `python scripts\ver_app.py <seccion>` — mirar la pantalla, no solo la
    API. La suite y la API pueden estar en verde con la vista rota (pasó tres
    veces distintas el 2026-09-08, sin que ninguna prueba lo atrapara).
+
+
+## Servidor Linux: servicios, carpeta de listados y login (2026-09-14)
+
+La app se despliega como dos servicios `systemd --user` (`deploy/`), en un solo
+puerto (**8870**) que sirve la API y el frontend compilado. Instalación y
+actualización: sección "Despliegue en Linux" del `README.md`.
+
+| Síntoma | Causa | Mitigación |
+|---|---|---|
+| La API no arranca: `Falta SECRET_KEY` | `~/.config/gemanet_cums/env` no existe o está incompleto | `deploy/instalar.sh` lo crea; revisar `deploy/env.example` |
+| Todo responde **401** / la pantalla vuelve al ingreso | No hay sesión, venció (8 h) o la cookie se firmó con otra `SECRET_KEY` (cambió el env) | Volver a ingresar. Si cambió la clave de firma, todas las sesiones caen: es esperado |
+| **403** "no tiene asignado el módulo CUMS" | El usuario no es admin del ERP y nadie le asignó el módulo | Auditoría de Calidades › Permisos, marcar `CUMS`. Efecto en ≤ 5 min sin re-login |
+| **429** al ingresar | 5 fallos en 15 min (`aud_app_login_intento`) | Esperar; los límites están en el env |
+| `POST /refrescar` → **422** "fuente deshabilitada" | Un cliente viejo pide `fuente=api` | Solo `archivos`; ver `FUENTES_HABILITADAS` |
+| El worker muere en "Leyendo INVIMA -- Vigentes" | La carpeta `INVIMA_LISTADOS_DIR` está vacía o sin los 4 `.xlsx` | Dejar los 4 listados en la carpeta (nombres `ListadoCodigoUnico<Vigentes|Vencidos|Renovacion|OtrosEstados>*.xlsx`) |
+| La página carga pero sin pantalla (JSON en `/`) | No existe `frontend/dist` | `cd frontend && npm run build` y reiniciar la API |
+| Los servicios no arrancan tras reiniciar la máquina | Falta el *linger* del usuario | `sudo loginctl enable-linger $USER` (una vez) |
+
+Comandos: `systemctl --user status|restart gemanet-cums-api gemanet-cums-worker`,
+`journalctl --user -u gemanet-cums-worker -f`.

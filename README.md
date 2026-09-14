@@ -370,3 +370,35 @@ Convenciones del código:
 - **Degradación explícita, nunca suposición silenciosa.** Si falta un archivo auxiliar,
   se dice; no se asume un valor.
 - **Sin decisiones a ciegas.** Lo ambiguo va a cuarentena, no se resuelve adivinando.
+
+
+---
+
+## Despliegue en Linux (servicio, red de la oficina)
+
+Desde el 2026-09-14 la aplicación corre como **servicio en el servidor Linux** y la
+usan otras áreas desde `http://<host>:8870`. Un solo puerto: la API FastAPI sirve
+también el frontend compilado. Diseño completo en
+`.ai/planes/2026-09-14-servidor-login-listados.md`.
+
+| Pieza | Qué es | Cómo |
+|---|---|---|
+| Listados de INVIMA | Los 4 `.xlsx` mensuales, leídos de una **carpeta del servidor** | `INVIMA_LISTADOS_DIR` (defecto `~/gemanet/invima`). Se dejan ahí; la app **no** tiene subida de archivos y la fuente API está deshabilitada (`FUENTES_HABILITADAS`) |
+| Login | Usuario y clave de **GemaNet** (`administrativo.usuario` vía Tableros_BI), calcado del dashboard de Auditoría de Calidades | Entra un administrador del ERP o quien tenga el módulo **`CUMS`**, que se asigna en Auditoría de Calidades › Permisos. 5 intentos fallidos = 15 min de bloqueo |
+| Servicios | `gemanet-cums-worker` (refresco cada 50 min) y `gemanet-cums-api` (puerto 8870), `systemd --user` con reinicio automático | `deploy/instalar.sh` una vez; luego `sudo loginctl enable-linger $USER` para que arranquen al reiniciar la máquina |
+| Configuración | `~/.config/gemanet_cums/env` (modo 600, fuera del repo) | Variables en `deploy/env.example`: DSN, `SECRET_KEY`, carpeta, límites del login |
+
+**Instalar / actualizar:**
+
+```bash
+python3 -m venv --without-pip .venv && pip3 --python .venv/bin/python install -e ".[dev]"
+cd frontend && npm install && npm run build && cd ..          # Node 24 (nvm)
+export GEMANET_DB_DSN='postgresql://...'                      # una vez, para el instalador
+deploy/instalar.sh
+# tras cambios de codigo:
+git pull && cd frontend && npm run build && cd .. && systemctl --user restart gemanet-cums-api gemanet-cums-worker
+journalctl --user -u gemanet-cums-api -f                      # logs
+```
+
+`reinicia_*.ps1` siguen siendo los scripts de desarrollo en Windows; en el servidor
+no aplican.

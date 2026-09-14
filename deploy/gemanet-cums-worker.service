@@ -1,0 +1,14 @@
+[Unit]
+Description=Calidades CUMS - worker de refresco (cada 50 min)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=/home/pijaossaludepsi-tic/Escritorio/CALIDADES CUMS
+EnvironmentFile=%h/.config/gemanet_cums/env
+ExecStart="/home/pijaossaludepsi-tic/Escritorio/CALIDADES CUMS/.venv/bin/python" -m worker.refresco
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

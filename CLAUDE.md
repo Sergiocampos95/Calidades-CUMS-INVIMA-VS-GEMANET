@@ -93,7 +93,12 @@ Dos trampas ya medidas, y por las que el script no se puede "simplificar":
   libre y arranca un **segundo** vite en 5174 mientras el navegador sigue en 5173
   mirando la instancia vieja. Se comprueba con `Get-NetTCPConnection -State Listen`.
 
-Entorno: Python 3.12+, venv en `.venv/`, Windows. Instalacion: `pip install -e ".[dev]"`.
+Entorno: Python 3.12+, venv en `.venv/`. Desarrollo en Windows (scripts `.ps1`);
+**produccion en el servidor Linux** como servicio (`deploy/`, puerto 8870, login con
+usuario de GemaNet, listados de INVIMA en `INVIMA_LISTADOS_DIR`) -- ver la seccion
+"Despliegue en Linux" del `README.md` y `design/operacion.md`. En Linux no hay
+`.ps1`: `systemctl --user restart gemanet-cums-api gemanet-cums-worker` tras
+`npm run build`. Instalacion: `pip install -e ".[dev]"`.
 
 ## Arquitectura
 
