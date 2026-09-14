@@ -16,6 +16,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from backend.app.auth.dependencias import exigir_admin
 from backend.app.dependencies import ruta_estado
 from gemma_cum_loader.ingesta.fuente_invima import (
     FUENTE_DEFECTO,
@@ -83,7 +84,9 @@ def _hay_refresco_en_curso(pasos: list[PasoProgreso], *, worker_activo: bool = T
     return any(p.estado != ESTADO_PASO_HECHO for p in pasos)
 
 
-@router.post("", status_code=status.HTTP_202_ACCEPTED)
+# Solo administradores (pedido del usuario, 2026-09-14): un refresco es una
+# corrida de ~3 min que cambia las cifras de todos; quien consulta no la dispara.
+@router.post("", status_code=status.HTTP_202_ACCEPTED, dependencies=[Depends(exigir_admin)])
 def pedir_refresco(
     fuente: str = FUENTE_DEFECTO,
     ruta_sqlite: Path = Depends(ruta_estado),

@@ -11,6 +11,7 @@ import type {
   Resumen,
   ResumenCargue,
   ResumenMetodos,
+  UsuarioPermiso,
   UsuarioSesion,
 } from "./tipos";
 
@@ -319,4 +320,25 @@ export async function iniciarSesion(usuario: string, clave: string): Promise<Usu
 
 export async function cerrarSesion(): Promise<void> {
   await fetch(urlAbsoluta("/auth/logout"), { method: "POST", credentials: "include", headers: ENCABEZADOS_FETCH });
+}
+
+// ---- Administracion > Permisos (solo admin) --------------------------------
+
+export function obtenerUsuariosPermisos(): Promise<UsuarioPermiso[]> {
+  return obtenerJSON<UsuarioPermiso[]>("/admin/usuarios");
+}
+
+export async function cambiarModuloUsuario(usuario: string, asignado: boolean): Promise<UsuarioPermiso> {
+  const respuesta = await fetch(urlAbsoluta(`/admin/usuarios/${encodeURIComponent(usuario)}/modulo`), {
+    method: "POST",
+    credentials: "include",
+    headers: { ...ENCABEZADOS_FETCH, "Content-Type": "application/json" },
+    body: JSON.stringify({ asignado }),
+  });
+  if (!respuesta.ok) {
+    avisarSesionExpirada(respuesta.status);
+    const cuerpo = await respuesta.json().catch(() => null);
+    throw new ErrorAPI(cuerpo?.detail ?? `Error ${respuesta.status} cambiando el permiso`, respuesta.status);
+  }
+  return (await respuesta.json()) as UsuarioPermiso;
 }

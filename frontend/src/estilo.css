@@ -693,3 +693,11 @@ tbody tr:hover { background: var(--accent-soft); }
 .ingreso__boton { justify-content: center; width: 100%; }
 .usuario { display: flex; align-items: center; gap: 10px; font-size: 0.8rem; color: var(--text-muted); }
 .usuario__nombre { font-weight: 600; color: var(--text); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Administracion > Permisos (vistas/admin.ts) */
+.permisos__barra { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 12px; }
+.permisos__buscar { flex: 1; min-width: 220px; padding: 8px 12px; font-size: 0.85rem; border: 1px solid var(--border); border-radius: var(--radio-sm); background: var(--surface); color: var(--text); font-family: var(--font-body); }
+.permisos__buscar:focus { outline: 2px solid var(--accent); border-color: var(--accent); }
+.permisos__resumen { font-size: 0.8rem; color: var(--text-muted); }
+.permiso { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.8rem; }
+.permiso input { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }

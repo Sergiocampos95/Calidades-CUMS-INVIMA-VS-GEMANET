@@ -255,3 +255,20 @@ def test_la_fuente_api_esta_deshabilitada(tmp_path):
         assert hay_solicitud_pendiente(ruta) is False
     finally:
         app.dependency_overrides.clear()
+
+
+def test_solo_un_administrador_puede_pedir_el_refresco(tmp_path):
+    """Pedido del usuario (2026-09-14): "Actualizar ahora" solo para admins.
+    Un usuario con el modulo CUMS consulta; no dispara una corrida de 3 min."""
+    from backend.app.auth.dependencias import usuario_actual
+    from backend.app.auth.servicio import Sesion
+
+    cliente, ruta = _cliente(tmp_path)
+    app.dependency_overrides[usuario_actual] = lambda: Sesion("jperez", "Juan Perez", admin=False)
+    try:
+        registrar_latido_worker(ruta)
+        r = cliente.post("/refrescar")
+        assert r.status_code == 403
+        assert hay_solicitud_pendiente(ruta) is False
+    finally:
+        app.dependency_overrides.clear()

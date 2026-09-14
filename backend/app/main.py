@@ -32,6 +32,7 @@ from backend.app.auth import config as config_auth
 from backend.app.auth import router as auth
 from backend.app.auth.dependencias import usuario_actual
 from backend.app.routers import (
+    admin,
     auditoria,
     cadena_calidad,
     calidades,
@@ -77,6 +78,8 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
+# Administracion (permisos del modulo CUMS): exige admin en su propio router.
+app.include_router(admin.router)
 # Todo lo demas exige sesion (ver backend/app/auth/dependencias.py).
 protegido = [Depends(usuario_actual)]
 for router in (

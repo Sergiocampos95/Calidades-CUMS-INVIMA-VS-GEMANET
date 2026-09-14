@@ -384,7 +384,7 @@ también el frontend compilado. Diseño completo en
 | Pieza | Qué es | Cómo |
 |---|---|---|
 | Listados de INVIMA | Los 4 `.xlsx` mensuales, leídos de una **carpeta del servidor** | `INVIMA_LISTADOS_DIR` (defecto `~/gemanet/invima`). Se dejan ahí; la app **no** tiene subida de archivos y la fuente API está deshabilitada (`FUENTES_HABILITADAS`) |
-| Login | Usuario y clave de **GemaNet** (`administrativo.usuario` vía Tableros_BI), calcado del dashboard de Auditoría de Calidades | Entra un administrador del ERP o quien tenga el módulo **`CUMS`**, que se asigna en Auditoría de Calidades › Permisos. 5 intentos fallidos = 15 min de bloqueo |
+| Login | Usuario y clave de **GemaNet** (`administrativo.usuario` vía Tableros_BI), calcado del dashboard de Auditoría de Calidades | Entra un administrador del ERP o quien tenga el módulo **`CUMS`**, que un administrador asigna en **Administración › Permisos de acceso** de esta misma app (o en Auditoría de Calidades › Permisos: es la misma tabla). 5 intentos fallidos = 15 min de bloqueo. "Actualizar ahora" es solo para administradores |
 | Servicios | `gemanet-cums-worker` (refresco cada 50 min) y `gemanet-cums-api` (puerto 8870), `systemd --user` con reinicio automático | `deploy/instalar.sh` una vez; luego `sudo loginctl enable-linger $USER` para que arranquen al reiniciar la máquina |
 | Configuración | `~/.config/gemanet_cums/env` (modo 600, fuera del repo) | Variables en `deploy/env.example`: DSN, `SECRET_KEY`, carpeta, límites del login |
 

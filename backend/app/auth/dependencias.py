@@ -72,3 +72,14 @@ def usuario_actual(request: Request, base: BaseAuth = Depends(obtener_base)) -> 
         datos["modulo_verificado_en"] = ahora()
         request.session[CLAVE_SESION] = datos
     return sesion
+
+
+def exigir_admin(sesion: Sesion = Depends(usuario_actual)) -> Sesion:
+    """Solo administradores del ERP (usuario.sw_administrador = 1): pedir un
+    refresco y administrar permisos. Pedido del usuario (2026-09-14)."""
+    if not sesion.admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo un administrador puede hacer esto.",
+        )
+    return sesion

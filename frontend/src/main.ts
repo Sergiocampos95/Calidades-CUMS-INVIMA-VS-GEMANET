@@ -3,6 +3,7 @@ import { montarRefrescoManual } from "./refresco-manual";
 import { montarSalud } from "./salud";
 import { mostrarIngreso, pintarUsuario, sesionActual } from "./sesion";
 import type { UsuarioSesion } from "./tipos";
+import { montarAdminPermisos } from "./vistas/admin";
 import { montarAuditEntender, montarAuditExplorar, montarAuditPriorizar, montarCadenaCalidad } from "./vistas/auditoria";
 import { montarCargueEstructura, montarCargueExcel } from "./vistas/cargue";
 import { montarDecision } from "./vistas/decision";
@@ -57,6 +58,14 @@ const SECCIONES: Seccion[] = [
     ],
   },
 ];
+
+// Solo para administradores del ERP: se agrega a SECCIONES al iniciar la app
+// con una sesion admin (ver iniciarApp). Un usuario normal ni la ve en el
+// riel ni puede llegar a ella: el backend responde 403 de todas formas.
+const SECCION_ADMIN: Seccion = {
+  id: "admin", etiqueta: "Permisos de acceso", icono: "⚙", grupo: "Administración",
+  sub: [{ id: "permisos", etiqueta: "Usuarios con acceso", montar: montarAdminPermisos }],
+};
 
 let seccionActual = SECCIONES[0];
 let subActual = seccionActual.sub[0];
@@ -281,6 +290,10 @@ function iniciarApp(usuario: UsuarioSesion): void {
   // Recargar al salir: limpia de un golpe toda memoria de la sesion (caches
   // de tablas, historial, sondeos) en vez de desmontar vista por vista.
   if (contenedorUsuario) pintarUsuario(contenedorUsuario, usuario, () => window.location.reload());
+  // "Actualizar ahora" y Administracion son solo para admins (pedido del
+  // usuario, 2026-09-14). El backend lo exige tambien (exigir_admin).
+  document.getElementById("boton-actualizar-ahora")?.classList.toggle("oculto", !usuario.admin);
+  if (usuario.admin && !SECCIONES.includes(SECCION_ADMIN)) SECCIONES.push(SECCION_ADMIN);
   if (appIniciada) {
     render();
     return;

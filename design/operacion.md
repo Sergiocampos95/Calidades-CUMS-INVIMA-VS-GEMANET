@@ -217,7 +217,8 @@ actualización: sección "Despliegue en Linux" del `README.md`.
 |---|---|---|
 | La API no arranca: `Falta SECRET_KEY` | `~/.config/gemanet_cums/env` no existe o está incompleto | `deploy/instalar.sh` lo crea; revisar `deploy/env.example` |
 | Todo responde **401** / la pantalla vuelve al ingreso | No hay sesión, venció (8 h) o la cookie se firmó con otra `SECRET_KEY` (cambió el env) | Volver a ingresar. Si cambió la clave de firma, todas las sesiones caen: es esperado |
-| **403** "no tiene asignado el módulo CUMS" | El usuario no es admin del ERP y nadie le asignó el módulo | Auditoría de Calidades › Permisos, marcar `CUMS`. Efecto en ≤ 5 min sin re-login |
+| **403** "no tiene asignado el módulo CUMS" | El usuario no es admin del ERP y nadie le asignó el módulo | Un admin lo marca en Administración › Permisos de acceso (esta app) o en Auditoría de Calidades › Permisos: misma tabla `aud_app_usuario_modulo`. Efecto en ≤ 5 min sin re-login |
+| El botón "Actualizar ahora" no aparece / `POST /refrescar` → **403** | El usuario no es administrador del ERP | Es a propósito (2026-09-14): solo un admin dispara el refresco |
 | **429** al ingresar | 5 fallos en 15 min (`aud_app_login_intento`) | Esperar; los límites están en el env |
 | `POST /refrescar` → **422** "fuente deshabilitada" | Un cliente viejo pide `fuente=api` | Solo `archivos`; ver `FUENTES_HABILITADAS` |
 | El worker muere en "Leyendo INVIMA -- Vigentes" | La carpeta `INVIMA_LISTADOS_DIR` está vacía o sin los 4 `.xlsx` | Dejar los 4 listados en la carpeta (nombres `ListadoCodigoUnico<Vigentes|Vencidos|Renovacion|OtrosEstados>*.xlsx`) |

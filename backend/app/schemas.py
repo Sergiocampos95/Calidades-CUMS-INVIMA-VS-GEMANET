@@ -162,3 +162,19 @@ class UsuarioSesion(BaseModel):
     usuario: str
     nombre: str
     admin: bool
+
+
+class UsuarioPermiso(BaseModel):
+    """Una fila de Administracion > Permisos: un usuario activo del ERP y si
+    tiene el modulo de esta app."""
+
+    usuario: str
+    nombre: str
+    admin: bool
+    tiene_modulo: bool
+    asignado_por: str | None = None
+    fecha_asignacion: str | None = None
+
+
+class CambioPermiso(BaseModel):
+    asignado: bool

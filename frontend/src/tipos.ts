@@ -107,3 +107,13 @@ export interface UsuarioSesion {
   nombre: string;
   admin: boolean;
 }
+
+/** Espejo de backend/app/schemas.py::UsuarioPermiso (Administración › Permisos). */
+export interface UsuarioPermiso {
+  usuario: string;
+  nombre: string;
+  admin: boolean;
+  tiene_modulo: boolean;
+  asignado_por: string | null;
+  fecha_asignacion: string | null;
+}
