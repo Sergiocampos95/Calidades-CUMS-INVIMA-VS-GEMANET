@@ -13,10 +13,26 @@ import type {
   ResumenMetodos,
 } from "./tipos";
 
-// Configurable via .env (VITE_API_BASE_URL) para cuando el backend viva en
-// otro host -- ver frontend/.env.example. Por defecto, el puerto local de
-// `uvicorn backend.app.main:app`.
-const BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://127.0.0.1:8000";
+// En produccion la API sirve tambien el frontend compilado (mismo origen,
+// puerto 8870), asi que la base es RELATIVA. En desarrollo Vite corre en
+// 5173 y `.env.development` apunta al uvicorn local (VITE_API_BASE_URL).
+const BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "";
+
+// Todas las llamadas llevan la cookie de sesion y este encabezado: el backend
+// exige `X-Requested-With` en cada POST como segunda defensa contra CSRF
+// (un formulario de otro sitio no puede ponerlo). Ver backend/app/auth.
+export const ENCABEZADOS_FETCH: Record<string, string> = { "X-Requested-With": "fetch" };
+
+function urlAbsoluta(ruta: string): URL {
+  return new URL(`${BASE_URL}${ruta}`, window.location.origin);
+}
+
+/** Un 401 en cualquier llamada significa "no hay sesion": se avisa a main.ts
+ * (que vuelve a la pantalla de ingreso) y se propaga el error para que la
+ * vista no pinte datos vacios como si fueran reales. */
+function avisarSesionExpirada(status: number): void {
+  if (status === 401) window.dispatchEvent(new CustomEvent("gemanet:sesion-expirada"));
+}
 
 /** Error tipado con el mensaje que ya arma el backend (HTTPException.detail)
  * -- nunca un "algo salio mal" generico cuando el backend ya explico que
@@ -35,7 +51,7 @@ async function obtenerJSON<T>(
   ruta: string,
   parametros?: Record<string, string | number | boolean | undefined>,
 ): Promise<T> {
-  const url = new URL(`${BASE_URL}${ruta}`);
+  const url = urlAbsoluta(ruta);
   for (const [clave, valor] of Object.entries(parametros ?? {})) {
     if (valor !== undefined && valor !== "") {
       url.searchParams.set(clave, String(valor));
@@ -44,9 +60,10 @@ async function obtenerJSON<T>(
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 30000); // 30 segundo timeout
-    const respuesta = await fetch(url, { signal: controller.signal });
+    const respuesta = await fetch(url, { signal: controller.signal, credentials: "include", headers: ENCABEZADOS_FETCH });
     clearTimeout(timeout);
     if (!respuesta.ok) {
+      avisarSesionExpirada(respuesta.status);
       const cuerpo = await respuesta.json().catch(() => null);
       const detalle = cuerpo?.detail ?? `Error ${respuesta.status} consultando ${ruta}`;
       throw new ErrorAPI(detalle, respuesta.status);
@@ -70,15 +87,21 @@ export function obtenerSalud(): Promise<EstadoSalud> {
  * escribe una senal que el worker revisa cada pocos segundos (ver
  * backend/app/routers/refrescar.py). Vuelve de inmediato (202); el avance
  * real se sigue con obtenerProgresoRefresco(). */
-/** De donde lee INVIMA el refresco. "api" es el catalogo de hoy (Socrata);
- * "archivos" son los Excel de listados de `data/`. Dan cifras muy distintas
- * -- ver src/gemma_cum_loader/ingesta/fuente_invima.py -- y por eso se elige
- * explicitamente en vez de tener un unico boton. */
+/** De donde lee INVIMA el refresco. Desde el 2026-09-14 solo "archivos"
+ * (los Excel de la carpeta del servidor, INVIMA_LISTADOS_DIR) esta
+ * habilitada: el backend responde 422 a "api" (ver FUENTES_HABILITADAS en
+ * src/gemma_cum_loader/ingesta/fuente_invima.py). El tipo conserva "api"
+ * para cuando se reactive. */
 export type FuenteRefresco = "api" | "archivos";
 
-export async function pedirRefresco(fuente: FuenteRefresco = "api"): Promise<void> {
-  const respuesta = await fetch(`${BASE_URL}/refrescar?fuente=${fuente}`, { method: "POST" });
+export async function pedirRefresco(fuente: FuenteRefresco = "archivos"): Promise<void> {
+  const respuesta = await fetch(urlAbsoluta(`/refrescar?fuente=${fuente}`), {
+    method: "POST",
+    credentials: "include",
+    headers: ENCABEZADOS_FETCH,
+  });
   if (!respuesta.ok) {
+    avisarSesionExpirada(respuesta.status);
     const cuerpo = await respuesta.json().catch(() => null);
     throw new ErrorAPI(cuerpo?.detail ?? `Error ${respuesta.status} pidiendo el refresco`, respuesta.status);
   }

@@ -16,30 +16,11 @@ import { obtenerProgresoRefresco, pedirRefresco } from "./api";
 import type { FuenteRefresco } from "./api";
 import type { EstadoPaso, PasoProgreso } from "./tipos";
 
-/** Las dos fuentes, tal como se le preguntan al usuario al pulsar el boton.
- *
- * Se PREGUNTA en vez de dejar un selector siempre visible (pedido del
- * usuario, 2026-09-07: "al dar click en el boton de actualizar debe de pedir
- * si mediante listado o JSON") porque las dos fuentes producen cifras muy
- * distintas y el snapshot resultante se ve igual de sano en los dos casos: un
- * selector con memoria hace facil actualizar desde la fuente equivocada sin
- * enterarse. Preguntar cada vez obliga a una decision consciente.
- *
- * `archivos` va primero y es la recomendada: la API todavia no esta
- * soportada de punta a punta -- "Consultar INVIMA" no procesa el JSON de
- * Socrata (ver ingesta/fuente_invima.py::FUENTE_DEFECTO). */
-const OPCIONES_FUENTE: { valor: FuenteRefresco; etiqueta: string; ayuda: string }[] = [
-  {
-    valor: "archivos",
-    etiqueta: "📄 Desde los listados",
-    ayuda: "Los Excel de INVIMA guardados en data/. Es la fuente con la que funciona toda la aplicación, incluida la consulta puntual de un CUM.",
-  },
-  {
-    valor: "api",
-    etiqueta: "🌐 Desde el JSON de INVIMA",
-    ayuda: "La API de Socrata, con el catálogo de hoy. Ojo: la vista “Consultar INVIMA” todavía no procesa este formato, así que puede contradecir a las tarjetas.",
-  },
-];
+// La pregunta "¿con qué fuente?" (listados vs JSON de la API) se retiro el
+// 2026-09-14: la API quedo deshabilitada en el backend (FUENTES_HABILITADAS
+// en ingesta/fuente_invima.py) y los listados se leen de la carpeta del
+// servidor. El boton lanza el refresco directo. El codigo de la pregunta
+// queda en git por si la API vuelve a habilitarse.
 
 const INTERVALO_SONDEO_MS = 1500;
 // El vigilante del worker revisa la solicitud cada 5s (worker/refresco.py)
@@ -127,29 +108,11 @@ export function montarRefrescoManual(
     panel.innerHTML = `<div class="panel-progreso__titulo">Esperando a que el worker tome la solicitud…</div>`;
   }
 
-  /** Pinta la pregunta de fuente dentro del mismo panel de progreso -- no
-   * hace falta un modal nuevo, y ademas queda en el sitio exacto donde
-   * despues van a salir los pasos. */
-  function preguntarFuente(): void {
-    panel.classList.remove("oculto");
-    panel.innerHTML =
-      `<div class="panel-progreso__titulo">¿Con qué fuente querés actualizar?</div>` +
-      `<div class="eleccion-fuente">${OPCIONES_FUENTE.map(
-        (o) =>
-          `<button type="button" class="btn btn--suave eleccion-fuente__opcion" data-fuente="${o.valor}" title="${esc(o.ayuda)}">
-             <strong>${esc(o.etiqueta)}</strong><span>${esc(o.ayuda)}</span>
-           </button>`,
-      ).join("")}</div>` +
-      `<button type="button" class="eleccion-fuente__cancelar" data-fuente="">Cancelar</button>`;
-  }
-
   function lanzar(fuente: FuenteRefresco): void {
     boton.disabled = true;
     vistoEnCurso = false;
     inicioSolicitud = Date.now();
-    panel.innerHTML = `<div class="panel-progreso__titulo">Enviando la solicitud… (${
-      fuente === "archivos" ? "listados en archivo" : "JSON de INVIMA"
-    })</div>`;
+    panel.innerHTML = `<div class="panel-progreso__titulo">Enviando la solicitud… (listados de la carpeta del servidor)</div>`;
 
     pedirRefresco(fuente)
       .then(() => {
@@ -164,22 +127,9 @@ export function montarRefrescoManual(
       });
   }
 
-  // Delegado en el panel: `preguntarFuente` rehace su innerHTML en cada
-  // apertura, asi que un listener por boton se perderia.
-  panel.addEventListener("click", (evento) => {
-    const opcion = (evento.target as HTMLElement).closest<HTMLElement>("[data-fuente]");
-    if (!opcion || sondeo) return;
-    const fuente = opcion.dataset.fuente;
-    if (fuente === "archivos" || fuente === "api") {
-      lanzar(fuente);
-    } else {
-      panel.classList.add("oculto");
-      panel.innerHTML = "";
-    }
-  });
-
   boton.addEventListener("click", () => {
     if (sondeo) return; // ya hay una corrida siendo seguida
-    preguntarFuente();
+    panel.classList.remove("oculto");
+    lanzar("archivos");
   });
 }

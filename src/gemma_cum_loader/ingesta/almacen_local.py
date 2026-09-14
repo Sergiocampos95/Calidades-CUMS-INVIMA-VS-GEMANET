@@ -49,6 +49,12 @@ def carpeta_datos() -> Path:
     return Path(configurada) if configurada else Path.home() / "gemanet" / "invima"
 
 
+# Compatibilidad: solo lo importa `ui_revision/app_streamlit.py`, la UI
+# DESCARTADA que la regla del proyecto prohibe tocar. Se evalua una vez al
+# importar; el codigo vivo usa `carpeta_datos()`.
+CARPETA_DATOS = carpeta_datos()
+
+
 # Un tipo logico -> los patrones que lo reconocen, en orden de preferencia.
 # Los .parquet van primero: son las descargas que hace esta aplicacion, ya
 # normalizadas, y cargan mucho mas rapido que releer un Excel de 12 MB.
