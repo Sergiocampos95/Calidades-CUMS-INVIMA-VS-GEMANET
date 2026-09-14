@@ -149,3 +149,16 @@ class EstadoSalud(BaseModel):
     antiguedad_segundos: float | None
     duracion_ultimo_refresco_segundos: float | None
     detalle_error: str
+
+
+class DatosLogin(BaseModel):
+    usuario: str
+    clave: str
+
+
+class UsuarioSesion(BaseModel):
+    """Lo que la pantalla necesita saber de quien esta adentro."""
+
+    usuario: str
+    nombre: str
+    admin: bool
