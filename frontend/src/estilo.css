@@ -685,7 +685,7 @@ tbody tr:hover { background: var(--accent-soft); }
 .pantalla-ingreso { min-height: 100vh; display: flex; align-items: flex-start; justify-content: center; background: var(--bg); padding-top: 8vh; }
 .ingreso { width: min(380px, 92vw); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radio-md); box-shadow: var(--shadow-md); padding: 28px 30px; text-align: center; display: flex; flex-direction: column; gap: 10px; }
 .ingreso__logo { height: 90px; width: 90px; object-fit: cover; border-radius: 50%; margin: 0 auto 4px; }
-.ingreso__titulo { font-family: var(--font-display); font-size: 1.2rem; font-weight: 800; margin: 0; color: var(--accent-deep); }
+.ingreso__titulo { font-family: var(--font-display); font-size: 1.2rem; font-weight: 800; margin: 0; color: var(--accent); }
 .ingreso__sub { margin: 0 0 8px; font-size: 0.82rem; color: var(--text-muted); }
 .ingreso__campo { width: 100%; padding: 10px 12px; font-size: 0.9rem; border: 1px solid var(--border); border-radius: var(--radio-sm); background: var(--surface); color: var(--text); font-family: var(--font-body); }
 .ingreso__campo:focus { outline: 2px solid var(--accent); border-color: var(--accent); }
