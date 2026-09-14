@@ -18,6 +18,7 @@ Entre varios candidatos gana el mas reciente por fecha de modificacion.
 
 from __future__ import annotations
 
+import fnmatch
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
@@ -133,9 +134,16 @@ def descubrir(
 
     excluidas = EXCLUSIONES.get(tipo, ())
     candidatos: list[Path] = []
+    # fnmatchcase sobre el nombre en minusculas, no `base.glob(patron)`: glob
+    # respeta mayusculas en Linux, y los patrones ("*vigente*.xlsx") estan en
+    # minusculas mientras INVIMA nombra los archivos "ListadoCodigoUnicoVigentes
+    # ...". En Windows daba igual; al correr el worker en Linux (2026-09-14) el
+    # refresco moria en "Leyendo INVIMA -- Vigentes" con los 4 archivos en
+    # `data/`, y 7 pruebas de descubrimiento fallaban por lo mismo.
+    entradas = [p for p in base.iterdir() if p.is_file()]
     for patron in PATRONES.get(tipo, ()):
-        for p in base.glob(patron):
-            if not p.is_file() or _ignorable(p):
+        for p in entradas:
+            if not fnmatch.fnmatchcase(p.name.lower(), patron.lower()) or _ignorable(p):
                 continue
             if extensiones is not None and p.suffix.lower() not in extensiones:
                 continue
