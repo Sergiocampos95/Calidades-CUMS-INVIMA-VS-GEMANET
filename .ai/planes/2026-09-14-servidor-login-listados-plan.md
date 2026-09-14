@@ -29,7 +29,7 @@
 **Interfaces:**
 - Produces: `carpeta_datos() -> Path` (lee `INVIMA_LISTADOS_DIR`, defecto `Path.home() / "gemanet" / "invima"`). `CARPETA_DATOS` desaparece (ningún otro módulo la usaba).
 
-- [ ] **Step 1: Write the failing test** (al final de `tests/test_almacen_local.py`)
+- [x] **Step 1: Write the failing test** (al final de `tests/test_almacen_local.py`)
 
 ```python
 def test_la_carpeta_de_datos_sale_de_la_variable_de_entorno(monkeypatch, tmp_path):
@@ -58,12 +58,12 @@ def test_descubrir_usa_la_carpeta_del_entorno_cuando_no_le_pasan_una(monkeypatch
     assert descubrir("invima_vigentes").nombre == "ListadoCodigoUnicoVigentes2026.xlsx"
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `.venv/bin/python -m pytest -q tests/test_almacen_local.py -k "carpeta or entorno"`
 Expected: FAIL, `ImportError: cannot import name 'carpeta_datos'`.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 En `almacen_local.py` reemplazar el bloque `CARPETA_DATOS = RAIZ / "data"` y su comentario de "LIMITACION CONOCIDA" por:
 
@@ -92,9 +92,9 @@ def carpeta_datos() -> Path:
 
 y en `descubrir`, `descubrir_todo`, `guardar_descarga`, `guardar_subida` cambiar `carpeta if carpeta is not None else CARPETA_DATOS` (y `carpeta or CARPETA_DATOS`) por `carpeta if carpeta is not None else carpeta_datos()`.
 
-- [ ] **Step 4: Run tests** — `.venv/bin/python -m pytest -q tests/test_almacen_local.py tests/test_fuente_invima.py tests/test_worker_tareas.py` → PASS. `grep -rn CARPETA_DATOS src backend worker tests` → sin resultados.
+- [x] **Step 4: Run tests** — `.venv/bin/python -m pytest -q tests/test_almacen_local.py tests/test_fuente_invima.py tests/test_worker_tareas.py` → PASS. `grep -rn CARPETA_DATOS src backend worker tests` → sin resultados.
 
-- [ ] **Step 5: Commit** — `git commit -m "Listados de INVIMA desde una carpeta del servidor (INVIMA_LISTADOS_DIR)"`.
+- [x] **Step 5: Commit** — `git commit -m "Listados de INVIMA desde una carpeta del servidor (INVIMA_LISTADOS_DIR)"`.
 
 ---
 
@@ -107,7 +107,7 @@ y en `descubrir`, `descubrir_todo`, `guardar_descarga`, `guardar_subida` cambiar
 **Interfaces:**
 - Produces: `FUENTES_HABILITADAS: tuple[str, ...] = (FUENTE_ARCHIVOS,)` en `fuente_invima.py`.
 
-- [ ] **Step 1: Failing tests**
+- [x] **Step 1: Failing tests**
 
 `tests/test_backend_refrescar.py`:
 ```python
@@ -133,9 +133,9 @@ def test_solo_los_archivos_estan_habilitados():
     assert set(FUENTES_HABILITADAS) <= set(FUENTES_VALIDAS)
 ```
 
-- [ ] **Step 2: Run** → FAIL (`ImportError` / 202 en vez de 422).
+- [x] **Step 2: Run** → FAIL (`ImportError` / 202 en vez de 422).
 
-- [ ] **Step 3: Implementation**
+- [x] **Step 3: Implementation**
 
 `fuente_invima.py`, tras `FUENTES_VALIDAS`:
 ```python
@@ -168,8 +168,8 @@ FUENTES_HABILITADAS = (FUENTE_ARCHIVOS,)
 ```
 (importar `FUENTES_HABILITADAS` desde `gemma_cum_loader.ingesta.fuente_invima`).
 
-- [ ] **Step 4: Run** `.venv/bin/python -m pytest -q tests/test_backend_refrescar.py tests/test_fuente_invima.py tests/test_worker_tareas.py` → PASS.
-- [ ] **Step 5: Commit** — `"Fuente API de INVIMA deshabilitada: solo listados de la carpeta del servidor"`.
+- [x] **Step 4: Run** `.venv/bin/python -m pytest -q tests/test_backend_refrescar.py tests/test_fuente_invima.py tests/test_worker_tareas.py` → PASS.
+- [x] **Step 5: Commit** — `"Fuente API de INVIMA deshabilitada: solo listados de la carpeta del servidor"`.
 
 ---
 
@@ -182,7 +182,7 @@ FUENTES_HABILITADAS = (FUENTE_ARCHIVOS,)
 **Interfaces:**
 - Produces: `api.ts` exporta `ENCABEZADOS_FETCH`, dispara `window` evento `gemanet:sesion-expirada` ante 401; `BASE_URL` es `""` en producción.
 
-- [ ] **Step 1: `api.ts`**
+- [x] **Step 1: `api.ts`**
 
 Reemplazar la línea de `BASE_URL` y la función `obtenerJSON` / `pedirRefresco`:
 ```ts
@@ -211,7 +211,7 @@ En `obtenerJSON`: `const url = urlAbsoluta(ruta);` y `fetch(url, { signal: contr
 En `pedirRefresco`: `fetch(urlAbsoluta(`/refrescar?fuente=${fuente}`), { method: "POST", credentials: "include", headers: ENCABEZADOS_FETCH })` y el mismo `avisarSesionExpirada`. Cambiar el defecto a `fuente: FuenteRefresco = "archivos"` y el comentario del tipo: la API está deshabilitada en el backend.
 `urlDescarga` sigue devolviendo `${BASE_URL}${ruta}` (con base vacía queda relativo, y el `<a>` manda la cookie solo).
 
-- [ ] **Step 2: `refresco-manual.ts`**
+- [x] **Step 2: `refresco-manual.ts`**
 
 Borrar `OPCIONES_FUENTE`, `preguntarFuente` y el delegado de clic del panel; el botón lanza directo:
 ```ts
@@ -223,13 +223,13 @@ Borrar `OPCIONES_FUENTE`, `preguntarFuente` y el delegado de clic del panel; el 
 ```
 En `lanzar`, el título pasa a `Enviando la solicitud… (listados de la carpeta del servidor)`. Encabezado del archivo: nota de que la elección de fuente se retiró el 2026-09-14 (API deshabilitada, ver `FUENTES_HABILITADAS`); el código de la pregunta queda en git.
 
-- [ ] **Step 3: `frontend/.env.development`** (se versiona; no lleva secretos):
+- [x] **Step 3: `frontend/.env.development`** (se versiona; no lleva secretos):
 ```
 VITE_API_BASE_URL=http://127.0.0.1:8000
 ```
 
-- [ ] **Step 4: Verify** — `cd frontend && npx tsc --noEmit` → sin errores.
-- [ ] **Step 5: Commit** — `"Frontend: actualizar desde la carpeta del servidor sin preguntar; cliente con credenciales y origen relativo"`.
+- [x] **Step 4: Verify** — `cd frontend && npx tsc --noEmit` → sin errores.
+- [x] **Step 5: Commit** — `"Frontend: actualizar desde la carpeta del servidor sin preguntar; cliente con credenciales y origen relativo"`.
 
 ---
 
@@ -245,7 +245,7 @@ VITE_API_BASE_URL=http://127.0.0.1:8000
   - `db.py`: `class BaseAuth` con `consultar(sql, params=()) -> list[dict]` y `ejecutar(sql, params=()) -> int`; `class ErrorBaseAuth(Exception)`.
   - `servicio.py`: `@dataclass(frozen=True) class Sesion(usuario: str, nombre: str, admin: bool)`; `class ErrorLogin(Exception)` con `.status: int` y `.mensaje: str`; `hash_clave(clave: str) -> str`; `autenticar(base, usuario: str, clave: str, origen_ip: str | None) -> Sesion`; `tiene_modulo(base, usuario: str, admin: bool) -> bool`.
 
-- [ ] **Step 1: Failing tests** (`tests/test_auth_servicio.py`)
+- [x] **Step 1: Failing tests** (`tests/test_auth_servicio.py`)
 
 ```python
 """Login calcado de auditoria_calidades/dashboard/app/auth.py: mismas reglas,
@@ -371,9 +371,9 @@ def test_tiene_modulo_consulta_la_asignacion():
     assert tiene_modulo(base, "otro", admin=False) is False
 ```
 
-- [ ] **Step 2: Run** `.venv/bin/python -m pytest -q tests/test_auth_servicio.py` → FAIL (`ModuleNotFoundError: backend.app.auth`).
+- [x] **Step 2: Run** `.venv/bin/python -m pytest -q tests/test_auth_servicio.py` → FAIL (`ModuleNotFoundError: backend.app.auth`).
 
-- [ ] **Step 3: Implementation**
+- [x] **Step 3: Implementation**
 
 `backend/app/auth/__init__.py`:
 ```python
@@ -621,8 +621,8 @@ def autenticar(base, usuario: str, clave: str, origen_ip: str | None) -> Sesion:
     return Sesion(usuario=u["usuario"], nombre=nombre, admin=admin)
 ```
 
-- [ ] **Step 4: Run** → PASS (11 pruebas). `ruff check backend/`.
-- [ ] **Step 5: Commit** — `"Auth: servicio de login calcado del dashboard de Auditoria (hash, bloqueo, vigencia, modulo CUMS)"`.
+- [x] **Step 4: Run** → PASS (11 pruebas). `ruff check backend/`.
+- [x] **Step 5: Commit** — `"Auth: servicio de login calcado del dashboard de Auditoria (hash, bloqueo, vigencia, modulo CUMS)"`.
 
 ---
 
@@ -635,7 +635,7 @@ def autenticar(base, usuario: str, clave: str, origen_ip: str | None) -> Sesion:
 **Interfaces:**
 - Produces: `dependencias.obtener_base() -> BaseAuth` (override en pruebas), `dependencias.usuario_actual(request, base) -> Sesion`, `dependencias.exigir_encabezado_fetch(request)`, `dependencias.ahora()` (reloj inyectable, `time.time`). Router `/auth/login` (POST, JSON `{usuario, clave}` → `UsuarioSesion{usuario,nombre,admin}`), `/auth/logout` (POST → 204), `/auth/sesion` (GET → `UsuarioSesion` o 401). `main.py` exporta `montar_frontend(app, ruta_dist) -> bool` (Task 6).
 
-- [ ] **Step 1: `tests/conftest.py`** (nuevo; pytest lo carga antes que los tests)
+- [x] **Step 1: `tests/conftest.py`** (nuevo; pytest lo carga antes que los tests)
 
 ```python
 """Fixtures compartidas.
@@ -666,7 +666,7 @@ def _sesion_de_prueba():
     app.dependency_overrides.pop(usuario_actual, None)
 ```
 
-- [ ] **Step 2: Failing tests** (`tests/test_backend_auth.py`)
+- [x] **Step 2: Failing tests** (`tests/test_backend_auth.py`)
 
 ```python
 import time
@@ -763,9 +763,9 @@ def test_el_modulo_se_revalida_cada_5_minutos_y_un_usuario_revocado_sale(monkeyp
         _limpiar()
 ```
 
-- [ ] **Step 3: Run** → FAIL (`ModuleNotFoundError: backend.app.auth.dependencias`).
+- [x] **Step 3: Run** → FAIL (`ModuleNotFoundError: backend.app.auth.dependencias`).
 
-- [ ] **Step 4: Implementation**
+- [x] **Step 4: Implementation**
 
 `backend/app/schemas.py`, al final:
 ```python
@@ -1007,8 +1007,8 @@ if not montar_frontend(app, RUTA_DIST):
         return {"servicio": "gemma-cum-loader-api", "salud": "/salud", "docs": "/docs"}
 ```
 
-- [ ] **Step 5: Run** `.venv/bin/python -m pytest -q` (toda la suite: las pruebas viejas del backend siguen pasando gracias al conftest) → PASS; `ruff check`.
-- [ ] **Step 6: Commit** — `"Auth: login por API con cookie de sesion; todas las rutas exigen sesion"`.
+- [x] **Step 5: Run** `.venv/bin/python -m pytest -q` (toda la suite: las pruebas viejas del backend siguen pasando gracias al conftest) → PASS; `ruff check`.
+- [x] **Step 6: Commit** — `"Auth: login por API con cookie de sesion; todas las rutas exigen sesion"`.
 
 ---
 
@@ -1017,7 +1017,7 @@ if not montar_frontend(app, RUTA_DIST):
 **Files:**
 - Test: `tests/test_backend_main.py`
 
-- [ ] **Step 1: Test**
+- [x] **Step 1: Test**
 ```python
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -1038,7 +1038,7 @@ def test_sirve_el_index_del_frontend_compilado(tmp_path):
 def test_sin_dist_no_monta_nada(tmp_path):
     assert montar_frontend(FastAPI(), tmp_path) is False
 ```
-- [ ] **Step 2: Run** → PASS (la función ya existe desde la Task 5). Commit junto con la Task 7.
+- [x] **Step 2: Run** → PASS (la función ya existe desde la Task 5). Commit junto con la Task 7.
 
 ---
 
@@ -1048,7 +1048,7 @@ def test_sin_dist_no_monta_nada(tmp_path):
 - Create: `frontend/src/sesion.ts`, `frontend/public/logo-pijaos.jpg` (copia de `auditoria_calidades/dashboard/app/static/logo-pijaos.jpg`)
 - Modify: `frontend/index.html`, `frontend/src/main.ts`, `frontend/src/estilo.css`, `frontend/src/api.ts` (funciones `sesionActual`, `iniciarSesion`, `cerrarSesion`), `frontend/src/tipos.ts` (`UsuarioSesion`)
 
-- [ ] **Step 1: `tipos.ts`**
+- [x] **Step 1: `tipos.ts`**
 ```ts
 /** Espejo de backend/app/schemas.py::UsuarioSesion. */
 export interface UsuarioSesion {
@@ -1058,7 +1058,7 @@ export interface UsuarioSesion {
 }
 ```
 
-- [ ] **Step 2: `api.ts`** (al final)
+- [x] **Step 2: `api.ts`** (al final)
 ```ts
 /** GET /auth/sesion -- quien esta adentro, o null si no hay sesion (401). */
 export async function sesionActual(): Promise<UsuarioSesion | null> {
@@ -1088,7 +1088,7 @@ export async function cerrarSesion(): Promise<void> {
 ```
 (agregar `UsuarioSesion` al import de tipos; `sesionActual` NO dispara `gemanet:sesion-expirada`: el 401 ahi es la respuesta normal antes de ingresar.)
 
-- [ ] **Step 3: `sesion.ts`**
+- [x] **Step 3: `sesion.ts`**
 ```ts
 /**
  * Pantalla de ingreso y estado de sesion. Calca el ingreso del dashboard de
@@ -1160,9 +1160,9 @@ export function pintarUsuario(contenedor: HTMLElement, usuario: UsuarioSesion, a
 }
 ```
 
-- [ ] **Step 4: `index.html`** — antes de `<div class="app-shell">` insertar `<div class="pantalla-ingreso oculto" id="pantalla-ingreso"></div>`; en la topbar, antes del botón de tema, insertar `<div class="usuario" id="usuario-sesion"></div>`; `<title>Calidades CUMS</title>`.
+- [x] **Step 4: `index.html`** — antes de `<div class="app-shell">` insertar `<div class="pantalla-ingreso oculto" id="pantalla-ingreso"></div>`; en la topbar, antes del botón de tema, insertar `<div class="usuario" id="usuario-sesion"></div>`; `<title>Calidades CUMS</title>`.
 
-- [ ] **Step 5: `main.ts`** — reemplazar las tres últimas líneas (`inicializarSalud(); inicializarRefrescoManual(); render();`) por:
+- [x] **Step 5: `main.ts`** — reemplazar las tres últimas líneas (`inicializarSalud(); inicializarRefrescoManual(); render();`) por:
 ```ts
 // ---- Arranque con sesion (2026-09-14): nada se monta sin login ----------
 import { mostrarIngreso, pintarUsuario, sesionActual } from "./sesion";
@@ -1200,7 +1200,7 @@ void sesionActual().then(
 ```
 (el `import` va arriba con los demás; `reload` tras salir limpia todo estado en memoria en vez de desmontar vista por vista.)
 
-- [ ] **Step 6: `estilo.css`** (al final)
+- [x] **Step 6: `estilo.css`** (al final)
 ```css
 /* Pantalla de ingreso (sesion.ts): misma caja que el dashboard de Auditoria
    de Calidades, con los tokens de esta app. */
@@ -1218,8 +1218,8 @@ void sesionActual().then(
 ```
 (en `[data-theme="dark"]` los tokens ya cambian; el logo va sobre `--surface`.)
 
-- [ ] **Step 7: Verify** — `cd frontend && npx tsc --noEmit && npm run build` → `dist/index.html` existe. `.venv/bin/python -m pytest -q tests/test_backend_main.py` → PASS.
-- [ ] **Step 8: Commit** — `"Frontend: pantalla de ingreso con usuario de GemaNet; la API sirve el compilado"`.
+- [x] **Step 7: Verify** — `cd frontend && npx tsc --noEmit && npm run build` → `dist/index.html` existe. `.venv/bin/python -m pytest -q tests/test_backend_main.py` → PASS.
+- [x] **Step 8: Commit** — `"Frontend: pantalla de ingreso con usuario de GemaNet; la API sirve el compilado"`.
 
 ---
 
@@ -1228,7 +1228,7 @@ void sesionActual().then(
 **Files:**
 - Create: `ddl/01_modulo_cums.sql`
 
-- [ ] **Step 1: Archivo**
+- [x] **Step 1: Archivo**
 ```sql
 -- Modulo de acceso de esta app en el modelo de permisos compartido con el
 -- dashboard de Auditoria de Calidades (auditoria_calidades/ddl/07_acceso_modulos.sql).
@@ -1245,8 +1245,8 @@ VALUES (
 )
 ON CONFLICT (id_modulo) DO NOTHING;
 ```
-- [ ] **Step 2: Ejecutar** con el DSN del entorno; verificar `SELECT id_modulo, sw_activo FROM administrativo.aud_app_modulo` → aparece `CUMS`.
-- [ ] **Step 3: Commit** — `"DDL: modulo CUMS en aud_app_modulo"`.
+- [x] **Step 2: Ejecutar** con el DSN del entorno; verificar `SELECT id_modulo, sw_activo FROM administrativo.aud_app_modulo` → aparece `CUMS`.
+- [x] **Step 3: Commit** — `"DDL: modulo CUMS en aud_app_modulo"`.
 
 ---
 
@@ -1256,7 +1256,7 @@ ON CONFLICT (id_modulo) DO NOTHING;
 - Create: `deploy/gemanet-cums-worker.service`, `deploy/gemanet-cums-api.service`, `deploy/env.example`, `deploy/instalar.sh`
 - Modify: `README.md` (nueva sección "Despliegue en Linux"), `design/operacion.md` (arranque/reinicio en el servidor), `CLAUDE.md` (comandos Linux junto a los .ps1), `.gitignore` (nada nuevo: `frontend/dist/` ya está).
 
-- [ ] **Step 1: Unidades** (`%h` = home del usuario; la ruta del repo tiene espacio, por eso va entre comillas)
+- [x] **Step 1: Unidades** (`%h` = home del usuario; la ruta del repo tiene espacio, por eso va entre comillas)
 
 `deploy/gemanet-cums-api.service`:
 ```ini
@@ -1329,16 +1329,16 @@ if [[ "$(loginctl show-user "$USER" -p Linger --value 2>/dev/null)" != "yes" ]];
 fi
 ```
 
-- [ ] **Step 2: Docs** — README: sección "Despliegue en Linux (servicio)": requisitos (venv, Node vía nvm para `npm run build`), `deploy/instalar.sh`, carpeta de listados, login y módulo `CUMS`, cómo actualizar (`git pull`, `npm run build`, `systemctl --user restart gemanet-cums-api gemanet-cums-worker`). `design/operacion.md`: mismo resumen + tabla síntoma→causa ("401 en todo" = sin `SECRET_KEY`/sesión vencida; "422 fuente deshabilitada"; "worker muere en Leyendo INVIMA" = carpeta vacía). `CLAUDE.md` comandos: los equivalentes Linux.
+- [x] **Step 2: Docs** — README: sección "Despliegue en Linux (servicio)": requisitos (venv, Node vía nvm para `npm run build`), `deploy/instalar.sh`, carpeta de listados, login y módulo `CUMS`, cómo actualizar (`git pull`, `npm run build`, `systemctl --user restart gemanet-cums-api gemanet-cums-worker`). `design/operacion.md`: mismo resumen + tabla síntoma→causa ("401 en todo" = sin `SECRET_KEY`/sesión vencida; "422 fuente deshabilitada"; "worker muere en Leyendo INVIMA" = carpeta vacía). `CLAUDE.md` comandos: los equivalentes Linux.
 
-- [ ] **Step 3: Ejecutar `deploy/instalar.sh`** con el DSN exportado; `systemctl --user status` ambos `active (running)`; `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8870/` → 200 (index.html); `curl -s http://127.0.0.1:8870/salud` → 401.
-- [ ] **Step 4: Commit** — `"Despliegue: unidades systemd --user, instalador y documentacion"`.
+- [x] **Step 3: Ejecutar `deploy/instalar.sh`** con el DSN exportado; `systemctl --user status` ambos `active (running)`; `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8870/` → 200 (index.html); `curl -s http://127.0.0.1:8870/salud` → 401.
+- [x] **Step 4: Commit** — `"Despliegue: unidades systemd --user, instalador y documentacion"`.
 
 ---
 
 ### Task 10: Verificación en vivo y cierre
 
-- [ ] Copiar los 4 listados a `~/gemanet/invima`; `systemctl --user restart gemanet-cums-worker`; esperar `GET /refrescar/progreso` (con sesión) hasta 10 pasos `hecho`; `/salud` → `ok`.
-- [ ] Con el navegador integrado: abrir `http://127.0.0.1:8870`, captura de la pantalla de ingreso; login incorrecto muestra "Usuario o clave incorrectos."; (si el usuario facilita un usuario de prueba con módulo, captura de una vista con el nombre en la topbar y "Salir").
-- [ ] `.venv/bin/python -m pytest -q` → todo verde; `ruff`; `tsc`; `npm run build`.
-- [ ] `/bitacora`: entrada en `.ai/bitacora.jsonl`, `design/operacion.md` alineado; commit final. No fusionar ni subir sin confirmación del usuario.
+- [x] Copiar los 4 listados a `~/gemanet/invima`; `systemctl --user restart gemanet-cums-worker`; esperar `GET /refrescar/progreso` (con sesión) hasta 10 pasos `hecho`; `/salud` → `ok`.
+- [x] Con el navegador integrado: abrir `http://127.0.0.1:8870`, captura de la pantalla de ingreso; login incorrecto muestra "Usuario o clave incorrectos."; (si el usuario facilita un usuario de prueba con módulo, captura de una vista con el nombre en la topbar y "Salir").
+- [x] `.venv/bin/python -m pytest -q` → todo verde; `ruff`; `tsc`; `npm run build`.
+- [x] `/bitacora`: entrada en `.ai/bitacora.jsonl`, `design/operacion.md` alineado; commit final. No fusionar ni subir sin confirmación del usuario.

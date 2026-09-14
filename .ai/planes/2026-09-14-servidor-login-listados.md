@@ -1,7 +1,7 @@
 # Diseño — Servicio persistente, listados desde una carpeta del servidor y login con usuarios de GemaNet
 
 - **Fecha:** 2026-09-14 · **Autor:** Claude Code (a petición del coordinador TIC)
-- **Estado:** aprobado por el usuario en conversación (opciones A / carpeta del servidor con API deshabilitada / A / A); en implementación.
+- **Estado:** implementado y verificado en el servidor el 2026-09-14 (rama `feature/servidor-login-listados`).
 - **Rama:** `feature/servidor-login-listados` (sale de `main` ya fusionado con `fix/calidad-descripcion-criterios`).
 - **Petición literal:** (1) que el proyecto persista como Auditoría de Calidades, sin arrancarlo a mano; (2) quitar la posibilidad de "subir" el archivo de INVIMA: se consume directo de una ruta del servidor; (3) login que reutilice la tabla `usuario` de Tableros_BI, exactamente como lo hace Auditoría de Calidades.
 
