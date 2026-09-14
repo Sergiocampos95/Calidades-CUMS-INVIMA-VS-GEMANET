@@ -71,3 +71,16 @@ def test_la_fuente_archivos_devuelve_un_lector_invocable():
 def test_una_fuente_desconocida_no_se_interpreta_como_la_api():
     with pytest.raises(ValueError, match="desconocida"):
         lector_para_fuente("excel_viejo")
+
+
+def test_solo_los_archivos_estan_habilitados():
+    """Decision del usuario (2026-09-14): la API de Socrata queda deshabilitada,
+    no borrada -- reactivarla es volver a listarla en FUENTES_HABILITADAS."""
+    from gemma_cum_loader.ingesta.fuente_invima import (
+        FUENTE_ARCHIVOS,
+        FUENTES_HABILITADAS,
+        FUENTES_VALIDAS,
+    )
+
+    assert FUENTES_HABILITADAS == (FUENTE_ARCHIVOS,)
+    assert set(FUENTES_HABILITADAS) <= set(FUENTES_VALIDAS)

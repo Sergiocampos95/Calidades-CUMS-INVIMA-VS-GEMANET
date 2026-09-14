@@ -17,7 +17,11 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from backend.app.dependencies import ruta_estado
-from gemma_cum_loader.ingesta.fuente_invima import FUENTE_DEFECTO, FUENTES_VALIDAS
+from gemma_cum_loader.ingesta.fuente_invima import (
+    FUENTE_DEFECTO,
+    FUENTES_HABILITADAS,
+    FUENTES_VALIDAS,
+)
 from worker.estado import (
     ESTADO_PASO_ERROR,
     ESTADO_PASO_HECHO,
@@ -99,6 +103,16 @@ def pedir_refresco(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Fuente '{fuente}' desconocida. Validas: {', '.join(FUENTES_VALIDAS)}.",
+        )
+    # Deshabilitada != desconocida: la API existe pero no se ofrece (decision
+    # del usuario, 2026-09-14). Ver FUENTES_HABILITADAS.
+    if fuente not in FUENTES_HABILITADAS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"La fuente '{fuente}' esta deshabilitada. Los listados de INVIMA se leen "
+                "de la carpeta del servidor (INVIMA_LISTADOS_DIR)."
+            ),
         )
     # Un solo `worker_vivo`, compartido por los dos chequeos de abajo: si se
     # consultara dos veces podrian dar distinto (el latido vence entre una y

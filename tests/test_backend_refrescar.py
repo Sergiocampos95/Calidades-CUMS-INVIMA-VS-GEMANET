@@ -241,3 +241,17 @@ def test_un_worker_muerto_a_mitad_de_corrida_no_bloquea_el_boton(tmp_path):
         assert cliente.post("/refrescar").status_code == 503
     finally:
         app.dependency_overrides.clear()
+
+
+def test_la_fuente_api_esta_deshabilitada(tmp_path):
+    """Decision del usuario (2026-09-14): los listados se leen de la carpeta del
+    servidor; la API queda en el codigo para cuando vuelva a servir."""
+    cliente, ruta = _cliente(tmp_path)
+    try:
+        registrar_latido_worker(ruta)
+        r = cliente.post("/refrescar?fuente=api")
+        assert r.status_code == 422
+        assert "deshabilitada" in r.json()["detail"]
+        assert hay_solicitud_pendiente(ruta) is False
+    finally:
+        app.dependency_overrides.clear()

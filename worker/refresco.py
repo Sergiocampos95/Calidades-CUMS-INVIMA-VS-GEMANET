@@ -36,7 +36,11 @@ from datetime import datetime
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 
-from gemma_cum_loader.ingesta.fuente_invima import FUENTE_DEFECTO, lector_para_fuente
+from gemma_cum_loader.ingesta.fuente_invima import (
+    FUENTE_DEFECTO,
+    FUENTES_HABILITADAS,
+    lector_para_fuente,
+)
 from worker.estado import (
     ESTADO_ERROR,
     fuente_refresco,
@@ -71,6 +75,11 @@ def _ciclo() -> None:
     # minutos se las cambie por las de la API sin avisar seria justo el
     # cambio silencioso que hace imposible sostener una explicacion.
     fuente = fuente_refresco(defecto=FUENTE_DEFECTO)
+    if fuente not in FUENTES_HABILITADAS:
+        # Una preferencia guardada antes de deshabilitar la API no puede
+        # resucitarla por la puerta de atras.
+        _log.warning("La fuente '%s' guardada esta deshabilitada; se usa '%s'.", fuente, FUENTE_DEFECTO)
+        fuente = FUENTE_DEFECTO
     _log.info("Arrancando refresco (fuente de INVIMA: %s)...", fuente)
     evento = ejecutar_refresco(lector_invima_api=lector_para_fuente(fuente))
     if evento.estado == ESTADO_ERROR:

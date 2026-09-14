@@ -53,6 +53,14 @@ FUENTE_API = "api"
 FUENTE_ARCHIVOS = "archivos"
 FUENTES_VALIDAS = (FUENTE_API, FUENTE_ARCHIVOS)
 
+# Las fuentes que se pueden PEDIR hoy. La API (Socrata) queda deshabilitada
+# -- decision del usuario (2026-09-14): la app corre como servicio y lee los
+# listados de una carpeta del servidor (ver almacen_local.carpeta_datos);
+# "Consultar INVIMA" sigue sin procesar el JSON, asi que ofrecerla solo
+# produciria snapshots que esa vista contradice. Se conserva el codigo y
+# FUENTES_VALIDAS: reactivarla es volver a listarla aqui.
+FUENTES_HABILITADAS = (FUENTE_ARCHIVOS,)
+
 # La PRIMARIA son los archivos -- decision del usuario (2026-09-07): "por
 # preferencia vamos a usar las lecturas de los archivos Excel primario, ya que
 # para usar el [JSON] tendriamos que adaptar el apartado de Consulta INVIMA
