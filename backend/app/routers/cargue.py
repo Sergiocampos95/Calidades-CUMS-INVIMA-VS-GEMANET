@@ -18,12 +18,15 @@ from worker.almacen_snapshots import leer_tabla
 
 router = APIRouter(prefix="/cargue", tags=["cargue"])
 
+# Se lee en pantalla: sin "worker", "snapshot" ni "malla" (pedido del usuario,
+# 2026-09-14). "Estructura Cargue Medicamentos" es el nombre real del archivo
+# del SOP, ese si se conserva porque es como lo conoce quien lo tiene que dejar.
 _MENSAJE_SIN_MALLA = (
-    "El worker no encontro una Estructura Cargue Medicamentos en data/ en el ultimo "
-    "refresco (o el snapshot todavia no corrio). Sin esa malla de referencia no se "
-    "puede derivar POS, Modelo de Servicio, edad, copagos ni el resto de reglas de "
-    "negocio -- no se inventa un valor por defecto. Consulta /salud para el estado "
-    "del ultimo refresco."
+    "En la última actualización no se encontró el archivo «Estructura Cargue "
+    "Medicamentos» en la carpeta de datos del servidor. Sin ese archivo de referencia "
+    "no se puede derivar POS, Modelo de Servicio, edad ni copagos, y no se inventa un "
+    "valor por defecto. Pida a TIC que deje el archivo en la carpeta y vuelva a "
+    "actualizar."
 )
 
 

@@ -54,8 +54,8 @@ const FORMATOS_DESCARGA: { formato: FormatoDescarga; etiqueta: string; titulo: s
   // Los dos van separados por PIPE (backend/app/exportar.py:
   // DELIMITADOR_EXPORTACION). El tooltip lo dice porque el importador de Excel
   // pregunta por el separador y equivocarlo deja todo en una sola columna.
-  { formato: "csv", etiqueta: "⤓ CSV", titulo: "Descargar en CSV separado por pipe ( | )" },
-  { formato: "txt", etiqueta: "⤓ TXT", titulo: "Descargar en texto separado por pipe ( | )" },
+  { formato: "csv", etiqueta: "⤓ CSV", titulo: "Descargar en CSV separado por barra vertical ( | )" },
+  { formato: "txt", etiqueta: "⤓ TXT", titulo: "Descargar en texto separado por barra vertical ( | )" },
 ];
 
 export interface OpcionesTablaFiltrable {

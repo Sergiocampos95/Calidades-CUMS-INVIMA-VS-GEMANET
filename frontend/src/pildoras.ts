@@ -252,7 +252,76 @@ export const ETIQUETAS_TRIO_CAMPOS_COMPARADOS: Record<string, string> = Object.f
   ]),
 );
 
-// Resultado acumulado de un eslabon H1..H6 (cadena_calidad.py) -- "pasa"
+// Rotulos de las columnas crudas que aparecen en mas de una tabla. El
+// encabezado en UPPER_SNAKE ("CAMPOS_CON_DIFERENCIA", "TIPO_ROL") es el nombre
+// de la columna en el snapshot, no una etiqueta: quien no es tecnico lo lee
+// como jerga (pedido del usuario, 2026-09-14). Cada vista lo extiende con lo
+// suyo; el nombre real de la columna sigue en el `title` del encabezado (ver
+// tabla.ts), que es lo que hace falta para depurar o para buscarla en el Excel.
+export const ETIQUETAS_COLUMNA_COMUNES: Record<string, string> = {
+  CODIGO_INTERNO: "Código (CUM)",
+  DESCRIPCION: "Descripción",
+  ...ETIQUETA_CAMPO_COMPARADO,
+  // SIMILITUD_<CAMPO>: el porcentaje de parecido entre los dos lados, que
+  // acompana al veredicto en la cadena H1-H6 (una tilde da 98 %; dos
+  // medicamentos distintos, 30 %).
+  ...Object.fromEntries(
+    Object.entries(ETIQUETA_CAMPO_COMPARADO).map(([campo, etiqueta]) => [
+      `SIMILITUD_${campo}`,
+      `Parecido: ${etiqueta.toLowerCase()} (%)`,
+    ]),
+  ),
+  ESTADO_COHERENCIA: "Estado frente a INVIMA",
+  NOVEDAD_VIGENCIA_INVIMA: "Vigencia frente a INVIMA",
+  DETALLE_VIGENCIA_INVIMA: "Detalle de la vigencia",
+  CAMPOS_CON_DIFERENCIA: "Campos distintos a INVIMA",
+  DETALLE_DIFERENCIAS: "Ver diferencias",
+  PORCENTAJE_CALIDAD: "Calidad (%)",
+  CONSEJO: "Qué hacer",
+  CLASIFICADO: "Clasificado (Gemma Net)",
+  TIPO_SIN_CORRESPONDENCIA: "Por qué no cruza con INVIMA",
+  FECHA_VENCIMIENTO_INVIMA: "Fecha vencimiento (INVIMA)",
+  CONSULTA_VERIFICACION_SQL: "Consulta SQL de verificación",
+  // Candidatos (lado INVIMA).
+  EXPEDIENTE: "Expediente",
+  CONSECUTIVO: "Consecutivo",
+  PRODUCTO: "Producto (INVIMA)",
+  TIPO_ROL: "Rol del titular",
+  ESTADO_CUM: "Estado CUM (INVIMA)",
+  ESTADO_REGISTRO: "Estado del registro (INVIMA)",
+  CLASIFICACION_CREACION: "Por qué no es candidato",
+  motivo: "Motivo",
+  // Cargue.
+  ESTADO: "Estado",
+  CAMPOS_CON_ERROR: "Campos con error",
+  PORCENTAJE_COMPLETITUD: "Completitud (%)",
+  COMO_VERIFICAR: "Cómo verificar",
+  POS: "POS",
+  CODIGO_NIVEL_SERVICIO: "Nivel de servicio",
+};
+
+/** "CONCENTRACION, DESCRIPCION" -> "Concentración, Descripción". Solo cambia
+ * como se LEE la celda: el valor crudo sigue en el snapshot, en el filtro por
+ * columna y en las descargas. */
+export function etiquetaCamposConDiferencia(valor: unknown): string {
+  return String(valor ?? "")
+    .split(",")
+    .map((t) => t.trim())
+    .filter((t) => t !== "")
+    .map((t) => ETIQUETA_CAMPO_COMPARADO[t] ?? t)
+    .join(", ");
+}
+
+// RESPONSABLE_DISCREPANCIA viene como sigla (calidades.py). "GyC" no se
+// entiende fuera de TIC; "TIC" si es como se nombra al area.
+const ETIQUETA_RESPONSABLE: Record<string, string> = { GyC: "Garantía y Calidad", TIC: "TIC" };
+
+export function etiquetaResponsable(valor: unknown): string {
+  const v = String(valor ?? "").trim();
+  return ETIQUETA_RESPONSABLE[v] ?? v;
+}
+
+// Resultado acumulado de una tabla H1..H6 (cadena_calidad.py) -- "pasa"
 // quiere decir que la fila supero esta condicion Y todas las anteriores de
 // la cadena (interseccion, no solo la de este paso).
 export function pildoraEstadoCadena(valor: unknown): string {

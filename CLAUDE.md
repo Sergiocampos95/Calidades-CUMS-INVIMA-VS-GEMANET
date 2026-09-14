@@ -229,6 +229,20 @@ DESCARTADO: no se toca ni se le agregan funcionalidades (regla dura, ver
   distintas siendo la misma. Las descargas se arman en el backend y siguen
   llevando la fecha como fecha, no como texto. Si el valor no es reconocible
   se muestra el crudo: nunca se adivina.
+- **La pantalla habla como el auditor, no como el proceso** (pedido del
+  usuario, 2026-09-14, al ver "fuzzy" en una vista). Ningun texto visible
+  lleva nombres crudos de columna (`CAMPOS_CON_DIFERENCIA`, `TIPO_ROL`),
+  vocabulario interno (worker, snapshot, fuzzy, eslabon, universo, malla,
+  pipe) ni notas de equipo ("pedido de X", "pendiente de confirmar con
+  negocio"). Los rotulos comunes de columna viven en
+  `ETIQUETAS_COLUMNA_COMUNES` (`pildoras.ts`) y TODA `TablaFiltrable` los
+  pasa en `etiquetasColumna`; un valor codificado que se lee (siglas como
+  `GyC`, listas como `CONCENTRACION, DESCRIPCION`) se traduce al pintar y el
+  crudo sigue en filtros y descargas. Aplica igual a los `detail` de los 503
+  del backend y a los nombres de los pasos del refresco: llegan a la
+  pantalla tal cual. El criterio para un concepto tecnico es binario: si le
+  sirve al auditor se renombra; si no, se quita (asi salio "Como se
+  resolvio", metodo exacto/alias/fuzzy de traduccion de marca y unidad).
 - Navegacion: todo salto pasa por `navegarA` en `main.ts`, que alimenta el
   historial del boton "Volver" (y Alt+Flecha). Una vista pide navegar con el
   evento `gemma:navegar`, sin importar `main.ts` -- que ya importa las vistas,

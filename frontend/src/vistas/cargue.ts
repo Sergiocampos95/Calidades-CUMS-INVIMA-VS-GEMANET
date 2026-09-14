@@ -7,11 +7,12 @@ import {
   obtenerValoresColumna,
 } from "../api";
 import { botonDescarga, cabeceraConDescarga } from "../descargas";
+import { ETIQUETAS_COLUMNA_COMUNES } from "../pildoras";
 import { renderTarjetas } from "../tarjetas";
 import { TablaFiltrable } from "../tabla";
 
 function avisoSinMalla(mensaje: string): string {
-  return `<div class="placeholder"><strong>Sin Estructura Cargue Medicamentos</strong><span>${mensaje}</span></div>`;
+  return `<div class="placeholder"><strong>Falta el archivo «Estructura Cargue Medicamentos»</strong><span>${mensaje}</span></div>`;
 }
 
 export async function montarCargueEstructura(contenedor: HTMLElement): Promise<void> {
@@ -53,7 +54,7 @@ export async function montarCargueEstructura(contenedor: HTMLElement): Promise<v
     const advertencias = await obtenerAdvertenciasMalla();
     if (advertencias.length) {
       advertenciasEl.className = "panel";
-      advertenciasEl.innerHTML = `<div class="panel__cab"><div class="panel__titulo">⚠ ${advertencias.length} campo(s) con inconsistencias en la malla de referencia</div></div><div class="panel__cuerpo">${advertencias
+      advertenciasEl.innerHTML = `<div class="panel__cab"><div class="panel__titulo">⚠ ${advertencias.length} campo(s) con inconsistencias en el archivo de referencia (Estructura Cargue Medicamentos)</div></div><div class="panel__cuerpo">${advertencias
         .map((a) => `<p style="font-size:0.82rem;margin:4px 0"><strong>${a.campo}</strong>: ${a.advertencia}</p>`)
         .join("")}</div>`;
     }
@@ -65,6 +66,7 @@ export async function montarCargueEstructura(contenedor: HTMLElement): Promise<v
   contenedor.appendChild(seccionTabla);
   new TablaFiltrable(seccionTabla, {
     columnas: ["CODIGO_INTERNO", "DESCRIPCION", "EXPEDIENTE", "ESTADO", "CAMPOS_CON_ERROR", "PORCENTAJE_COMPLETITUD", "COMO_VERIFICAR"],
+    etiquetasColumna: ETIQUETAS_COLUMNA_COMUNES,
     cargarPagina: (p) => obtenerEstructuraCargue(p),
     obtenerValoresColumna: (columna) => obtenerValoresColumna("/cargue/estructura/valores", columna),
   });
@@ -97,6 +99,7 @@ export async function montarCargueExcel(contenedor: HTMLElement): Promise<void> 
   contenedor.appendChild(seccionTabla);
   new TablaFiltrable(seccionTabla, {
     columnas: ["CODIGO_INTERNO", "DESCRIPCION", "POS", "FORMA_FARMACEUTICA", "CLASIFICADO", "CODIGO_NIVEL_SERVICIO"],
+    etiquetasColumna: ETIQUETAS_COLUMNA_COMUNES,
     cargarPagina: (p) => obtenerCargueFinal(p),
     obtenerValoresColumna: (columna) => obtenerValoresColumna("/cargue/final/valores", columna),
   });

@@ -71,9 +71,9 @@ NOMBRES_PASOS_REFRESCO = (
     "Leyendo INVIMA -- Renovacion",
     "Cruzando candidatos contra Gemma Net",
     "Auditando coherencia contra INVIMA",
-    "Clasificando universo INVIMA",
-    "Derivando reglas de cargue",
-    "Guardando snapshot",
+    "Clasificando los registros de INVIMA",
+    "Aplicando las reglas de cargue",
+    "Guardando los resultados",
 )
 
 
@@ -365,10 +365,10 @@ def ejecutar_refresco(
         # pero descarta las filas que no son candidato; se recalcula aca
         # sobre el mismo df_invima ya en memoria, sin releer nada.
         universo = _paso(
-            "Clasificando universo INVIMA", clasificador, df_invima, ruta_estado=ruta_estado
+            "Clasificando los registros de INVIMA", clasificador, df_invima, ruta_estado=ruta_estado
         )
         tablas_cargue = _paso(
-            "Derivando reglas de cargue",
+            "Aplicando las reglas de cargue",
             _tablas_cargue,
             candidatos,
             localizador_malla,
@@ -384,7 +384,7 @@ def ejecutar_refresco(
             df_invima, df_invima_vencidos, df_invima_otros_estados, df_invima_renovacion
         )
         _paso(
-            "Guardando snapshot",
+            "Guardando los resultados",
             escribir_snapshot,
             {
                 "candidatos": candidatos,

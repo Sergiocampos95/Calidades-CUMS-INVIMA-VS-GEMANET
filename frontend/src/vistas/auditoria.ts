@@ -15,10 +15,14 @@ import { cabeceraConDescarga } from "../descargas";
 import {
   AYUDA_PRIORIDAD,
   ESTADOS_COHERENCIA,
+  ETIQUETAS_COLUMNA_COMUNES,
   ETIQUETAS_TRIO_CAMPOS_COMPARADOS,
+  ETIQUETA_CAMPO_COMPARADO,
   PRIORIDADES,
+  etiquetaCamposConDiferencia,
   etiquetaEstadoCoherencia,
   etiquetaPrioridad,
+  etiquetaResponsable,
   pildoraEstadoCadena,
   pildoraEstadoCoherencia,
   pildoraEstadoInvimaUnificado,
@@ -35,7 +39,10 @@ import type { CalidadResumen, EslabonResumen, SeccionCalidad } from "../tipos";
 // ACTIVO (Gemma Net) al lado de ESTADO_LISTADO_INVIMA -- comparar los dos
 // estados de un vistazo, pedido del usuario: mostrar el estado local junto
 // al de INVIMA en la misma fila, no en pantallas separadas.
-const ETIQUETAS_ACTIVO_VS_INVIMA = {
+const ETIQUETAS_ACTIVO_VS_INVIMA: Record<string, string> = {
+  // Lo comun a todas las tablas (codigo, descripcion, campos comparados...)
+  // y encima lo propio de auditoria.
+  ...ETIQUETAS_COLUMNA_COMUNES,
   ACTIVO: "Activo Gemma Net",
   PRIORIDAD_ACCION: "Prioridad",
   // ESTADO_CUM_INVIMA es la vigencia REAL que declara INVIMA; el listado solo
@@ -47,8 +54,8 @@ const ETIQUETAS_ACTIVO_VS_INVIMA = {
   // en el 91 % de las filas. La compone el backend en calidades.py, para que
   // el filtro y el Excel de descarga vean lo mismo que la pantalla.
   ESTADO_INVIMA: "Estado en INVIMA",
-  ESTADO_INVIMA_DETALLE: "Estado Registro INVIMA",
-  ESTADO_LISTADO_INVIMA: "INVIMA Listado",
+  ESTADO_INVIMA_DETALLE: "Estado del registro (INVIMA)",
+  ESTADO_LISTADO_INVIMA: "Listado de INVIMA",
   RESPONSABLE_DISCREPANCIA: "Responsable",
   // Las 4 fechas de la calidad "Fechas con problema" van contiguas y
   // rotuladas por fuente -- sin esto la cabecera decia FECHA_ACTIVO_IN... y
@@ -66,6 +73,7 @@ const FORMATEADOR_ESTADO = (columna: string, valor: unknown) => {
   if (columna === "ESTADO_LISTADO_INVIMA") return pildoraEstadoListadoInvima(valor);
   if (columna === "ESTADO_INVIMA") return pildoraEstadoInvimaUnificado(valor);
   if (columna === "PRIORIDAD_ACCION") return pildoraPrioridad(valor);
+  if (columna === "CAMPOS_CON_DIFERENCIA" && valor) return esc(etiquetaCamposConDiferencia(valor));
   return null;
 };
 
@@ -86,6 +94,10 @@ function formatearCeldaCalidad(columna: string, valor: unknown, fila: Record<str
   if (columna === "ESTADO_LISTADO_INVIMA") return pildoraEstadoListadoInvima(valor);
   if (columna === "NOVEDAD_VIGENCIA_INVIMA") return pildoraNovedadVigencia(valor);
   if (columna.endsWith("_VALIDACION")) return pildoraValidacion(valor);
+  // Nombres de columna y siglas, traducidos solo para leer: el crudo sigue en
+  // el filtro de la columna y en el Excel.
+  if (columna === "CAMPOS_CON_DIFERENCIA") return esc(etiquetaCamposConDiferencia(valor));
+  if (columna === "RESPONSABLE_DISCREPANCIA") return esc(etiquetaResponsable(valor));
   if (columna === "CONSULTA_VERIFICACION_SQL") {
     const texto = String(valor);
     return `<span class="celda-sql"><button type="button" class="btn-copiar-sql" data-sql="${encodeURIComponent(texto)}" title="Copiar la consulta">📋</button><code>${esc(texto)}</code></span>`;
@@ -488,11 +500,15 @@ export async function montarAuditExplorar(contenedor: HTMLElement): Promise<void
 }
 
 export async function montarCadenaCalidad(contenedor: HTMLElement): Promise<void> {
+  // Sin notas internas ("pedido de X", "pendiente de confirmar con negocio")
+  // ni jerga ("eslabon", "universo"): esto lo lee el auditor, no el equipo
+  // (pedido del usuario, 2026-09-14). El campo que agrega cada tabla va en su
+  // tarjeta, asi que la intro no lo repite.
   contenedor.innerHTML =
-    `<p class="vista__intro">Cada tabla valida un campo más que la anterior y solo sobre las filas que ` +
-    `pasaron todas las anteriores (pedido de Sergio), así que si un campo intermedio coincide poco, los ` +
-    `eslabones siguientes se quedan con pocas filas o ninguna. ` +
-    `H5 (laboratorio) está pendiente de confirmar con negocio, no se muestra todavía.</p>`;
+    `<p class="vista__intro">Cada tabla revisa un campo más que la anterior (el campo está en el título ` +
+    `de cada tarjeta) y solo sobre los medicamentos que ya pasaron todas las anteriores. Por eso, si un ` +
+    `campo coincide poco, las tablas siguientes se quedan con pocos medicamentos o ninguno. ` +
+    `No hay tabla H5: ese campo (laboratorio) todavía no está definido.</p>`;
 
   // Mismo patron que la vista de calidades: lo que se ELIGE (los eslabones
   // H1..H6) va arriba en fila, y la tabla del eslabon activo se queda con
@@ -524,9 +540,9 @@ export async function montarCadenaCalidad(contenedor: HTMLElement): Promise<void
     if (eslabon.universo === 0) {
       columnaTabla.innerHTML =
         `<div class="aviso aviso--info">` +
-        `<strong>Sin filas que evaluar en ${esc(eslabon.nombre)}.</strong> ` +
-        `Ningún medicamento llegó hasta aquí: todos se detuvieron en un eslabón anterior ` +
-        `de la cadena. Revisa el porcentaje del eslabón previo para ver dónde se cortan.` +
+        `<strong>Ningún medicamento llega a la tabla ${esc(eslabon.nombre)}.</strong> ` +
+        `Todos se quedaron en una tabla anterior. Mire el porcentaje de la tabla previa ` +
+        `para ver dónde se cortan.` +
         `</div>`;
       return;
     }
@@ -548,7 +564,13 @@ export async function montarCadenaCalidad(contenedor: HTMLElement): Promise<void
       columnas,
       // Mismos rotulos del trio que en las calidades: un campo no puede
       // llamarse distinto segun la pantalla.
-      etiquetasColumna: { ...ETIQUETAS_ACTIVO_VS_INVIMA, ...ETIQUETAS_TRIO_CAMPOS_COMPARADOS },
+      etiquetasColumna: {
+        ...ETIQUETAS_ACTIVO_VS_INVIMA,
+        ...ETIQUETAS_TRIO_CAMPOS_COMPARADOS,
+        // ESTADO_CADENA_H3 es el resultado ACUMULADO: pasa esta tabla y todas
+        // las anteriores (ver pildoraEstadoCadena).
+        [eslabon.columna_estado]: `Pasa hasta ${eslabon.nombre}`,
+      },
       urlDescarga: (formato) => urlDescargaEslabon(eslabon.nombre, formato),
       formatearCelda: (columna, valor) => {
         if (valor === null || valor === undefined || valor === "") return null; // deja el "—" del default
@@ -564,15 +586,18 @@ export async function montarCadenaCalidad(contenedor: HTMLElement): Promise<void
     });
   }
 
+  // "+ PRINCIPIO_ACTIVO" era el nombre crudo de la columna; el rotulo de
+  // negocio es el mismo que usan las calidades y la consulta puntual.
+  const etiquetaCampo = (campo: string) => ETIQUETA_CAMPO_COMPARADO[campo] ?? campo;
   filaPasos.innerHTML = cadena
     .map(
       (e) => `<div class="cadena-paso" data-nombre="${e.nombre}">
         <div class="cadena-paso__marca">${e.nombre}</div>
         <div class="cadena-paso__cuerpo">
-          <div class="cadena-paso__titulo">${e.campos_acumulados.length ? "+ " + e.campos_acumulados[e.campos_acumulados.length - 1] : "Correspondencia con INVIMA"}</div>
-          <div class="cadena-paso__campos">Universo evaluado: ${e.universo.toLocaleString("es-CO")}</div>
+          <div class="cadena-paso__titulo">${e.campos_acumulados.length ? "+ " + esc(etiquetaCampo(e.campos_acumulados[e.campos_acumulados.length - 1])) : "Existe en INVIMA"}</div>
+          <div class="cadena-paso__campos">Medicamentos evaluados: ${e.universo.toLocaleString("es-CO")}</div>
         </div>
-        <div class="cadena-paso__pct">${e.porcentaje_total === null ? "—" : e.porcentaje_total.toFixed(1) + "%"}</div>
+        <div class="cadena-paso__pct" title="Porcentaje de los evaluados que pasa esta tabla">${e.porcentaje_total === null ? "—" : e.porcentaje_total.toFixed(1) + "%"}</div>
       </div>`,
     )
     .join("");

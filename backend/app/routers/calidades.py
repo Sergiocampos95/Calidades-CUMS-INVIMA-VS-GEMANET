@@ -40,9 +40,11 @@ from worker.almacen_snapshots import leer_tabla, snapshot_actual
 
 router = APIRouter(prefix="/auditoria", tags=["calidad del catalogo"])
 
+# Lenguaje del auditor, no del equipo: "worker" y "snapshot" no le dicen nada
+# a quien ve este mensaje en pantalla (pedido del usuario, 2026-09-14).
 _MENSAJE_SIN_AUDITORIA = (
-    "El worker todavia no genero ningun snapshot de auditoria. "
-    "Consulta /salud para ver el estado del ultimo refresco."
+    "Todavía no hay datos de la auditoría: la primera actualización no ha terminado. "
+    "Intente de nuevo en unos minutos; el indicador de la barra superior muestra el estado de la actualización."
 )
 
 

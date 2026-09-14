@@ -24,8 +24,8 @@ def _tabla_candidatos(carpeta: Path):
     if df is None:
         raise HTTPException(
             status_code=503,
-            detail="El worker todavia no genero ningun snapshot de candidatos. "
-            "Consulta /salud para ver el estado del ultimo refresco.",
+            detail="Todavía no hay datos de candidatos: la primera actualización no ha "
+            "terminado. Intente de nuevo en unos minutos; el indicador de la barra superior muestra el estado de la actualización.",
         )
     return df
 

@@ -8,7 +8,7 @@ import { montarAuditEntender, montarAuditExplorar, montarAuditPriorizar, montarB
 import { montarCargueEstructura, montarCargueExcel } from "./vistas/cargue";
 import { montarDecision } from "./vistas/decision";
 import { montarConsultarInvima } from "./vistas/consulta_detalle";
-import { montarComoSeResolvio, montarDetalleRegistro, montarResumenPrincipal } from "./vistas/resumen";
+import { montarDetalleRegistro, montarResumenPrincipal } from "./vistas/resumen";
 
 interface SubVista {
   id: string;
@@ -46,7 +46,8 @@ const SECCIONES: Seccion[] = [
     id: "resumen", etiqueta: "Candidatos", icono: "▤", grupo: "Candidatos para cargue",
     sub: [
       { id: "principal", etiqueta: "Resumen de resolución", montar: montarResumenPrincipal },
-      { id: "metodo", etiqueta: "Cómo se resolvió", montar: montarComoSeResolvio },
+      // "Como se resolvio" (metodo exacto/alias/fuzzy/sin_resolver con que se
+      // tradujo marca y unidad) se retiro el 2026-09-14 -- ver vistas/resumen.ts.
       { id: "detalle", etiqueta: "Detalle por registro", montar: montarDetalleRegistro },
     ],
   },

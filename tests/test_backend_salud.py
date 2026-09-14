@@ -60,8 +60,8 @@ def test_snapshot_de_version_anterior_se_reporta_desactualizado(tmp_path):
         )
         cuerpo = cliente.get("/salud").json()
         assert cuerpo["estado"] == "desactualizado"
-        assert "version anterior" in cuerpo["detalle_error"]
-        assert "Corre un refresco" in cuerpo["detalle_error"]
+        assert "versión anterior" in cuerpo["detalle_error"]
+        assert "Ejecute una actualización" in cuerpo["detalle_error"]
     finally:
         app.dependency_overrides.clear()
 

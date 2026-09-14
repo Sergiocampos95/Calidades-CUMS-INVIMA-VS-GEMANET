@@ -80,8 +80,9 @@ Sube los archivos, presiona **Procesar**, y trabaja sobre las 6 secciones del me
 lateral (agrupadas en "candidatos para cargue" y "medicamentos ya cargados"):
 
 1. **Resumen de resolución** — cuántos candidatos nuevos salieron y cómo se resolvieron
-   marca y unidad de medida contra el catálogo interno. Tres vistas: *Resumen*,
-   *Cómo se resolvió*, *Detalle por registro*.
+   marca y unidad de medida contra el catálogo interno. Dos vistas: *Resumen* y
+   *Detalle por registro* (la sub-vista *Cómo se resolvió* se retiró el 2026-09-14:
+   mostraba el método técnico de traducción y no le daba nada que hacer al auditor).
 2. **Casos que requieren decisión** — lo que el sistema **no** se atrevió a decidir
    solo. Cada fila trae el motivo y compara `_texto_invima` (dato oficial) contra
    `_sugerencia` (coincidencia aproximada, nunca confirmada).

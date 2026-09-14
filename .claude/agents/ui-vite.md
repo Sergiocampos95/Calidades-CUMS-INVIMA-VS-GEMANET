@@ -76,7 +76,18 @@ abajo) solo se puede seguir si sabes que columna leer y que significa.
    de ir a `innerHTML`. Encontrado y corregido 2026-09-01: `codigos_
    consultados` viajaba del input del usuario al DOM sin escapar.
 6. **Lenguaje de negocio, no de programador.** Ni nombres de funciones, ni
-   columnas internas, ni jerga tecnica sin traducir.
+   columnas internas, ni jerga tecnica sin traducir. Concretado el
+   2026-09-14 (el usuario vio "fuzzy" en una vista): los rotulos de columna
+   comunes viven en `ETIQUETAS_COLUMNA_COMUNES` (`pildoras.ts`) y toda
+   `TablaFiltrable` los pasa en `etiquetasColumna`; un valor codificado que
+   se lee (siglas, listas de columnas) se traduce en `formatearCelda` y el
+   crudo sigue en filtros y descargas; los `detail` de los 503 del backend y
+   los nombres de los pasos del refresco tambien se ven en pantalla y siguen
+   la misma regla (nada de "worker", "snapshot", "malla", "eslabon",
+   "universo", "pipe"); y nunca notas de equipo en la intro de una vista
+   ("pedido de X", "pendiente de confirmar con negocio"). Ante un concepto
+   tecnico el criterio es binario: si le sirve al auditor se renombra, si no
+   se quita -- asi salio la sub-vista "Como se resolvio".
 7. Si un endpoint puede fallar (red, timeout, backend caido), la vista
    muestra el error especifico (`ErrorAPI` ya trae `.message`/`.status` del
    backend) y el resto de la pantalla sigue funcionando.

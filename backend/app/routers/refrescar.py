@@ -125,7 +125,7 @@ def pedir_refresco(
     if _hay_refresco_en_curso(progreso_actual(ruta=ruta_sqlite), worker_activo=activo):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Ya hay un refresco en curso. Espera a que termine.",
+            detail="Ya hay una actualización en curso. Espere a que termine.",
         )
 
     # El backend NO ejecuta el refresco: solo deja la solicitud. Si no hay
@@ -136,8 +136,9 @@ def pedir_refresco(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=(
-                "El worker de refresco no esta corriendo, asi que nadie ejecutaria "
-                "la actualizacion. Arrancalo con .\\reinicia_worker.ps1 y volve a intentar."
+                "El proceso de actualización del servidor no está corriendo, así que "
+                "nadie ejecutaría la actualización. Avise a TIC (servicio "
+                "gemanet-cums-worker) y vuelva a intentar."
             ),
         )
 

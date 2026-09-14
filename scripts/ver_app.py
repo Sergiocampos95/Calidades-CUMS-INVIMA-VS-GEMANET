@@ -26,7 +26,7 @@ Uso
 
 Secciones y sub-vistas: las declara `SECCIONES` en `frontend/src/main.ts`.
 
-    resumen    principal | metodo | detalle
+    resumen    principal | detalle
     decision   bandeja
     cargue     estructura | excel
     invima     unica

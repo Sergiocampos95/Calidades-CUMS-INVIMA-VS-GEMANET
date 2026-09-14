@@ -224,7 +224,7 @@ def test_refresco_fallido_marca_el_paso_que_reventó_y_no_avanza_los_siguientes(
     assert pasos["Leyendo reporte de Gemma Net"] == ESTADO_PASO_HECHO
     assert pasos["Cruzando candidatos contra Gemma Net"] == ESTADO_PASO_HECHO
     assert pasos["Auditando coherencia contra INVIMA"] == ESTADO_PASO_ERROR
-    assert pasos["Guardando snapshot"] == "pendiente"
+    assert pasos["Guardando los resultados"] == "pendiente"
 
 
 class _LectorConRespaldoFalso:

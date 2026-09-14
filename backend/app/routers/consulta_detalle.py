@@ -142,8 +142,7 @@ def consultar_medicamento(codigo: str, carpeta: Path = Depends(carpeta_snapshots
 
     if df_universo is None and df_auditoria is None:
         mensaje = " ".join(m for m in (error_universo, error_auditoria) if m) or (
-            "El worker todavia no genero ningun snapshot. Consulta /salud "
-            "para ver el estado del ultimo refresco."
+            "Todavía no hay datos: la primera actualización no ha terminado. " + "Intente de nuevo en unos minutos; el indicador de la barra superior muestra el estado de la actualización."
         )
         return JSONResponse(
             status_code=503,

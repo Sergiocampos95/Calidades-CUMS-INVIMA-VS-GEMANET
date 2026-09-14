@@ -15,7 +15,7 @@ const ETIQUETA_POR_ESTADO: Record<EstadoSalud["estado"], string> = {
   ok: "🟢 Datos al día",
   desactualizado: "🟡 Datos desactualizados",
   error: "🔴 El último refresco falló",
-  sin_datos: "⚪ Todavía no hay datos (el worker no corrió aún)",
+  sin_datos: "⚪ Todavía no hay datos (la primera actualización no ha corrido)",
 };
 
 function formatearAntiguedad(segundos: number | null): string {
@@ -80,7 +80,7 @@ function pintarRefresco(
   const { anillo, textoRefresco, subtextoRefresco, contenedorRefresco } = elementos;
   if (salud.antiguedad_segundos === null) {
     textoRefresco.textContent = "Sin datos";
-    subtextoRefresco.textContent = "el worker no corrió aún";
+    subtextoRefresco.textContent = "sin actualización todavía";
     contenedorRefresco.className = "refresco refresco--warn";
     anillo.style.setProperty("--pct", "0%");
     return;

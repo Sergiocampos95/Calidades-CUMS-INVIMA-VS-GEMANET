@@ -146,7 +146,7 @@ Vite + TypeScript en el 5173. **Es la app**, no un prototipo.
 | `main.ts` | `SECCIONES` (único sitio donde se declaran las vistas), navegación, migajas, historial |
 | `tabla.ts` | **`TablaFiltrable`: el único componente que dibuja tablas.** No crear un segundo |
 | `cache_tablas.ts` | Caché de páginas **versionada por snapshot**. A nivel de módulo, no de instancia |
-| `pildoras.ts` | Vocabulario compartido: estados, prioridades, validaciones. Traduce el valor técnico a la etiqueta que se lee |
+| `pildoras.ts` | Vocabulario compartido: estados, prioridades, validaciones, y los rótulos de columna comunes a todas las tablas (`ETIQUETAS_COLUMNA_COMUNES`). Traduce el valor técnico a la etiqueta que se lee. **Quiero cambiar cómo se llama una columna en pantalla → aquí**, no en la vista |
 | `fechas.ts` | Escribe el mes con letras **solo en pantalla**. Formatear no es transformar |
 | `refresco-manual.ts` | El botón "Actualizar ahora" y la pregunta de fuente |
 | `salud.ts` | El anillo de antigüedad del snapshot |

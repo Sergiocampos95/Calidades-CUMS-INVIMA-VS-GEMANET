@@ -90,7 +90,7 @@ def descargar_candidatos(carpeta: Path = Depends(carpeta_snapshots)) -> Response
     una hoja por `accion` -- mismo archivo que `_bytes_reporte_cruce` en
     Streamlit."""
     df = _tabla_o_503(
-        "candidatos", carpeta, "El worker todavia no genero ningun snapshot de candidatos."
+        "candidatos", carpeta, "Todavía no hay datos de candidatos: la primera actualización no ha terminado."
     )
     contenido = bytes_desde_escritor(lambda ruta: guardar_reporte(df, ruta))
     return _adjunto("reporte_cruce_invima.xlsx", contenido)
@@ -100,7 +100,7 @@ def descargar_candidatos(carpeta: Path = Depends(carpeta_snapshots)) -> Response
 def descargar_auditoria(carpeta: Path = Depends(carpeta_snapshots)) -> Response:
     """La auditoria de coherencia completa, una hoja por `ESTADO_COHERENCIA`."""
     df = _tabla_o_503(
-        "auditoria", carpeta, "El worker todavia no genero ningun snapshot de auditoria."
+        "auditoria", carpeta, "Todavía no hay datos de la auditoría: la primera actualización no ha terminado."
     )
     contenido = bytes_desde_escritor(
         lambda ruta: guardar_reporte(df, ruta, columna_hoja="ESTADO_COHERENCIA")
@@ -116,7 +116,8 @@ def descargar_cargue_estructura(carpeta: Path = Depends(carpeta_snapshots)) -> R
     df = _tabla_o_503(
         "cargue_estructura",
         carpeta,
-        "Sin Estructura Cargue Medicamentos disponible -- ver /cargue/estructura.",
+        "No hay archivo «Estructura Cargue Medicamentos» en el servidor: no se puede "
+        "generar este Excel (ver Cargue › Auditoría de estructura).",
     )
     contenido = bytes_desde_escritor(lambda ruta: generar_excel_estructura_cargue(df, ruta))
     return _adjunto(f"{nombre_periodo()}.xlsx", contenido)
@@ -127,7 +128,10 @@ def descargar_cargue_final(carpeta: Path = Depends(carpeta_snapshots)) -> Respon
     """Solo lo listo para subir -- el archivo que se entrega para cargar
     en Gemma Net."""
     df = _tabla_o_503(
-        "cargue_final", carpeta, "Sin Estructura Cargue Medicamentos disponible -- ver /cargue/final."
+        "cargue_final",
+        carpeta,
+        "No hay archivo «Estructura Cargue Medicamentos» en el servidor: no se puede "
+        "generar este Excel (ver Cargue › Excel de cargue final).",
     )
     contenido = bytes_desde_escritor(lambda ruta: generar_excel_cargue(df, ruta))
     return _adjunto("cargue_gemma_net.xlsx", contenido)

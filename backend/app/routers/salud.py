@@ -39,7 +39,7 @@ def obtener_salud(
             ultima_actualizacion_utc=None,
             antiguedad_segundos=None,
             duracion_ultimo_refresco_segundos=None,
-            detalle_error="El worker todavia no genero ningun snapshot.",
+            detalle_error="La primera actualización no ha terminado todavía.",
         )
 
     generado = datetime.strptime(snapshot.generado_utc, _FORMATO_MARCA).replace(tzinfo=UTC)
@@ -54,10 +54,10 @@ def obtener_salud(
     detalle_desfase = ""
     if desfases:
         detalle_desfase = (
-            "El snapshot vigente lo genero una version anterior del codigo y le faltan "
+            "Los datos vigentes los generó una versión anterior del programa y les faltan "
             "columnas: "
             + "; ".join(f"{tabla} -> {', '.join(cols)}" for tabla, cols in desfases.items())
-            + ". Las cifras que dependan de ellas van a salir en cero. Corre un refresco."
+            + ". Las cifras que dependan de ellas van a salir en cero. Ejecute una actualización."
         )
 
     # DOS problemas distintos, que no se pueden colapsar en uno:

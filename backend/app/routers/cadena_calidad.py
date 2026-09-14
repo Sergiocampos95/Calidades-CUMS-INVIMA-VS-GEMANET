@@ -41,8 +41,8 @@ def _cadena(carpeta: Path) -> list[EslabonCalidad]:
     if auditoria is None:
         raise HTTPException(
             status_code=503,
-            detail="El worker todavia no genero ningun snapshot de auditoria. "
-            "Consulta /salud para ver el estado del ultimo refresco.",
+            detail="Todavía no hay datos de la auditoría: la primera actualización no ha "
+            "terminado. Intente de nuevo en unos minutos; el indicador de la barra superior muestra el estado de la actualización.",
         )
     actual = snapshot_actual(carpeta)
     assert actual is not None  # leer_tabla ya encontro datos -> tiene que haber snapshot

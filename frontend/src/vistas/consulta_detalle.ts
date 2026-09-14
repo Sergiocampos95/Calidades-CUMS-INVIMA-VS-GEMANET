@@ -544,7 +544,7 @@ function diagnosticoDeVigencia(invima: Record<string, unknown>[], gemmaNet: Reco
             ? [
                 "El código SÍ tiene formato EXPEDIENTE-CONSECUTIVO válido, pero INVIMA no tiene ningún registro con ese código en sus cuatro listados (Vigentes, Vencidos, Otros Estados, Renovación)",
                 "Verificar si el registro fue anulado o si hay un error de digitación en Gemma Net",
-                "Si el código es correcto y sigue sin aparecer, puede ser un registro muy antiguo fuera de los datasets vigentes de INVIMA",
+                "Si el código es correcto y sigue sin aparecer, puede ser un registro muy antiguo fuera de los listados vigentes de INVIMA",
               ]
             : [
                 "El código no sigue el formato EXPEDIENTE-CONSECUTIVO de INVIMA — es un código interno propio de Gemma Net",
@@ -774,7 +774,7 @@ function crearComparacionEstadosHTML(
   const equivalenteGemma = activoGemma ? "Activo" : "Inactivo";
   const filaEstadoCum = estadoCumInvima
     ? `<tr>
-        <th scope="row">Estado del registro (cruce de vigencia)</th>
+        <th scope="row">Estado (Activo / Inactivo)</th>
         <td>${escaparHTML(equivalenteGemma)}</td>
         <td>${escaparHTML(estadoCumInvima)}</td>
         <td>${

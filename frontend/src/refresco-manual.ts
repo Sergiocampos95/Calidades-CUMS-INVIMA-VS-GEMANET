@@ -99,13 +99,13 @@ export function montarRefrescoManual(
 
     if (Date.now() - inicioSolicitud > ESPERA_MAXIMA_SIN_INICIAR_MS) {
       panel.innerHTML =
-        `<div class="panel-progreso__titulo">El worker no tomó la solicitud a tiempo</div>` +
-        `<p style="font-size:0.8rem;color:var(--text-muted);margin:0">Puede que el proceso del worker no esté corriendo ahora mismo.</p>`;
+        `<div class="panel-progreso__titulo">La actualización no arrancó a tiempo</div>` +
+        `<p style="font-size:0.8rem;color:var(--text-muted);margin:0">Puede que el proceso de actualización del servidor esté detenido. Avise a TIC.</p>`;
       detener();
       alTerminar(false);
       return;
     }
-    panel.innerHTML = `<div class="panel-progreso__titulo">Esperando a que el worker tome la solicitud…</div>`;
+    panel.innerHTML = `<div class="panel-progreso__titulo">Esperando a que arranque la actualización…</div>`;
   }
 
   function lanzar(fuente: FuenteRefresco): void {

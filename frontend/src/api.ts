@@ -10,7 +10,6 @@ import type {
   ProgresoRefresco,
   Resumen,
   ResumenCargue,
-  ResumenMetodos,
   UsuarioPermiso,
   UsuarioSesion,
 } from "./tipos";
@@ -161,10 +160,6 @@ export function obtenerCandidatos(parametros: ParametrosCandidatos = {}): Promis
 
 export function obtenerResumenCandidatos(): Promise<Resumen> {
   return obtenerJSON<Resumen>("/candidatos/resumen");
-}
-
-export function obtenerResumenMetodos(): Promise<ResumenMetodos> {
-  return obtenerJSON<ResumenMetodos>("/candidatos/resumen-metodos");
 }
 
 export interface ParametrosAuditoria extends ParametrosTabla {
