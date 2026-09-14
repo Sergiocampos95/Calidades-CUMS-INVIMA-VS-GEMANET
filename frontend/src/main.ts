@@ -1,6 +1,8 @@
 import { invalidarTodo } from "./cache_tablas";
 import { montarRefrescoManual } from "./refresco-manual";
 import { montarSalud } from "./salud";
+import { mostrarIngreso, pintarUsuario, sesionActual } from "./sesion";
+import type { UsuarioSesion } from "./tipos";
 import { montarAuditEntender, montarAuditExplorar, montarAuditPriorizar, montarCadenaCalidad } from "./vistas/auditoria";
 import { montarCargueEstructura, montarCargueExcel } from "./vistas/cargue";
 import { montarDecision } from "./vistas/decision";
@@ -264,6 +266,42 @@ document.getElementById("toggle-tema")?.addEventListener("click", () => {
   raiz.setAttribute("data-theme", raiz.getAttribute("data-theme") === "dark" ? "light" : "dark");
 });
 
-inicializarSalud();
-inicializarRefrescoManual();
-render();
+// ---- Arranque con sesion (2026-09-14): nada se monta sin login ----------
+//
+// La app se sirve a otras areas por la red y exige el usuario de GemaNet
+// (ver backend/app/auth y src/sesion.ts). Montar el rail, el sondeo de
+// /salud y la primera vista antes de tener sesion solo produciria 401 en
+// cadena; por eso el arranque de siempre (salud + refresco + render) queda
+// dentro de `iniciarApp` y corre una sola vez, cuando ya hay quien.
+
+let appIniciada = false;
+
+function iniciarApp(usuario: UsuarioSesion): void {
+  const contenedorUsuario = document.getElementById("usuario-sesion");
+  // Recargar al salir: limpia de un golpe toda memoria de la sesion (caches
+  // de tablas, historial, sondeos) en vez de desmontar vista por vista.
+  if (contenedorUsuario) pintarUsuario(contenedorUsuario, usuario, () => window.location.reload());
+  if (appIniciada) {
+    render();
+    return;
+  }
+  appIniciada = true;
+  inicializarSalud();
+  inicializarRefrescoManual();
+  render();
+}
+
+function pedirIngreso(mensaje = ""): void {
+  const pantalla = document.getElementById("pantalla-ingreso");
+  const shell = document.querySelector<HTMLElement>(".app-shell");
+  if (!pantalla || !shell) return;
+  mostrarIngreso(pantalla, shell, iniciarApp, mensaje);
+}
+
+// Cualquier 401 posterior (sesion vencida, modulo retirado) vuelve al ingreso.
+window.addEventListener("gemanet:sesion-expirada", () => pedirIngreso("La sesión terminó. Vuelva a ingresar."));
+
+void sesionActual().then(
+  (usuario) => (usuario ? iniciarApp(usuario) : pedirIngreso()),
+  () => pedirIngreso("No se pudo consultar la sesión. Revise que la API esté arriba."),
+);

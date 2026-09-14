@@ -100,3 +100,10 @@ export interface ProgresoRefresco {
   en_curso: boolean;
   pasos: PasoProgreso[];
 }
+
+/** Espejo de backend/app/schemas.py::UsuarioSesion. */
+export interface UsuarioSesion {
+  usuario: string;
+  nombre: string;
+  admin: boolean;
+}

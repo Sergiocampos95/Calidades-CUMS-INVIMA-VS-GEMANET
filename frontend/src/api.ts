@@ -11,6 +11,7 @@ import type {
   Resumen,
   ResumenCargue,
   ResumenMetodos,
+  UsuarioSesion,
 } from "./tipos";
 
 // En produccion la API sirve tambien el frontend compilado (mismo origen,
@@ -288,4 +289,34 @@ export function urlDescargaEslabon(nombre: string, formato: "xlsx" | "csv" | "tx
   const url = new URL(`${BASE_URL}/descargas/cadena/${encodeURIComponent(nombre)}`);
   url.searchParams.set("formato", formato);
   return url.toString();
+}
+
+// ---- Sesion (backend/app/auth) --------------------------------------------
+
+/** GET /auth/sesion -- quien esta adentro, o null si no hay sesion. El 401
+ * aqui es la respuesta normal antes de ingresar: NO dispara
+ * `gemanet:sesion-expirada`. */
+export async function sesionActual(): Promise<UsuarioSesion | null> {
+  const respuesta = await fetch(urlAbsoluta("/auth/sesion"), { credentials: "include", headers: ENCABEZADOS_FETCH });
+  if (respuesta.status === 401) return null;
+  if (!respuesta.ok) throw new ErrorAPI(`Error ${respuesta.status} consultando la sesión`, respuesta.status);
+  return (await respuesta.json()) as UsuarioSesion;
+}
+
+export async function iniciarSesion(usuario: string, clave: string): Promise<UsuarioSesion> {
+  const respuesta = await fetch(urlAbsoluta("/auth/login"), {
+    method: "POST",
+    credentials: "include",
+    headers: { ...ENCABEZADOS_FETCH, "Content-Type": "application/json" },
+    body: JSON.stringify({ usuario, clave }),
+  });
+  if (!respuesta.ok) {
+    const cuerpo = await respuesta.json().catch(() => null);
+    throw new ErrorAPI(cuerpo?.detail ?? `Error ${respuesta.status} al ingresar`, respuesta.status);
+  }
+  return (await respuesta.json()) as UsuarioSesion;
+}
+
+export async function cerrarSesion(): Promise<void> {
+  await fetch(urlAbsoluta("/auth/logout"), { method: "POST", credentials: "include", headers: ENCABEZADOS_FETCH });
 }
