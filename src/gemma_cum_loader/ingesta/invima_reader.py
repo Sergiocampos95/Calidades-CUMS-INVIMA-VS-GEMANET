@@ -83,10 +83,38 @@ from typing import Any
 
 import pandas as pd
 
+from gemma_cum_loader.ingesta.invima_socrata import CAMPOS_API
 from gemma_cum_loader.normaliza.texto import normalizar_encabezado
 
 FILA_ENCABEZADO = 6  # 0-indexed -> fila 7 de Excel
 RANGO_COLUMNAS = "A:AC"
+
+# El portal de datos.gov.co empezo a ofrecer (visto 2026-09-28, los 4
+# listados descargados ese dia) un export alternativo: hoja generica "Data",
+# encabezado en la fila 1 (no la 7), columnas en el mismo formato que ya usa
+# la API de Socrata (`registrosanitario`, `tiporol`... pegado en minuscula,
+# ver CAMPOS_API en invima_socrata.py) en vez de "REGISTRO SANITARIO"/
+# "TIPO ROL" con espacios. Se reusa CAMPOS_API para el renombre -- son
+# literalmente los mismos nombres, no hace falta un mapeo nuevo.
+#
+# La deteccion es por el NOMBRE de las columnas de la fila 1, nunca por el
+# nombre de la hoja (siempre "Data", sin decir de que dataset es) ni por
+# cuantas columnas trae: el mismo dia, Vigentes vino en este formato con
+# solo 10 de las 29 columnas (export parcial del portal) mientras Vencidos/
+# Renovacion/Otros Estados trajeron las 29 completas. Cualquier cantidad de
+# columnas reconocidas de CAMPOS_API basta para decidir el formato; que
+# falten columnas de negocio (PRODUCTO, TITULAR, ESTADO_CUM...) se nota mas
+# adelante en el pipeline con un error claro (columna faltante), nunca
+# adivinando un valor.
+MINIMO_COLUMNAS_API_PARA_DETECTAR = 5
+
+
+def _es_formato_portal(columnas: list) -> bool:
+    """True si la fila 1 de la hoja ya trae nombres de columna estilo API
+    (ver docstring de MINIMO_COLUMNAS_API_PARA_DETECTAR). El formato clasico
+    tiene la fila 1 vacia o con un titulo/banda -- nunca coincide con esto."""
+    planas = {str(c).strip().lower() for c in columnas}
+    return len(planas & CAMPOS_API.keys()) >= MINIMO_COLUMNAS_API_PARA_DETECTAR
 
 # Candidatos de nombre de hoja para cada archivo -- confirmado con archivos
 # reales del usuario (2026-08-19) que el nombre exacto de hoja SI varia
@@ -126,6 +154,21 @@ def _normalizar_catalogo_invima(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _leer_hoja_detectando_formato(libro: pd.ExcelFile, hoja: str) -> pd.DataFrame:
+    """Decide entre el Excel clasico (encabezado fila 7, columnas A:AC) y el
+    formato nuevo del portal (encabezado fila 1, columnas estilo API) mirando
+    la fila 1 real de la hoja -- ver `_es_formato_portal`. Devuelve el
+    DataFrame ya normalizado (`_normalizar_catalogo_invima`), sin importar
+    cual de los dos formatos era."""
+    primera_fila = pd.read_excel(libro, sheet_name=hoja, header=0, nrows=0).columns.tolist()
+    if _es_formato_portal(primera_fila):
+        df = pd.read_excel(libro, sheet_name=hoja, header=0)
+        df = df.rename(columns={api: excel for api, excel in CAMPOS_API.items() if api in df.columns})
+    else:
+        df = pd.read_excel(libro, sheet_name=hoja, header=FILA_ENCABEZADO, usecols=RANGO_COLUMNAS)
+    return _normalizar_catalogo_invima(df)
+
+
 def leer_catalogo_invima(archivo: str | Path | Any) -> pd.DataFrame:
     """Lee el catalogo crudo, sin deduplicar ni filtrar.
 
@@ -144,13 +187,7 @@ def leer_catalogo_invima(archivo: str | Path | Any) -> pd.DataFrame:
 
     libro = pd.ExcelFile(archivo)
     hoja = _resolver_hoja_auxiliar(libro.sheet_names, HOJAS_CATALOGO_VIGENTES, "vigen", "Vigentes")
-    df = pd.read_excel(
-        libro,
-        sheet_name=hoja,
-        header=FILA_ENCABEZADO,
-        usecols=RANGO_COLUMNAS,
-    )
-    return _normalizar_catalogo_invima(df)
+    return _leer_hoja_detectando_formato(libro, hoja)
 
 
 def _resolver_hoja_auxiliar(
@@ -207,13 +244,7 @@ def _leer_catalogo_invima_auxiliar(
 
     libro = pd.ExcelFile(archivo)
     hoja = _resolver_hoja_auxiliar(libro.sheet_names, candidatos_hoja, fragmento_busqueda, nombre_dataset)
-    df = pd.read_excel(
-        libro,
-        sheet_name=hoja,
-        header=FILA_ENCABEZADO,
-        usecols=RANGO_COLUMNAS,
-    )
-    return _normalizar_catalogo_invima(df)
+    return _leer_hoja_detectando_formato(libro, hoja)
 
 
 def leer_catalogo_invima_vencidos(archivo: str | Path | Any) -> pd.DataFrame:
