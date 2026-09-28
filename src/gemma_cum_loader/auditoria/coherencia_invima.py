@@ -2127,6 +2127,7 @@ def auditar_coherencia(
     df_invima_otros_estados: pd.DataFrame | None = None,
     df_invima_renovacion: pd.DataFrame | None = None,
     alias_unidad: dict[str, str] | None = None,
+    claves_cruce_alternas: dict[str, str] | None = None,
 ) -> pd.DataFrame:
     """Una fila por CODIGO_INTERNO del Reporte de Gemma Net, con
     ESTADO_COHERENCIA (correcto / con_diferencias / vencido_en_invima /
@@ -2189,6 +2190,17 @@ def auditar_coherencia(
     `_validar_fechas_activo` -- mas la combinacion de mayor riesgo posible:
     ACTIVO=SI junto con VENCIDO_EN_INVIMA. Vacio si no hay ningun hallazgo;
     varios hallazgos se separan con "; ".
+
+    claves_cruce_alternas (dict CODIGO_INTERNO -> clave real de cruce,
+    opcional): para auditar un universo cuyo CODIGO_INTERNO no es la clave
+    contra la que hay que buscar en INVIMA -- caso de uso: el modulo IUM
+    (ver `auditoria/coherencia_ium.py`), donde el CODIGO_INTERNO de Gemma Net
+    es un IUM y hay que cruzar por el CUM que ese IUM tiene asociado en
+    INVIMA. Se aplica DESPUES de la reconstruccion de "CUM con sufijo ATC" de
+    arriba (una alterna explicita siempre gana) y solo afecta la clave usada
+    para buscar en INVIMA -- el CODIGO_INTERNO real de Gemma Net en el
+    resultado nunca cambia. `None` (el defecto) deja el comportamiento
+    identico al de antes de este parametro.
     """
     # sigla_por_codigo, no texto_por_codigo: la sigla ya esta normalizada en
     # la misma forma corta que INVIMA reporta el dato crudo (ej. "MG", no
@@ -2256,6 +2268,17 @@ def auditar_coherencia(
         partes = gemanet.loc[es_cum_con_sufijo_atc, "CODIGO_INTERNO"].str.split("-", n=2, expand=True)
         clave_cruce_invima.loc[es_cum_con_sufijo_atc] = (
             partes[0].astype(int).astype(str) + "-" + partes[1].astype(int).astype(str)
+        )
+
+    # Clave alterna explicita (ver docstring de `claves_cruce_alternas`):
+    # gana sobre cualquier reconstruccion automatica de arriba. `.map()` deja
+    # NaN donde el codigo no esta en el dict, por eso el `.where()` solo pisa
+    # las filas que SI tienen alterna -- las demas conservan la clave ya
+    # calculada.
+    if claves_cruce_alternas:
+        tiene_alterna = gemanet["CODIGO_INTERNO"].isin(claves_cruce_alternas.keys())
+        clave_cruce_invima = clave_cruce_invima.where(
+            ~tiene_alterna, gemanet["CODIGO_INTERNO"].map(claves_cruce_alternas)
         )
     gemanet["_CLAVE_CRUCE_INVIMA"] = clave_cruce_invima
 
