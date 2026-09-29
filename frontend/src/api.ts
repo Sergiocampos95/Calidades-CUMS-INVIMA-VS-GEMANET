@@ -162,6 +162,21 @@ export function obtenerResumenCandidatos(): Promise<Resumen> {
   return obtenerJSON<Resumen>("/candidatos/resumen");
 }
 
+// Modulo IUM (2026-09-28): auditoria propia, separada de CUM -- ver
+// backend/app/routers/ium.py. Fase 1 es solo lectura de lo ya cargado; no
+// hay "candidatos IUM" todavia (ver .ai/planes/2026-09-28-modulo-ium-separado.md).
+export interface ParametrosIum extends ParametrosTabla {
+  estado_ium?: string;
+}
+
+export function obtenerIum(parametros: ParametrosIum = {}): Promise<PaginaTabla> {
+  return obtenerJSON<PaginaTabla>("/ium", parametros);
+}
+
+export function obtenerResumenIum(): Promise<Resumen> {
+  return obtenerJSON<Resumen>("/ium/resumen");
+}
+
 export interface ParametrosAuditoria extends ParametrosTabla {
   estado_coherencia?: string;
   /** Uno o varios niveles de PRIORIDAD_ACCION separados por coma

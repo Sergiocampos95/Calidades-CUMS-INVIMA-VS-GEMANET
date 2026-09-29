@@ -8,6 +8,7 @@ import { montarAuditEntender, montarAuditExplorar, montarAuditPriorizar, montarB
 import { montarCargueEstructura, montarCargueExcel } from "./vistas/cargue";
 import { montarDecision } from "./vistas/decision";
 import { montarConsultarInvima } from "./vistas/consulta_detalle";
+import { montarIum } from "./vistas/ium";
 import { montarDetalleRegistro, montarResumenPrincipal } from "./vistas/resumen";
 
 interface SubVista {
@@ -41,6 +42,14 @@ const SECCIONES: Seccion[] = [
   {
     id: "invima", etiqueta: "Consultar INVIMA", icono: "⌕", grupo: "Medicamentos ya cargados",
     sub: [{ id: "unica", etiqueta: "Consulta de un CUM", montar: montarConsultarInvima }],
+  },
+  // Modulo IUM (2026-09-28): separado del de CUM -- decision explicita del
+  // usuario. Fase 1 es solo lo ya cargado (auditoria); "candidatos IUM"
+  // queda pendiente de una definicion de negocio (ver
+  // .ai/planes/2026-09-28-modulo-ium-separado.md).
+  {
+    id: "ium", etiqueta: "IUM", icono: "◈", grupo: "Medicamentos ya cargados",
+    sub: [{ id: "cargados", etiqueta: "IUM ya cargados", montar: montarIum }],
   },
   {
     id: "resumen", etiqueta: "Candidatos", icono: "▤", grupo: "Candidatos para cargue",

@@ -77,6 +77,39 @@ const TIPO_POR_PRIORIDAD: Record<string, string> = {
   "5_informativo": "ok",
 };
 
+// Modulo IUM (2026-09-28, separado de CUM -- ver auditoria/coherencia_ium.py
+// en el backend). "un_cum" es el unico caso donde SI se compara contra
+// INVIMA; los demas se muestran como estado, nunca como si fueran un
+// veredicto de exactitud que no se calculo.
+const ETIQUETA_ESTADO_IUM: Record<string, string> = {
+  un_cum: "Comparado con INVIMA",
+  varios_cum: "INVIMA lo asocia a varios CUM — requiere decisión",
+  mal_formado: "No tiene forma de IUM válido",
+  no_publicado_en_invima: "INVIMA no publica este IUM",
+};
+
+const TIPO_POR_ESTADO_IUM: Record<string, string> = {
+  un_cum: "ok",
+  varios_cum: "warn",
+  mal_formado: "danger",
+  no_publicado_en_invima: "neutro",
+};
+
+export function pildoraEstadoIum(valor: unknown): string {
+  const v = String(valor);
+  return pildora(TIPO_POR_ESTADO_IUM[v] ?? "neutro", ETIQUETA_ESTADO_IUM[v] ?? v);
+}
+
+export const ESTADOS_IUM = Object.keys(ETIQUETA_ESTADO_IUM);
+
+export const ETIQUETAS_IUM: Record<string, string> = {
+  CODIGO_INTERNO: "IUM",
+  ESTADO_IUM: "Frente a INVIMA",
+  CUM_INVIMA: "CUM asociado en INVIMA",
+  N_CUM_INVIMA: "Cuántos CUM le asocia INVIMA",
+  IDENTIDAD_DUPLICADA: "Ya existe en Gemma Net como",
+};
+
 export function pildoraPrioridad(valor: unknown): string {
   const v = String(valor);
   return pildora(TIPO_POR_PRIORIDAD[v] ?? "neutro", ETIQUETA_PRIORIDAD[v] ?? v);
