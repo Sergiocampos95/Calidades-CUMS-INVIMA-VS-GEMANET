@@ -177,6 +177,20 @@ export function obtenerResumenIum(): Promise<Resumen> {
   return obtenerJSON<Resumen>("/ium/resumen");
 }
 
+// "Casos por calidad" del modulo IUM -- mismo mecanismo que /auditoria/calidades
+// (ver auditoria/calidades_ium.py en el backend), pero con una sola calidad.
+export function obtenerCalidadesIum(): Promise<CalidadResumen[]> {
+  return obtenerJSON<CalidadResumen[]>("/ium/calidades");
+}
+
+export function obtenerCalidadIum(nombre: string, parametros: ParametrosTabla = {}): Promise<PaginaTabla> {
+  return obtenerJSON<PaginaTabla>(`/ium/calidades/${encodeURIComponent(nombre)}`, parametros);
+}
+
+export function obtenerSeccionesCalidadIum(nombre: string): Promise<SeccionCalidad[]> {
+  return obtenerJSON<SeccionCalidad[]>(`/ium/calidades/${encodeURIComponent(nombre)}/secciones`);
+}
+
 export interface ParametrosAuditoria extends ParametrosTabla {
   estado_coherencia?: string;
   /** Uno o varios niveles de PRIORIDAD_ACCION separados por coma

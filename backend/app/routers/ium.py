@@ -11,11 +11,26 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException
 
 from backend.app.dependencies import carpeta_snapshots
-from backend.app.paginacion import paginar, valores_distintos
-from backend.app.schemas import LIMITE_PREVISUALIZACION_DEFECTO, PaginaTabla
+from backend.app.paginacion import filtrar_tabla, paginar, valores_distintos
+from backend.app.schemas import (
+    LIMITE_PREVISUALIZACION_DEFECTO,
+    CalidadResumen,
+    PaginaTabla,
+    SeccionCalidad,
+)
+from gemma_cum_loader.auditoria.calidades import (
+    ETIQUETAS_CAMPO_DIFERENCIA,
+    Calidad,
+    calidad_admite_secciones,
+    columnas_de_seccion,
+    filtrar_por_seccion,
+    secciones_de_diferencia,
+)
+from gemma_cum_loader.auditoria.calidades_ium import calidades_ium
 from worker.almacen_snapshots import leer_tabla
 
 router = APIRouter(prefix="/ium", tags=["ium"])
@@ -73,3 +88,116 @@ def resumen_ium(carpeta: Path = Depends(carpeta_snapshots)) -> dict[str, int]:
     if "ESTADO_IUM" not in df.columns:
         return {}
     return df["ESTADO_IUM"].value_counts().to_dict()
+
+
+# ---- "Casos por calidad" del modulo IUM -- ver auditoria/calidades_ium.py.
+# Sin cache (a diferencia de /auditoria/calidades): a ~90 filas, recalcular
+# en cada request no se acerca a los 666 ms medidos sobre 200.000 filas que
+# justificaron la cache alla (ver backend/app/routers/calidades.py).
+
+
+def _calidades_ium(carpeta: Path) -> list[Calidad]:
+    return calidades_ium(_tabla_auditoria_ium(carpeta))
+
+
+@router.get("/calidades", response_model=list[CalidadResumen])
+def listar_calidades_ium(carpeta: Path = Depends(carpeta_snapshots)) -> list[CalidadResumen]:
+    return [
+        CalidadResumen(
+            nombre=c.nombre,
+            explica=c.explica,
+            medicamentos=c.medicamentos,
+            porcentaje_del_catalogo=c.porcentaje_del_catalogo,
+            columnas=list(c.columnas),
+            criterios=list(c.criterios),
+            que_hacer=c.que_hacer,
+        )
+        for c in _calidades_ium(carpeta)
+    ]
+
+
+def _calidad_ium_o_404(nombre: str, carpeta: Path) -> Calidad:
+    calidades = {c.nombre: c for c in _calidades_ium(carpeta)}
+    calidad = calidades.get(nombre)
+    if calidad is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"'{nombre}' no es una calidad IUM reconocida. Disponibles: {', '.join(calidades)}.",
+        )
+    return calidad
+
+
+@router.get("/calidades/{nombre}/secciones", response_model=list[SeccionCalidad])
+def listar_secciones_calidad_ium(
+    nombre: str, carpeta: Path = Depends(carpeta_snapshots)
+) -> list[SeccionCalidad]:
+    calidad = _calidad_ium_o_404(nombre, carpeta)
+    if not calidad_admite_secciones(nombre):
+        return []
+    return [
+        SeccionCalidad(
+            clave=s.clave,
+            etiqueta=s.etiqueta,
+            medicamentos=s.medicamentos,
+            derivado_de=[ETIQUETAS_CAMPO_DIFERENCIA.get(c, c) for c in s.derivado_de],
+            explica=s.explica,
+        )
+        for s in secciones_de_diferencia(calidad.df_tabla)
+    ]
+
+
+def _tabla_calidad_ium_filtrada(
+    nombre: str,
+    carpeta: Path,
+    *,
+    seccion: str | None = None,
+    q: str | None = None,
+    filtros_json: str | None = None,
+) -> pd.DataFrame:
+    calidad = _calidad_ium_o_404(nombre, carpeta)
+    aplica = seccion is not None and calidad_admite_secciones(nombre)
+    tabla = filtrar_por_seccion(calidad.df_tabla, seccion) if aplica else calidad.df_tabla
+    if aplica and seccion is not None:
+        columnas = columnas_de_seccion(seccion)
+        if columnas:
+            tabla = tabla[[c for c in columnas if c in tabla.columns]]
+    else:
+        tabla = tabla[[c for c in calidad.columnas if c in tabla.columns]]
+    return filtrar_tabla(tabla, q=q, filtros_json=filtros_json)
+
+
+@router.get("/calidades/{nombre}", response_model=PaginaTabla)
+def obtener_calidad_ium(
+    nombre: str,
+    q: str | None = None,
+    limite: int = LIMITE_PREVISUALIZACION_DEFECTO,
+    offset: int = 0,
+    todo: bool = False,
+    ordenar_por: str | None = None,
+    orden_descendente: bool = False,
+    filtros_json: str | None = None,
+    seccion: str | None = None,
+    carpeta: Path = Depends(carpeta_snapshots),
+) -> PaginaTabla:
+    tabla = _tabla_calidad_ium_filtrada(nombre, carpeta, seccion=seccion, q=q, filtros_json=filtros_json)
+    return paginar(
+        tabla,
+        limite=limite,
+        offset=offset,
+        todo=todo,
+        ordenar_por=ordenar_por,
+        orden_descendente=orden_descendente,
+    )
+
+
+@router.get("/calidades/{nombre}/valores")
+def valores_columna_calidad_ium(
+    nombre: str,
+    columna: str,
+    seccion: str | None = None,
+    carpeta: Path = Depends(carpeta_snapshots),
+) -> list[dict[str, object]]:
+    tabla = _calidad_ium_o_404(nombre, carpeta).df_tabla
+    if seccion is not None and calidad_admite_secciones(nombre):
+        tabla = filtrar_por_seccion(tabla, seccion)
+    return valores_distintos(tabla, columna)

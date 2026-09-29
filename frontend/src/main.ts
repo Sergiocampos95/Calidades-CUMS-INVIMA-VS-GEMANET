@@ -8,7 +8,7 @@ import { montarAuditEntender, montarAuditExplorar, montarAuditPriorizar, montarB
 import { montarCargueEstructura, montarCargueExcel } from "./vistas/cargue";
 import { montarDecision } from "./vistas/decision";
 import { montarConsultarInvima } from "./vistas/consulta_detalle";
-import { montarIum } from "./vistas/ium";
+import { montarIum, montarIumCalidad } from "./vistas/ium";
 import { montarDetalleRegistro, montarResumenPrincipal } from "./vistas/resumen";
 
 interface SubVista {
@@ -49,7 +49,10 @@ const SECCIONES: Seccion[] = [
   // .ai/planes/2026-09-28-modulo-ium-separado.md).
   {
     id: "ium", etiqueta: "IUM", icono: "◈", grupo: "Medicamentos ya cargados",
-    sub: [{ id: "cargados", etiqueta: "IUM ya cargados", montar: montarIum }],
+    sub: [
+      { id: "cargados", etiqueta: "IUM ya cargados", montar: montarIum },
+      { id: "calidad", etiqueta: "Casos por calidad", montar: montarIumCalidad },
+    ],
   },
   {
     id: "resumen", etiqueta: "Candidatos", icono: "▤", grupo: "Candidatos para cargue",
