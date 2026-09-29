@@ -40,6 +40,7 @@ from backend.app.routers import (
     cargue,
     consulta_detalle,
     descargas,
+    ium,
     refrescar,
     salud,
     universo,
@@ -93,6 +94,7 @@ for router in (
     cargue.router,
     descargas.router,
     refrescar.router,
+    ium.router,
 ):
     app.include_router(router, dependencies=protegido)
 

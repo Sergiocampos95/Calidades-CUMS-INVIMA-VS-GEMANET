@@ -42,12 +42,21 @@ def _clasificador_fake(df_invima):
     return pd.DataFrame({"CODIGO_INTERNO": ["1-1"], "CLASIFICACION_CREACION": ["candidato"]})
 
 
+def _auditor_ium_fake(df_invima, reporte_gemanet, df_invima_vencidos, **kwargs):
+    return pd.DataFrame({"CODIGO_INTERNO": ["1C1016781003102"], "ESTADO_IUM": ["un_cum"]})
+
+
+def _auditor_ium_fake_que_revienta(df_invima, reporte_gemanet, df_invima_vencidos, **kwargs):
+    raise RuntimeError("fuente sin columna IUM, simulado")
+
+
 def _kwargs_comunes(tmp_path):
     return {
         "lector_gemanet": lambda: object(),
         "lector_invima_api": _lector_invima_api_fake,
         "procesador": _procesador_fake,
         "auditor": _auditor_fake,
+        "auditor_ium": _auditor_ium_fake,
         "clasificador": _clasificador_fake,
         # Sin esto, el default real (_localizar_malla_referencia_defecto)
         # escanearia data/ de verdad -- en esta maquina de desarrollo SI
@@ -77,6 +86,38 @@ def test_refresco_exitoso_queda_registrado_en_el_estado(tmp_path):
     ejecutar_refresco(**_kwargs_comunes(tmp_path))
     ultimo = ultimo_refresco(tmp_path / "estado.sqlite3")
     assert ultimo.estado == ESTADO_OK
+
+
+def test_refresco_escribe_auditoria_ium_en_el_snapshot(tmp_path):
+    ejecutar_refresco(**_kwargs_comunes(tmp_path))
+    auditoria_ium = leer_tabla("auditoria_ium", tmp_path / "snapshots")
+    assert auditoria_ium["ESTADO_IUM"].tolist() == ["un_cum"]
+
+
+def test_refresco_falla_ium_no_tumba_snapshot_cum(tmp_path):
+    kwargs = _kwargs_comunes(tmp_path)
+    kwargs["auditor_ium"] = _auditor_ium_fake_que_revienta
+    evento = ejecutar_refresco(**kwargs)
+
+    # el refresco de CUM sigue viendose exitoso: el modulo IUM es aparte
+    # (decision del usuario 2026-09-28) y su fallo no lo tumba.
+    assert evento.estado == ESTADO_OK
+    auditoria = leer_tabla("auditoria", tmp_path / "snapshots")
+    assert auditoria["PORCENTAJE_CALIDAD"].tolist() == [100.0]
+    # y la tabla IUM simplemente no existe -- no una tabla vieja ni vacia
+    # disfrazada de buena.
+    assert leer_tabla("auditoria_ium", tmp_path / "snapshots") is None
+
+
+def test_refresco_falla_ium_deja_el_paso_marcado_error_sin_tumbar_los_siguientes(tmp_path):
+    kwargs = _kwargs_comunes(tmp_path)
+    kwargs["auditor_ium"] = _auditor_ium_fake_que_revienta
+    ejecutar_refresco(**kwargs)
+
+    progreso = {p.nombre: p.estado for p in progreso_actual(tmp_path / "estado.sqlite3")}
+    assert progreso["Revisando los IUM ya cargados"] == ESTADO_PASO_ERROR
+    assert progreso["Clasificando los registros de INVIMA"] == ESTADO_PASO_HECHO
+    assert progreso["Guardando los resultados"] == ESTADO_PASO_HECHO
 
 
 def test_fallo_del_lector_de_gemanet_no_rompe_el_proceso_y_queda_registrado(tmp_path):

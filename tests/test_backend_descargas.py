@@ -48,6 +48,38 @@ def test_descargar_candidatos_arma_un_xlsx_valido_con_una_hoja_por_accion(tmp_pa
         app.dependency_overrides.clear()
 
 
+def test_descargar_ium_sin_snapshot_da_503(tmp_path):
+    cliente, _ = _cliente(tmp_path)
+    try:
+        assert cliente.get("/descargas/ium").status_code == 503
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_descargar_ium_convierte_la_lista_de_cum_a_texto(tmp_path):
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        df = pd.DataFrame(
+            {
+                "CODIGO_INTERNO": ["1C1016781003102"],
+                "ESTADO_IUM": ["varios_cum"],
+                "CUM_INVIMA": [["20083667-1", "20083667-2"]],
+            }
+        )
+        escribir_snapshot({"auditoria_ium": df}, carpeta=carpeta)
+
+        r = cliente.get("/descargas/ium")
+        assert r.status_code == 200
+        libro = _leer_xlsx(r.content)
+        assert set(libro.sheetnames) == {"varios_cum"}
+        hoja = libro["varios_cum"]
+        encabezados = [c.value for c in next(hoja.iter_rows(min_row=1, max_row=1))]
+        columna_cum = encabezados.index("CUM_INVIMA") + 1
+        assert hoja.cell(row=2, column=columna_cum).value == "20083667-1, 20083667-2"
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_descargar_auditoria_agrupa_por_estado_coherencia(tmp_path):
     cliente, carpeta = _cliente(tmp_path)
     try:

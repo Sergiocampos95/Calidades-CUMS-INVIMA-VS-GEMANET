@@ -108,6 +108,28 @@ def descargar_auditoria(carpeta: Path = Depends(carpeta_snapshots)) -> Response:
     return _adjunto("auditoria_coherencia_invima.xlsx", contenido)
 
 
+@router.get("/ium")
+def descargar_ium(carpeta: Path = Depends(carpeta_snapshots)) -> Response:
+    """La auditoria del modulo IUM, una hoja por ESTADO_IUM."""
+    df = _tabla_o_503(
+        "auditoria_ium", carpeta, "Todavía no hay datos de IUM: la primera actualización no ha terminado."
+    )
+    # CUM_INVIMA es una lista (0, 1 o varios CUM) -- Excel no escribe listas
+    # en una celda, se muestra como texto separado por coma. Solo para la
+    # descarga: el DataFrame en memoria que lee el resto de la app no se toca.
+    # Tras un ida y vuelta por parquet llega como numpy.ndarray, no list --
+    # se detecta por "no es texto y tiene __len__", no por isinstance(list).
+    if "CUM_INVIMA" in df.columns:
+        df = df.copy()
+        df["CUM_INVIMA"] = df["CUM_INVIMA"].apply(
+            lambda v: ", ".join(v) if hasattr(v, "__len__") and not isinstance(v, str) else (v or "")
+        )
+    contenido = bytes_desde_escritor(
+        lambda ruta: guardar_reporte(df, ruta, columna_hoja="ESTADO_IUM")
+    )
+    return _adjunto("auditoria_ium.xlsx", contenido)
+
+
 @router.get("/cargue-estructura")
 def descargar_cargue_estructura(carpeta: Path = Depends(carpeta_snapshots)) -> Response:
     """El archivo de auditoria de estructura (TODOS los candidatos, listos
