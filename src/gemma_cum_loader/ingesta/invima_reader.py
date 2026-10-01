@@ -58,11 +58,11 @@ reconfirmados contra archivos reales del usuario (2026-08-19):
   (`_resolver_hoja_auxiliar`, candidatos `HOJAS_CATALOGO_VIGENTES`) que
   los demas -- los 4 lectores son consistentes.
 
-FILA_ENCABEZADO/RANGO_COLUMNAS confirmados correctos sin cambios para los
-4. La unica tolerancia que sigue sin verificar contra un caso real es el
-propio encabezado/rango de columnas si INVIMA cambia el formato del
-archivo -- eso lanzaria un KeyError/columna faltante mas adelante en el
-pipeline, no un error silencioso.
+El listado de Vencidos descargado el 2026-10-01 cambio su formato: deja los
+encabezados en la primera fila, junta sus palabras (por ejemplo,
+`CONSECUTIVOCUM`) y no publica IUM. El lector busca los encabezados en las
+primeras filas y normaliza ese formato al mismo contrato interno; IUM queda
+ausente, no se inventa.
 
 Con 3 datasets de la misma forma se cumple la "regla de tres" que el
 lector de Vencidos habia dejado pendiente: `_resolver_hoja_vencidos` se
@@ -85,8 +85,33 @@ import pandas as pd
 
 from gemma_cum_loader.normaliza.texto import normalizar_encabezado
 
-FILA_ENCABEZADO = 6  # 0-indexed -> fila 7 de Excel
-RANGO_COLUMNAS = "A:AC"
+FILA_ENCABEZADO = 6  # 0-indexed -> fila 7 de Excel del formato historico
+FILAS_INICIALES_A_REVISAR = 10
+
+_ALIAS_ENCABEZADOS_COMPACTOS = {
+    "REGISTROSANITARIO": "REGISTRO_SANITARIO",
+    "FECHAEXPEDICION": "FECHA_EXPEDICION",
+    "FECHAVENCIMIENTO": "FECHA_VENCIMIENTO",
+    "ESTADOREGISTRO": "ESTADO_REGISTRO",
+    "EXPEDIENTECUM": "EXPEDIENTE_CUM",
+    "CONSECUTIVOCUM": "CONSECUTIVO",
+    "CANTIDADCUM": "CANTIDAD_CUM",
+    "DESCRIPCIONCOMERCIAL": "DESCRIPCION_COMERCIAL",
+    "ESTADOCUM": "ESTADO_CUM",
+    "FECHAACTIVO": "FECHA_ACTIVO",
+    "FECHAINACTIVO": "FECHA_INACTIVO",
+    "MUESTRAMEDICA": "MUESTRA_MEDICA",
+    "DESCRIPCIONATC": "DESCRIPCION_ATC",
+    "VIAADMINISTRACION": "VIA_ADMINISTRACION",
+    "PRINCIPIOACTIVO": "PRINCIPIO_ACTIVO",
+    "UNIDADMEDIDA": "UNIDAD_MEDIDA",
+    "UNIDADREFERENCIA": "UNIDAD_REFERENCIA",
+    "FORMAFARMACEUTICA": "FORMA_FARMACEUTICA",
+    "NOMBREROL": "NOMBRE_ROL",
+    "TIPOROL": "TIPO_ROL",
+}
+
+_ENCABEZADOS_IDENTIFICADORES = {"EXPEDIENTE", "PRODUCTO"}
 
 # Candidatos de nombre de hoja para cada archivo -- confirmado con archivos
 # reales del usuario (2026-08-19) que el nombre exacto de hoja SI varia
@@ -113,6 +138,7 @@ def _normalizar_catalogo_invima(df: pd.DataFrame) -> pd.DataFrame:
     """
     df = df.copy()
     df.columns = [normalizar_encabezado(c) for c in df.columns]
+    df = df.rename(columns=_ALIAS_ENCABEZADOS_COMPACTOS)
 
     if "EXPEDIENTE" in df.columns:
         df["EXPEDIENTE"] = pd.to_numeric(df["EXPEDIENTE"], errors="coerce").astype("Int64")
@@ -124,6 +150,24 @@ def _normalizar_catalogo_invima(df: pd.DataFrame) -> pd.DataFrame:
         df["CODIGO_INTERNO"] = df["EXPEDIENTE"].astype(str) + "-" + df["CONSECUTIVO"].astype(str)
 
     return df
+
+
+def _leer_hoja_catalogo(libro: pd.ExcelFile, hoja: str) -> pd.DataFrame:
+    """Lee formatos INVIMA con encabezado historico o en la primera fila.
+
+    INVIMA puede publicar menos columnas accesorias, como IUM en Vencidos.
+    Se conserva el esquema realmente recibido y solo se normalizan los
+    nombres al contrato comun; la auditoria no debe rellenar datos ausentes.
+    """
+    inicial = pd.read_excel(libro, sheet_name=hoja, header=None, nrows=FILAS_INICIALES_A_REVISAR)
+    for fila, valores in inicial.iterrows():
+        encabezados = {normalizar_encabezado(valor) for valor in valores}
+        if _ENCABEZADOS_IDENTIFICADORES.issubset(encabezados):
+            return pd.read_excel(libro, sheet_name=hoja, header=fila)
+    raise ValueError(
+        f"No se encontro una fila de encabezados INVIMA en las primeras "
+        f"{FILAS_INICIALES_A_REVISAR} filas de la hoja '{hoja}'."
+    )
 
 
 def leer_catalogo_invima(archivo: str | Path | Any) -> pd.DataFrame:
@@ -144,12 +188,7 @@ def leer_catalogo_invima(archivo: str | Path | Any) -> pd.DataFrame:
 
     libro = pd.ExcelFile(archivo)
     hoja = _resolver_hoja_auxiliar(libro.sheet_names, HOJAS_CATALOGO_VIGENTES, "vigen", "Vigentes")
-    df = pd.read_excel(
-        libro,
-        sheet_name=hoja,
-        header=FILA_ENCABEZADO,
-        usecols=RANGO_COLUMNAS,
-    )
+    df = _leer_hoja_catalogo(libro, hoja)
     return _normalizar_catalogo_invima(df)
 
 
@@ -207,12 +246,7 @@ def _leer_catalogo_invima_auxiliar(
 
     libro = pd.ExcelFile(archivo)
     hoja = _resolver_hoja_auxiliar(libro.sheet_names, candidatos_hoja, fragmento_busqueda, nombre_dataset)
-    df = pd.read_excel(
-        libro,
-        sheet_name=hoja,
-        header=FILA_ENCABEZADO,
-        usecols=RANGO_COLUMNAS,
-    )
+    df = _leer_hoja_catalogo(libro, hoja)
     return _normalizar_catalogo_invima(df)
 
 
