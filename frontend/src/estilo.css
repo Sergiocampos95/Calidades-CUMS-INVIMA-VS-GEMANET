@@ -440,9 +440,11 @@ tbody tr:hover td { background: var(--azul-fondo); }
 .registros-invima__titulo { margin: 0 0 6px; line-height: 1.4; }
 /* Tabla "Registros de INVIMA de este CUM": todas las filas, agrupadas por registro. */
 .registros-invima__panel { margin-top: 16px; }
-.registros-invima__tabla tbody th[scope="row"] { vertical-align: top; white-space: nowrap; background: var(--fondo); color: var(--texto); font-weight: 600; }
-.registros-invima__tabla td { vertical-align: top; white-space: nowrap; }
-.registros-invima__tabla td.registros-invima__largo { white-space: normal; min-width: 150px; }
+.consulta-invima__tabla.registros-invima__tabla tbody th[scope="row"] { vertical-align: top; white-space: nowrap; background: var(--fondo); color: var(--texto); font-weight: 600; }
+/* Doble clase: `.consulta-invima__tabla td` (mas abajo en este archivo) parte
+   palabras y si no se le gana en especificidad la via y el ATC salen "IN TR AV". */
+.consulta-invima__tabla.registros-invima__tabla td { vertical-align: top; white-space: nowrap; word-break: normal; }
+.consulta-invima__tabla.registros-invima__tabla td.registros-invima__largo { white-space: normal; min-width: 150px; }
 .registros-invima__fila--elegida td, .registros-invima__fila--elegida th { background: var(--ok-soft); }
 .registros-invima__elegir { font-size: 12px; padding: 3px 8px; white-space: nowrap; }
 .registros-invima__etiqueta { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; }
