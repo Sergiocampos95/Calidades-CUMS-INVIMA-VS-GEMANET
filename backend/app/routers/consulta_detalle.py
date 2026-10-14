@@ -263,14 +263,21 @@ def elegir_registro(
     return {"cum": eleccion.cum, "registro": eleccion.registro_al_elegir, "usuario": eleccion.usuario, "fecha_utc": eleccion.fecha_utc}
 
 
-@router.delete("/eleccion-registro")
+class PedidoQuitarEleccion(BaseModel):
+    cum: str
+
+
+# POST y no DELETE: la app solo usa GET/POST (el CORS de desarrollo, main.py,
+# no deja pasar otro metodo) -- un DELETE fallaba en silencio desde Vite.
+@router.post("/eleccion-registro/quitar")
 def quitar_registro_elegido(
-    cum: str,
+    pedido: PedidoQuitarEleccion,
     sesion: Sesion = Depends(usuario_actual),
     ruta: Path = Depends(ruta_elecciones),
 ):
     """Vuelve el CUM al cruce de siempre (el registro 1 del archivo)."""
-    return {"cum": _limpiar_codigo(cum), "quitada": quitar_eleccion(_limpiar_codigo(cum), sesion.usuario, ruta)}
+    cum = _limpiar_codigo(pedido.cum)
+    return {"cum": cum, "quitada": quitar_eleccion(cum, sesion.usuario, ruta)}
 
 
 @router.get("/medicamento")
