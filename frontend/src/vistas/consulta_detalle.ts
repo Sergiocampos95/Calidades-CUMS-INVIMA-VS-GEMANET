@@ -879,10 +879,10 @@ function tablaFilasInvimaHTML(
           const comunes =
             i === 0
               ? `<th scope="row" rowspan="${grupo.length}">Registro ${numero}<br/>${marcas}</th>` +
-                (conCoincidencia ? `<td rowspan="${grupo.length}">${info ? escaparHTML(textoCoincidencia(info)) : "—"}</td>` : "") +
+                (conCoincidencia ? `<td rowspan="${grupo.length}" class="registros-invima__comun">${info ? escaparHTML(textoCoincidencia(info)) : "—"}</td>` : "") +
                 // Los botones junto a la coincidencia, que es donde se decide:
                 // al final de la fila quedaban fuera de la vista (tabla ancha).
-                (conCoincidencia ? `<td rowspan="${grupo.length}">${accion}</td>` : "")
+                (conCoincidencia ? `<td rowspan="${grupo.length}" class="registros-invima__comun">${accion}</td>` : "")
               : "";
           const cantidad = [f["CANTIDAD"], f["UNIDAD_MEDIDA"]].map((v) => String(v ?? "").trim()).filter(Boolean).join(" ");
           const rol = [f["TIPO_ROL"], f["NOMBRE_ROL"]].map((v) => String(v ?? "").trim()).filter(Boolean).join(": ");
