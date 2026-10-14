@@ -518,7 +518,15 @@ def _definiciones(
             ),
             [
                 *base, "RESPONSABLE_DISCREPANCIA",
-                "DETALLE_DIFERENCIAS", "CAMPOS_CON_DIFERENCIA", "PORCENTAJE_CALIDAD",
+                "DETALLE_DIFERENCIAS", "CAMPOS_CON_DIFERENCIA",
+                # Junto a los campos distintos: un "difiere" puede salir de
+                # haber cruzado contra la primera fila de INVIMA cuando el CUM
+                # tiene varios registros y Gemma Net calza con otro (ver
+                # auditoria/registros_invima.py). Pedido del usuario
+                # (2026-10-14): que no parezca que hay que actualizar algo que
+                # solo se cruzo contra otro registro.
+                "OTRO_REGISTRO_INVIMA_COINCIDE_MAS", "REGISTROS_INVIMA_DISTINTOS",
+                "PORCENTAJE_CALIDAD",
                 # Las fechas van en PARES, en el mismo orden en que se
                 # comparan: FECHA_INICIO contra FECHA ACTIVO y FECHA_FIN
                 # contra FECHA VENCIMIENTO (ver PARES_FECHAS_GEMANET_INVIMA).

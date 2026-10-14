@@ -275,6 +275,10 @@ export const ETIQUETAS_COLUMNA_COMUNES: Record<string, string> = {
   NOVEDAD_VIGENCIA_INVIMA: "Vigencia frente a INVIMA",
   DETALLE_VIGENCIA_INVIMA: "Detalle de la vigencia",
   CAMPOS_CON_DIFERENCIA: "Campos distintos a INVIMA",
+  // Ver auditoria/registros_invima.py: INVIMA publica varias filas por CUM y
+  // la auditoria cruza contra la primera.
+  OTRO_REGISTRO_INVIMA_COINCIDE_MAS: "Otro registro de INVIMA coincide más",
+  REGISTROS_INVIMA_DISTINTOS: "Registros distintos en INVIMA",
   DETALLE_DIFERENCIAS: "Ver diferencias",
   PORCENTAJE_CALIDAD: "Calidad (%)",
   CONSEJO: "Qué hacer",
