@@ -62,6 +62,12 @@ COLUMNAS_ESPERADAS: dict[str, tuple[str, ...]] = {
         "VIGENCIA_NO_CONFIRMABLE",
     ),
     "invima_listados": ("CODIGO_INTERNO", "LISTADO"),
+    # Tabla del modulo IUM (2026-09-28, separado de "auditoria"): puede estar
+    # AUSENTE del snapshot si el paso se degrado ese dia (ver worker/tareas.py
+    # ::_paso_opcional) -- `desfases_de_esquema` ya trata "tabla ausente"
+    # distinto de "tabla con columnas viejas" (ver su docstring), asi que
+    # listar esto aca no genera un falso desfase cuando la tabla no existe.
+    "auditoria_ium": ("ESTADO_IUM", "CUM_INVIMA", "N_CUM_INVIMA", "IDENTIDAD_DUPLICADA"),
 }
 
 

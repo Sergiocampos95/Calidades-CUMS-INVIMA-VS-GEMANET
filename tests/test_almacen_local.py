@@ -62,6 +62,62 @@ def test_entre_dos_candidatos_gana_el_mas_reciente(tmp_path):
     assert descubrir("invima_vigentes", tmp_path).ruta == nuevo
 
 
+def test_reconoce_los_cuatro_listados_con_los_nombres_del_portal_nuevo(tmp_path):
+    """Descargas de octubre 2026: nombres en mayusculas, con tildes
+    ("TRÁMITE", "RENOVACIÓN") y la fecha al final. Junto a ellos queda un
+    "Vencidos_A" viejo y diminuto que NO debe ganar por calzar con *vencid*."""
+    import os
+    import time
+
+    viejo = _crear(tmp_path, "Código_Único_Medicamentos_Vencidos_A_20261001.xlsx")
+    os.utime(viejo, (time.time() - 86400, time.time() - 86400))
+    _crear(tmp_path, "CÓDIGO_ÚNICO_DE_MEDICAMENTOS_VIGENTES_20261002.xlsx")
+    _crear(tmp_path, "CÓDIGO_ÚNICO_DE_MEDICAMENTOS_VENCIDOS_20261002.xlsx")
+    _crear(tmp_path, "CÓDIGO_ÚNICO_DE_MEDICAMENTOS_OTROS_ESTADOS_20261002.xlsx")
+    _crear(tmp_path, "CÓDIGO_ÚNICO_DE_MEDICAMENTOS_EN_TRÁMITE_DE_RENOVACIÓN_20261002.xlsx")
+
+    hallado = descubrir_todo(tmp_path)
+    assert hallado["invima_vigentes"].nombre.endswith("VIGENTES_20261002.xlsx")
+    assert hallado["invima_vencidos"].nombre.endswith("VENCIDOS_20261002.xlsx")
+    assert hallado["invima_otros_estados"].nombre.endswith("OTROS_ESTADOS_20261002.xlsx")
+    assert "RENOVACIÓN" in hallado["invima_renovacion"].nombre
+
+
+def _libro_con_hojas(carpeta, nombre, hojas):
+    from openpyxl import Workbook
+
+    libro = Workbook()
+    libro.active.title = hojas[0]
+    for hoja in hojas[1:]:
+        libro.create_sheet(hoja)
+    libro.save(carpeta / nombre)
+
+
+def test_la_estructura_con_hoja_plantilla_sin_el_2_se_descubre(tmp_path):
+    """Archivo oficial de octubre 2026: hojas `plantilla`, `NO POS` y `TABLAS DE
+    REFERENCIA`. El lector de la malla (`_resolver_hoja_malla`) ya lo acepta;
+    el validador de descubrimiento exigia `plantilla (2)` y lo dejaba afuera,
+    con lo que las vistas de Cargue se apagaban sin ningun aviso."""
+    _libro_con_hojas(
+        tmp_path, "Estructura Cargue Medicamentos ultimo mixto.xlsx", ["plantilla", "NO POS", "TABLAS DE REFERENCIA"]
+    )
+    assert descubrir_todo(tmp_path)["estructura_cargue"].nombre == "Estructura Cargue Medicamentos ultimo mixto.xlsx"
+
+
+def test_la_estructura_con_plantilla_2_sigue_descubriendose(tmp_path):
+    _libro_con_hojas(tmp_path, "Estructura Cargue Medicamentos.xlsx", ["plantilla", "plantilla (2)", "NO POS"])
+    assert "estructura_cargue" in descubrir_todo(tmp_path)
+
+
+def test_una_estructura_sin_hoja_de_malla_o_con_hoja_ambigua_no_se_propone(tmp_path):
+    """Sin ninguna hoja con "plantilla" -- o con dos y ninguna exacta -- el
+    lector no sabria cual usar y fallaria a mitad de corrida: mejor no
+    proponer nada (mismo criterio de `_resolver_hoja_malla`)."""
+    _libro_con_hojas(tmp_path, "Estructura Cargue A.xlsx", ["Hoja1", "Hoja2"])
+    _libro_con_hojas(tmp_path, "Estructura Cargue B.xlsx", ["plantilla vieja", "plantilla nueva"])
+    assert "estructura_cargue" not in descubrir_todo(tmp_path)
+
+
 def test_el_validador_descarta_un_archivo_que_no_sirve(tmp_path):
     """Caso real: habia dos Estructura de Cargue y la MAS NUEVA no traia la
     hoja `plantilla (2)`. Sin validador se habria propuesto esa y la corrida

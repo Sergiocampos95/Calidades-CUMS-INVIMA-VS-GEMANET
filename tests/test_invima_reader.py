@@ -4,6 +4,7 @@ import openpyxl
 import pytest
 
 from gemma_cum_loader.ingesta.invima_reader import (
+    _es_formato_portal,
     catalogo_activo_fabricante,
     leer_catalogo_invima,
     leer_catalogo_invima_otros_estados,
@@ -305,3 +306,74 @@ def test_leer_otros_estados_conserva_estado_registro_real_por_fila(tmp_path):
     df = leer_catalogo_invima_otros_estados(ruta)
     assert "ESTADO_REGISTRO" in df.columns
     assert set(df["ESTADO_REGISTRO"]) == {"Vigente"}
+
+
+# ---- formato nuevo del portal de datos.gov.co (visto 2026-09-28): hoja
+# "Data", encabezado en la fila 1, columnas estilo API (registrosanitario,
+# tiporol...) en vez del Excel clasico (fila 7, "REGISTRO SANITARIO",
+# "TIPO ROL"). Se detecta por el nombre de columnas, nunca por el nombre de
+# hoja ni por cuantas columnas trae -- ver docstring de _es_formato_portal.
+
+COLUMNAS_API = [
+    "expediente", "producto", "titular", "registrosanitario",
+    "fechaexpedicion", "fechavencimiento", "estadoregistro",
+    "expedientecum", "consecutivocum", "cantidadcum", "descripcioncomercial",
+    "estadocum", "fechaactivo", "fechainactivo", "muestramedica",
+    "unidad", "atc", "descripcionatc", "viaadministracion",
+    "concentracion", "principioactivo", "unidadmedida", "cantidad",
+    "unidadreferencia", "formafarmaceutica", "nombrerol", "tiporol",
+    "modalidad", "ium",
+]
+
+
+def _crear_xlsx_formato_portal(tmp_path: Path, nombre_archivo: str, columnas: list[str], filas: list) -> Path:
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Data"  # el portal siempre nombra la hoja "Data", sin decir el dataset
+    ws.append(columnas)  # encabezado en la fila 1, no en la 7
+    for fila in filas:
+        ws.append(fila)
+    ruta = tmp_path / nombre_archivo
+    wb.save(ruta)
+    return ruta
+
+
+def test_es_formato_portal_reconoce_columnas_estilo_api():
+    assert _es_formato_portal(COLUMNAS_API)
+
+
+def test_es_formato_portal_no_confunde_una_banda_de_titulo_clasica():
+    # las primeras filas del Excel clasico son titulo/banda "CUM", no encabezado real
+    assert not _es_formato_portal([None] * len(COLUMNAS))
+
+
+def test_leer_catalogo_reconoce_formato_nuevo_del_portal_completo(tmp_path):
+    ruta = _crear_xlsx_formato_portal(tmp_path, "CUM_vigente_20260928.xlsx", COLUMNAS_API, FILAS)
+    df = leer_catalogo_invima(ruta)
+    assert set(df["CODIGO_INTERNO"]) == {"10815-3", "20147-1", "30111-1", "40222-1"}
+    assert "TIPO_ROL" in df.columns
+    assert "ESTADO_CUM" in df.columns
+
+
+def test_leer_vencidos_reconoce_formato_nuevo_del_portal(tmp_path):
+    ruta = _crear_xlsx_formato_portal(tmp_path, "Codigo_Unico_Medicamentos_Vencidos.xlsx", COLUMNAS_API, FILAS)
+    df = leer_catalogo_invima_vencidos(ruta)
+    assert "40222-1" in set(df["CODIGO_INTERNO"])
+
+
+def test_leer_catalogo_formato_portal_incompleto_no_arma_codigo_interno_si_falta_consecutivo(tmp_path):
+    # caso real 2026-09-28: Vigentes vino en este formato con solo 10 de las
+    # 29 columnas, sin "consecutivocum" -- no se inventa un CONSECUTIVO, y
+    # sin el, CODIGO_INTERNO tampoco se arma (degradacion explicita: el
+    # dato no esta, no se adivina).
+    columnas_incompletas = [
+        "expediente", "principioactivo", "cantidad", "unidadmedida",
+        "unidadreferencia", "formafarmaceutica", "registrosanitario",
+        "fechaexpedicion", "fechavencimiento", "estadoregistro",
+    ]
+    fila = [20038383, "MONTELUKAST SODICO", 10, "mg", "TABLETA", "TABLETA RECUBIERTA",
+            "INVIMA 2021M-0013144-R1", "04/30/2012", None, "Vigente"]
+    ruta = _crear_xlsx_formato_portal(tmp_path, "CUM_vigente_incompleto.xlsx", columnas_incompletas, [fila])
+    df = leer_catalogo_invima(ruta)
+    assert "EXPEDIENTE" in df.columns
+    assert "CODIGO_INTERNO" not in df.columns

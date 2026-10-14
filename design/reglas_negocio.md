@@ -20,6 +20,9 @@ La base de datos de Gemma Net contiene muchas cosas que no son CUMs (IUM,
 códigos propios, códigos de la capa legada, insumos, alimentos). Esas filas no
 se "excluyen de la auditoría": **nunca tuvieron por qué entrar**. Se ignoran.
 
+Excepción posterior (2026-09-28): los **IUM** se auditan, pero en un módulo
+**aparte** (§16), sin tocar el universo ni las cifras del módulo CUM.
+
 La distinción importa y confundirla apaga la alarma que sí importa:
 
 | | Significa | Qué hace el sistema |
@@ -516,6 +519,59 @@ reemplaza un procedimiento que antes se hacía a mano sobre una malla de Excel.
 
 **Quien carga en Gemma Net es una persona, no la aplicación.** El entregable
 son los hallazgos y el Excel.
+
+## 16. IUM: módulo aparte
+
+Desde el 2026-09-28 los IUM que Gemma Net carga se auditan en un **módulo
+separado** (`auditoria/coherencia_ium.py`, vista «IUM»), por decisión del
+usuario: "CUMs y IUMs deben ser tratados por aparte". El módulo CUM sigue
+ignorándolos (§1) y **sus cifras no cambian** por la existencia de este.
+Diseño completo y decisiones pendientes en
+`.ai/planes/2026-09-28-modulo-ium-separado.md`.
+
+### Estructura del código IUM
+
+15 caracteres = **Nivel I (8) + Nivel II (4) + Nivel III (3)**. Verificado el
+2026-10-02 contra la tabla oficial `TablaReferencia_IUM` (34.642 IUM): la
+concatenación reconstruye el código en el 100 % de los casos.
+
+| Nivel | Posiciones | Qué fija (medido sobre la tabla oficial) |
+|---|---|---|
+| I | 1–8 | Principio activo y forma farmacéutica (forma 100 %, principio activo 93 %) |
+| II | 9–12 | Forma de comercialización |
+| III | 13–15 | Presentación: unidad de empaque y condición de muestra médica |
+
+En SQL: `left(c,8)`, `substring(c from 9 for 4)`, `substring(c from 13 for 3)`.
+Un corte 6/6/3 (`left 6`, `from 6 for 6`, `from 12 for 3`) se traslapa en la
+posición 6, deja fuera la 15 y no reconstruye **ningún** código.
+
+### Cómo se cruza
+
+Un IUM no es otra llave de INVIMA: es una segunda identidad de un CUM. Se busca
+en los 4 listados qué CUM tienen ese IUM, y solo si es **exactamente uno** se
+compara campo a campo, con la misma función que un CUM. Con varios CUM no se
+elige ninguno (decisión D3 pendiente; regla §2).
+
+### Qué se compara y qué no (2026-10-02)
+
+| Campo | En una fila IUM | Por qué |
+|---|---|---|
+| `DESCRIPCION` | Depende de **cómo está escrita**: si es el **nombre oficial del IUM** ("MERCAPTOPURINA 50mg/1 U TABLETAS…") → **sin comparar**, fuera del denominador; si está **al estilo CUM** ("NIFEDIPINO 30MG CAPSULA…") → se compara normal contra las dos formas de §4 | El nombre oficial no es ninguna forma válida de un CUM y la fórmula para IUM es la decisión **D4**, pendiente. Conviven las dos escrituras: de 50 IUM comparables, 30 nombre oficial y 20 al estilo CUM (2026-10-02). La primera versión apagaba la columna entera y escondía coincidencias reales (caso del usuario: `1N1043301000100`) |
+| `CONCENTRACION` | se compara | Sigue la decisión homónima del 2026-09-09 (§4): su "difiere" es comportamiento aceptado |
+| `PRINCIPIO_ACTIVO`, `FORMA_FARMACEUTICA` | se comparan | Misma función que un CUM. En ~60 % de las filas IUM Gemma Net guarda el nombre completo del IUM en estos campos: el "difiere" es real (el campo no trae lo que dice) |
+| Resto (`UNIDAD_MEDIDA`, `CODIGO_ATC`, `MARCA_MEDICAMENTO`, fechas, vigencia) | se comparan | Sin cambios. Caso real: en `CODIGO_ATC` hay filas IUM con códigos de la tabla IUM (`COLFF007`) en vez de un ATC |
+
+Mecanismo: parámetro `campos_sin_comparar` de `auditar_coherencia()` (ver
+`mecanismos/auditoria_coherencia.md` §3.6), vacío por defecto. Verificado el
+2026-10-02 sobre el snapshot real: la auditoría CUM quedó **idéntica** en sus
+199.620 filas.
+
+### Pendiente de negocio
+
+D2 (¿una fila por IUM además de la del CUM?), D3 (IUM con varios CUM), D4
+(fórmula de `DESCRIPCION` de una fila IUM), D5 (¿`EXPEDIENTE`/`CONSECUTIVO`
+obligatorios?) y D8 (riesgo de la identidad duplicada IUM↔CUM). Hasta
+resolverlas, lo ambiguo se reporta, no se decide (§2).
 
 ---
 

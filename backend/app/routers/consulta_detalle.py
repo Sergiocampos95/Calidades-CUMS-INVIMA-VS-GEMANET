@@ -54,6 +54,14 @@ def _sanitizar_valor(valor: object) -> object:
         return round(valor, 10)
     if isinstance(valor, Decimal):
         return None if valor.is_nan() else float(valor)
+    # Listas/arrays (hoy: CUM_INVIMA del modulo IUM, que puede traer varios
+    # CUM). Va ANTES de pd.isna(): sobre un array de mas de un elemento esa
+    # funcion devuelve un array de booleanos y el `if` revienta con "the
+    # truth value of an array is ambiguous". Se muestran separados por coma,
+    # igual que en la descarga a Excel.
+    if isinstance(valor, (list, tuple)) or hasattr(valor, "tolist"):
+        elementos = [str(v).strip() for v in list(valor) if str(v).strip()]
+        return ", ".join(elementos)
     if pd.isna(valor):
         return None
     if isinstance(valor, (date, datetime)):
@@ -139,6 +147,13 @@ def consultar_medicamento(codigo: str, carpeta: Path = Depends(carpeta_snapshots
     # (degradacion explicita): se pierde el registro real de lo no vigente,
     # no la respuesta entera.
     df_listados, error_listados = _leer_snapshot_o_error("invima_listados", carpeta)
+    # Modulo IUM (ver auditoria/coherencia_ium.py). Un codigo IUM no es una
+    # llave de INVIMA: INVIMA lo publica como una columna mas de la fila de un
+    # CUM. Sin esta tabla, esta consulta decia "no existe en INVIMA" de un
+    # medicamento que INVIMA SI tiene -- contradiciendo a la vista de IUM
+    # sobre el mismo codigo (reportado por el usuario, 2026-10-01). None =
+    # snapshot sin modulo IUM: la consulta sigue funcionando como antes.
+    df_ium, _error_ium = _leer_snapshot_o_error("auditoria_ium", carpeta)
 
     if df_universo is None and df_auditoria is None:
         mensaje = " ".join(m for m in (error_universo, error_auditoria) if m) or (
@@ -157,6 +172,16 @@ def consultar_medicamento(codigo: str, carpeta: Path = Depends(carpeta_snapshots
 
     codigos_normalizados = set(codigos_consultados)
 
+    # Las filas que audito el modulo IUM, por codigo. Para un IUM que INVIMA
+    # asocia a UN solo CUM, esta fila es el veredicto correcto (comparado
+    # campo a campo contra ese CUM); la fila homonima de "auditoria" dice
+    # "sin correspondencia" porque esa auditoria solo cruza por CUM.
+    filas_ium: dict[str, dict] = {}
+    if df_ium is not None and "CODIGO_INTERNO" in df_ium.columns:
+        columna_ium = df_ium["CODIGO_INTERNO"].fillna("").astype(str).str.strip()
+        for fila in df_ium[columna_ium.isin(codigos_normalizados)].to_dict("records"):
+            filas_ium[str(fila.get("CODIGO_INTERNO") or "").strip()] = fila
+
     # Gemma Net primero -- de paso se junta CUM_RECONSTRUIDO de cada codigo
     # encontrado, que hace falta para buscar en INVIMA (ver mas abajo).
     gemma_rows: list[dict] = []
@@ -164,12 +189,26 @@ def consultar_medicamento(codigo: str, carpeta: Path = Depends(carpeta_snapshots
     if df_auditoria is not None and "CODIGO_INTERNO" in df_auditoria.columns:
         columna_auditoria = df_auditoria["CODIGO_INTERNO"].fillna("").astype(str).str.strip()
         for fila in df_auditoria[columna_auditoria.isin(codigos_normalizados)].to_dict("records"):
-            fila_s = _sanitizar_fila(fila)
+            codigo_fila = str(fila.get("CODIGO_INTERNO") or "").strip()
+            # Un IUM auditado gana sobre su fila de la auditoria de CUM: trae
+            # el mismo juego de columnas (sale de la misma `auditar_coherencia`)
+            # pero cruzado contra el CUM correcto, asi que el veredicto y los
+            # trios campo-a-campo son los buenos. Misma idea que
+            # CUM_RECONSTRUIDO abajo: la llave real no es el codigo literal.
+            fila_ium = filas_ium.get(codigo_fila)
+            fila_s = _sanitizar_fila(fila_ium if fila_ium is not None else fila)
             fila_s["ACTIVO_GEMMA_NET"] = fila_s.get("ACTIVO")
             gemma_rows.append(fila_s)
             reconstruido = str(fila.get("CUM_RECONSTRUIDO") or "").strip()
             if reconstruido:
                 claves_reconstruidas.add(reconstruido)
+            # El CUM que INVIMA asocia a este IUM es la llave con la que SI se
+            # encuentra el registro en los listados.
+            cums_ium = (fila_ium or {}).get("CUM_INVIMA")
+            if cums_ium is not None:
+                for cum in list(cums_ium):
+                    if str(cum).strip():
+                        claves_reconstruidas.add(str(cum).strip())
 
     # INVIMA (snapshot "universo" = solo Vigentes) -- por el codigo tal cual
     # Y por su CUM_RECONSTRUIDO. Bug real (2026-09-01): un codigo "CUM con
@@ -223,7 +262,19 @@ def consultar_medicamento(codigo: str, carpeta: Path = Depends(carpeta_snapshots
         reconstruido = str(fila.get("CUM_RECONSTRUIDO") or "").strip()
         if not codigo_fila:
             continue
-        invima = invima_por_codigo.get(codigo_fila) or (invima_por_codigo.get(reconstruido) if reconstruido else None)
+        # Para un IUM, la llave real en INVIMA es el CUM que INVIMA le asocia
+        # (CUM_INVIMA, del modulo IUM) -- misma idea que CUM_RECONSTRUIDO.
+        # Solo cuando es UNO: con varios no se elige ninguno, y la fila
+        # sintetica de abajo tampoco aplica porque no hay un registro unico
+        # al cual referirse.
+        cum_del_ium = str(fila.get("CUM_INVIMA") or "").strip()
+        if "," in cum_del_ium:
+            cum_del_ium = ""
+        invima = (
+            invima_por_codigo.get(codigo_fila)
+            or (invima_por_codigo.get(reconstruido) if reconstruido else None)
+            or (invima_por_codigo.get(cum_del_ium) if cum_del_ium else None)
+        )
         if invima is not None:
             if invima.get("ESTADO_REGISTRO") and not fila.get("ESTADO_INVIMA_DETALLE"):
                 fila["ESTADO_INVIMA_DETALLE"] = invima["ESTADO_REGISTRO"]
@@ -240,6 +291,11 @@ def consultar_medicamento(codigo: str, carpeta: Path = Depends(carpeta_snapshots
             for columna in _COLUMNAS_INVIMA_EN_AUDITORIA:
                 if not invima.get(columna) and fila.get(columna):
                     invima[columna] = fila.get(columna)
+            continue
+        # Un IUM que INVIMA asocia a VARIOS CUM ya tiene esas filas reales
+        # listadas arriba (se agregaron por CUM_INVIMA): la sintetica solo
+        # agregaria una fila vacia al lado de registros reales.
+        if str(fila.get("CUM_INVIMA") or "").strip():
             continue
         sintetica = _fila_invima_sintetica(fila)
         if sintetica is not None:

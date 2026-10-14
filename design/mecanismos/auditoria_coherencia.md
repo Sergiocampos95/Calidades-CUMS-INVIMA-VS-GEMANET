@@ -172,6 +172,42 @@ veredicto `VALIDACION_PENDIENTE_GYC` se asigna **al final** de la cascada de
 tocó (decisión del usuario: "solo los campos afectados"). Ver
 `reglas_negocio.md` §4.
 
+### 3.6. Campos sin regla de comparación: `campos_sin_comparar` (2026-10-02)
+
+Parámetro opcional de `auditar_coherencia()`, **`None` por defecto**: sin él
+la matriz `matriz_no_comparable` es toda `False` y el resultado de CUM es
+idéntico al de antes. Es un dict `campo -> función(tabla cruzada) -> Serie
+booleana`: decide **por fila**, no por campo entero. Lo usa el módulo IUM
+(`coherencia_ium.CAMPOS_SIN_COMPARAR_IUM`) para la `DESCRIPCION`, y solo en las
+filas donde Gemma Net guarda el **nombre oficial del IUM**
+(`sigue_convencion_nombre_ium`: concentración "por unidad" con barra,
+`50mg/1 U`). Ese nombre no es ninguna de las dos formas válidas de un CUM y la
+fórmula para IUM es la decisión D4, pendiente. Una descripción IUM escrita al
+estilo CUM se compara normal.
+
+Por qué por fila (2026-10-02): la primera versión apagaba la columna entera y
+el IUM `1N1043301000100` ("NIFEDIPINO 30MG CAPSULA DE LIBERACION PROLONGADA",
+igual a INVIMA) salía "sin comparar" con los dos datos al lado — lo señaló el
+usuario en la consulta puntual. De los 50 IUM comparables, 30 usan el nombre
+oficial y 20 la forma CUM.
+
+Se aplica **una sola vez, justo después de restar "sin dato"** (§3), antes de
+que ninguna columna derivada lea las matrices:
+
+```python
+matriz_diferencias = matriz_diferencias & ~matriz_no_comparable
+matriz_sin_dato    = matriz_sin_dato    & ~matriz_no_comparable   # no es "falta dato"
+matriz_pendiente_gyc = matriz_pendiente_gyc & ~matriz_no_comparable  # no es GyC
+sin_dato_en_ambos  = ... | matriz_pendiente_gyc | matriz_no_comparable  # fuera del denominador
+```
+
+Efecto: el campo no aparece en `CAMPOS_CON_DIFERENCIA` ni en
+`CAMPOS_PENDIENTE_GYC`, su `SIMILITUD_<CAMPO>` queda `NaN`, no cuenta como
+"falta dato que INVIMA sí trae" y no entra al denominador de
+`PORCENTAJE_CALIDAD`. En el trío (§7) su veredicto es `sin comparar`, asignado
+**el último de todos**. `_CAMPOS_GEMANET`/`_INVIMA` siguen mostrando el dato
+crudo.
+
 ## 4. Similitud: `token_set_ratio`, vectorizado (línea 1010, `similitud_de_campo`)
 
 ```python
@@ -203,6 +239,7 @@ Cuatro categorías por campo:
 | `sin_dato_en_ambos` | ninguna fuente lo trae | **No** | — |
 | `sin_dato_solo_local` | Gemma Net vacío, INVIMA **sí** lo trae | Sí | **Sí, siempre** |
 | `matriz_pendiente_gyc` | medicamento combinado (ver §3.5) — solo `DESCRIPCION` / `PRINCIPIO_ACTIVO` | **No** (se le agrega a `sin_dato_en_ambos`) | — |
+| `matriz_no_comparable` | celda marcada por `campos_sin_comparar` (ver §3.6) — hoy solo `DESCRIPCION` de las filas IUM que guardan el nombre oficial del IUM | **No** (se le agrega a `sin_dato_en_ambos`) | — |
 
 ```python
 campos_comparables_fila = len(matriz_diferencias.columns) - sin_dato_en_ambos.sum(axis=1)
@@ -301,6 +338,7 @@ veredicto[invima_tiene_datos & ~matriz_diferencias[campo]] = COINCIDE
 veredicto[invima_tiene_datos & matriz_diferencias[campo]]  = DIFIERE
 veredicto[invima_tiene_datos & matriz_sin_dato[campo]]     = SIN_DATO_LOCAL   # ¡al final!
 veredicto[matriz_pendiente_gyc[campo]]                     = PENDIENTE_GYC    # más al final (§3.5)
+veredicto[matriz_no_comparable[campo]]                     = SIN_COMPARAR     # el último de todos (§3.6)
 resultado[f"{campo}_VALIDACION"] = veredicto.values
 ```
 

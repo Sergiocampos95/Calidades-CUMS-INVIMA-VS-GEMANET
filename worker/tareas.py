@@ -46,6 +46,7 @@ from gemma_cum_loader.pipeline import (
     auditar_coherencia_gemanet,
     procesar_desde_catalogo_invima,
 )
+from gemma_cum_loader.pipeline_ium import auditar_coherencia_ium_gemanet
 from worker.almacen_snapshots import escribir_snapshot
 from worker.estado import (
     ESTADO_ERROR,
@@ -71,6 +72,7 @@ NOMBRES_PASOS_REFRESCO = (
     "Leyendo INVIMA -- Renovacion",
     "Cruzando candidatos contra Gemma Net",
     "Auditando coherencia contra INVIMA",
+    "Revisando los IUM ya cargados",
     "Clasificando los registros de INVIMA",
     "Aplicando las reglas de cargue",
     "Guardando los resultados",
@@ -231,6 +233,27 @@ def _paso(nombre, funcion, /, *args, ruta_estado=None, **kwargs):
     return resultado
 
 
+def _paso_opcional(nombre, funcion, /, *args, ruta_estado=None, **kwargs):
+    """Como `_paso()`, pero un fallo NO tumba el resto del refresco -- decision
+    explicita del usuario (2026-09-28): "el modulo CUM sigue funcionando
+    igual" si el paso de IUM falla (ej. la fuente de INVIMA de ese dia no
+    trae la columna IUM, ver `armado/indice_ium.py`). Devuelve `None` en vez
+    de relanzar; el llamador decide que hacer con un resultado ausente
+    (aca: no se escribe la tabla `auditoria_ium` en el snapshot, y el router
+    responde un 503 explicito en vez de mostrar una tabla vieja o vacia como
+    si fuera buena)."""
+    actualizar_paso(nombre, ESTADO_PASO_EN_CURSO, ruta=ruta_estado)
+    try:
+        resultado = funcion(*args, **kwargs)
+    except Exception as exc:
+        actualizar_paso(
+            nombre, ESTADO_PASO_ERROR, detalle=f"{type(exc).__name__}: {exc}", ruta=ruta_estado
+        )
+        return None
+    actualizar_paso(nombre, ESTADO_PASO_HECHO, ruta=ruta_estado)
+    return resultado
+
+
 def _leer_invima(nombre, lector_invima_api, lector_con_respaldo, *, dataset=None, ruta_estado=None):
     """`_paso()` para un dataset de INVIMA + nota informativa si
     `lector_con_respaldo` (LectorInvimaConRespaldo) tuvo que caer al
@@ -252,6 +275,7 @@ def ejecutar_refresco(
     lector_invima_api: Callable[..., pd.DataFrame] | None = None,
     procesador: Callable[..., pd.DataFrame] = procesar_desde_catalogo_invima,
     auditor: Callable[..., pd.DataFrame] = auditar_coherencia_gemanet,
+    auditor_ium: Callable[..., pd.DataFrame] = auditar_coherencia_ium_gemanet,
     clasificador: Callable[[pd.DataFrame], pd.DataFrame] = universo_invima_clasificado,
     localizador_malla: Callable[[], str | None] = _localizar_malla_referencia_defecto,
     lector_malla: Callable[[str], pd.DataFrame] = leer_malla_referencia,
@@ -359,6 +383,23 @@ def ejecutar_refresco(
             fuente_catalogos=fuente,
             ruta_estado=ruta_estado,
         )
+        # Modulo IUM (2026-09-28, separado del de CUM, ver auditoria/
+        # coherencia_ium.py): degradado con _paso_opcional -- si falla, el
+        # resto del refresco (candidatos, auditoria de CUM, cargue) sigue
+        # guardandose igual. `None` cuando falla o no aplica: no se agrega
+        # la tabla al snapshot, y el router responde un 503 explicito en vez
+        # de mostrar una tabla vieja o vacia como si fuera buena.
+        auditoria_ium = _paso_opcional(
+            "Revisando los IUM ya cargados",
+            auditor_ium,
+            df_invima,
+            reporte_gemanet,
+            df_invima_vencidos,
+            df_invima_otros_estados=df_invima_otros_estados,
+            df_invima_renovacion=df_invima_renovacion,
+            fuente_catalogos=fuente,
+            ruta_estado=ruta_estado,
+        )
         # Universo COMPLETO de INVIMA clasificado (los 101.183 registros del
         # corte, no solo los "candidato") -- alimenta la sub-vista "Detalle
         # por registro". candidatos_creacion() ya lo calcula internamente
@@ -383,6 +424,7 @@ def ejecutar_refresco(
         invima_listados = _listados_invima_unificados(
             df_invima, df_invima_vencidos, df_invima_otros_estados, df_invima_renovacion
         )
+        tabla_ium = {"auditoria_ium": auditoria_ium} if auditoria_ium is not None else {}
         _paso(
             "Guardando los resultados",
             escribir_snapshot,
@@ -392,6 +434,7 @@ def ejecutar_refresco(
                 "universo": universo,
                 "invima_listados": invima_listados,
                 **tablas_cargue,
+                **tabla_ium,
             },
             carpeta=carpeta_snapshots,
             ruta_estado=ruta_estado,

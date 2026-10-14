@@ -28,6 +28,7 @@ from backend.app.dependencies import carpeta_snapshots
 from backend.app.exportar import DELIMITADOR_EXPORTACION, bytes_desde_escritor
 from backend.app.routers.cadena_calidad import tabla_eslabon
 from backend.app.routers.calidades import tabla_calidad_filtrada
+from backend.app.routers.ium import tabla_calidad_ium_filtrada
 from gemma_cum_loader.exportacion.cargue import generar_excel_cargue
 from gemma_cum_loader.exportacion.estructura_cargue import (
     generar_excel_estructura_cargue,
@@ -106,6 +107,57 @@ def descargar_auditoria(carpeta: Path = Depends(carpeta_snapshots)) -> Response:
         lambda ruta: guardar_reporte(df, ruta, columna_hoja="ESTADO_COHERENCIA")
     )
     return _adjunto("auditoria_coherencia_invima.xlsx", contenido)
+
+
+def _cum_invima_como_texto(df: pd.DataFrame) -> pd.DataFrame:
+    """CUM_INVIMA es una lista (0, 1 o varios CUM) -- Excel no escribe listas
+    en una celda y el CSV las imprimiria como "['a', 'b']". Se muestra como
+    texto separado por coma. Solo para la descarga: el DataFrame en memoria
+    que lee el resto de la app no se toca (devuelve una copia).
+
+    Tras un ida y vuelta por parquet llega como numpy.ndarray, no list -- se
+    detecta por "no es texto y tiene __len__", no por isinstance(list)."""
+    if "CUM_INVIMA" not in df.columns:
+        return df
+    df = df.copy()
+    df["CUM_INVIMA"] = df["CUM_INVIMA"].apply(
+        lambda v: ", ".join(v) if hasattr(v, "__len__") and not isinstance(v, str) else (v or "")
+    )
+    return df
+
+
+@router.get("/ium")
+def descargar_ium(carpeta: Path = Depends(carpeta_snapshots)) -> Response:
+    """La auditoria del modulo IUM, una hoja por ESTADO_IUM."""
+    df = _tabla_o_503(
+        "auditoria_ium", carpeta, "Todavía no hay datos de IUM: la primera actualización no ha terminado."
+    )
+    df = _cum_invima_como_texto(df)
+    contenido = bytes_desde_escritor(
+        lambda ruta: guardar_reporte(df, ruta, columna_hoja="ESTADO_IUM")
+    )
+    return _adjunto("auditoria_ium.xlsx", contenido)
+
+
+@router.get("/ium/calidad/{nombre}")
+def descargar_calidad_ium(
+    nombre: str,
+    formato: str = "xlsx",
+    seccion: str | None = None,
+    carpeta: Path = Depends(carpeta_snapshots),
+) -> Response:
+    """Una calidad IUM ("Casos por calidad" del modulo IUM) COMPLETA, o la
+    seccion abierta, en xlsx/csv/txt. Igual que `descargar_calidad` (CUM): sin
+    paginar. Usa `tabla_calidad_ium_filtrada` -- el MISMO filtrado que la
+    tabla en pantalla -- que ya lanza 404 si `nombre` no es una calidad IUM
+    y 503 si el worker todavia no dejo el snapshot."""
+    if formato not in _FORMATOS_CALIDAD:
+        raise HTTPException(
+            status_code=400,
+            detail=f"formato '{formato}' no reconocido. Usa uno de: {', '.join(_FORMATOS_CALIDAD)}.",
+        )
+    tabla = _cum_invima_como_texto(tabla_calidad_ium_filtrada(nombre, carpeta, seccion=seccion))
+    return _serializar_tabla_plana(tabla, _nombre_de_archivo_seguro("ium", nombre, seccion or ""), formato)
 
 
 @router.get("/cargue-estructura")

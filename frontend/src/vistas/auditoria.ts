@@ -39,7 +39,11 @@ import type { CalidadResumen, EslabonResumen, SeccionCalidad } from "../tipos";
 // ACTIVO (Gemma Net) al lado de ESTADO_LISTADO_INVIMA -- comparar los dos
 // estados de un vistazo, pedido del usuario: mostrar el estado local junto
 // al de INVIMA en la misma fila, no en pantallas separadas.
-const ETIQUETAS_ACTIVO_VS_INVIMA: Record<string, string> = {
+// Exportados (2026-09-29): son genericos sobre cualquier tabla con la forma
+// que deja auditar_coherencia() -- CAMPOS_CON_DIFERENCIA, CONSULTA_VERIFICACION_SQL,
+// etc. -- y el modulo IUM (vistas/ium.ts) los reusa tal cual para su propia
+// "Diferencia de estado o campos", sin reimplementarlos.
+export const ETIQUETAS_ACTIVO_VS_INVIMA: Record<string, string> = {
   // Lo comun a todas las tablas (codigo, descripcion, campos comparados...)
   // y encima lo propio de auditoria.
   ...ETIQUETAS_COLUMNA_COMUNES,
@@ -77,7 +81,7 @@ const FORMATEADOR_ESTADO = (columna: string, valor: unknown) => {
   return null;
 };
 
-function esc(valor: unknown): string {
+export function esc(valor: unknown): string {
   return String(valor).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] as string);
 }
 
@@ -88,7 +92,7 @@ function esc(valor: unknown): string {
 // boton de copiar usa un delegado en el contenedor de la tabla (ver
 // montarAuditEntender) porque TablaFiltrable rehace el <tbody> en cada
 // busqueda/pagina -- un listener por celda se perderia.
-function formatearCeldaCalidad(columna: string, valor: unknown, fila: Record<string, unknown>): string | null {
+export function formatearCeldaCalidad(columna: string, valor: unknown, fila: Record<string, unknown>): string | null {
   if (valor === null || valor === undefined || valor === "") return null;
   if (columna === "ESTADO_COHERENCIA") return pildoraEstadoCoherencia(valor);
   if (columna === "ESTADO_LISTADO_INVIMA") return pildoraEstadoListadoInvima(valor);
@@ -117,7 +121,7 @@ function formatearCeldaCalidad(columna: string, valor: unknown, fila: Record<str
   return null;
 }
 
-function habilitarCopiarSQL(contenedor: HTMLElement): void {
+export function habilitarCopiarSQL(contenedor: HTMLElement): void {
   contenedor.addEventListener("click", (evento) => {
     const boton = (evento.target as HTMLElement).closest<HTMLButtonElement>(".btn-copiar-sql");
     if (!boton?.dataset.sql) return;
@@ -211,7 +215,7 @@ export async function montarAuditPriorizar(contenedor: HTMLElement): Promise<voi
 // El problema que resuelve: la tarjeta "Diferencia de estado o campos" trae
 // 59.005 filas de las que 57.255 son un unico problema (FECHA_FIN). En una
 // sola tabla, los seis problemas chicos de abajo son invisibles.
-function chipSeccion(seccion: SeccionCalidad, activa: boolean): string {
+export function chipSeccion(seccion: SeccionCalidad, activa: boolean): string {
   // Un chip por tipo de diferencia (mismo .chips del dashboard de Auditoría).
   // "suele ser efecto de X" va al tooltip junto con qué se compara: la
   // descripción guardada SÍ está mal (es un hecho), pero corregir el

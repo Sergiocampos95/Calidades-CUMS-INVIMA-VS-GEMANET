@@ -200,11 +200,33 @@ def tiene_hoja(ruta: Path, hoja: str) -> bool:
         return False
 
 
+def tiene_hoja_malla(ruta: Path) -> bool:
+    """Si el Excel trae una hoja de la que `derivar_reglas_negocio` puede leer
+    la malla de referencia. Mismo criterio que `_resolver_hoja_malla`
+    (armado/reglas_negocio.py): `plantilla (2)` exacta, o UNA sola hoja con
+    "plantilla" en el nombre (asi viene el archivo oficial de octubre 2026:
+    `plantilla`, `NO POS`, `TABLAS DE REFERENCIA`), o un libro de una sola
+    hoja. Un validador mas estricto que el lector dejaba el archivo bueno
+    afuera y apagaba las vistas de Cargue sin avisar."""
+    try:
+        import openpyxl
+
+        wb = openpyxl.load_workbook(ruta, read_only=True)
+        try:
+            hojas = wb.sheetnames
+        finally:
+            wb.close()
+    except Exception:
+        return False
+    con_plantilla = [h for h in hojas if "plantilla" in h.lower()]
+    return "plantilla (2)" in hojas or len(con_plantilla) == 1 or len(hojas) == 1
+
+
 # Validadores por tipo: solo donde hay algo real que comprobar. La Estructura
-# de Cargue necesita `plantilla (2)` (la copia de trabajo del SOP); sin ella
+# de Cargue necesita una hoja de malla reconocible; sin ella
 # `derivar_reglas_negocio` falla a mitad de corrida.
 VALIDADORES: dict[str, Callable[[Path], bool]] = {
-    "estructura_cargue": lambda p: tiene_hoja(p, "plantilla (2)"),
+    "estructura_cargue": tiene_hoja_malla,
 }
 
 

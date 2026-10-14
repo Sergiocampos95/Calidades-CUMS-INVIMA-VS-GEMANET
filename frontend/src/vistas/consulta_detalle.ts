@@ -530,6 +530,37 @@ function diagnosticoDeVigencia(invima: Record<string, unknown>[], gemmaNet: Reco
         };
 
       case "sin_correspondencia_invima": {
+        // Un IUM que el modulo IUM SI ubico en INVIMA (via el CUM que INVIMA
+        // le asocia) no es "codigo legado que no aplica": decirlo asi
+        // contradecia a la vista de IUM sobre el mismo codigo (reportado por
+        // el usuario, 2026-10-01). El veredicto lo trae el backend en
+        // ESTADO_IUM/CUM_INVIMA -- aca solo se lee, no se recalcula.
+        const estadoIum = String(fila["ESTADO_IUM"] || "");
+        const cumDelIum = String(fila["CUM_INVIMA"] || "");
+        if (estadoIum && estadoIum !== "un_cum") {
+          const porQue =
+            estadoIum === "varios_cum"
+              ? `INVIMA asocia este IUM a varios CUM (${cumDelIum}), así que no se puede elegir uno solo contra el cual compararlo.`
+              : estadoIum === "mal_formado"
+                ? "El código no cumple la forma de un IUM válido de 15 caracteres."
+                : "INVIMA no publica este IUM en ninguno de sus cuatro listados.";
+          return {
+            nivel: "informativo",
+            titulo: "ℹ Medicamento identificado por IUM",
+            icono: "🏷️",
+            mensaje: porQue,
+            pasos:
+              estadoIum === "varios_cum"
+                ? [
+                    `Los CUM que INVIMA asocia a este IUM son: ${cumDelIum}`,
+                    "Consultá uno de esos CUM directamente para ver su comparación campo a campo",
+                  ]
+                : [
+                    "El IUM es un identificador complementario: INVIMA lo publica como una columna dentro de la fila de un CUM, no como un registro propio",
+                    "Ver la sección «IUM» para el detalle de este código",
+                  ],
+          };
+        }
         // TIPO_SIN_CORRESPONDENCIA ya distingue "SI tiene formato de CUM
         // pero INVIMA no tiene el registro" de "no tiene forma de CUM" --
         // ver TIPO_CODIGO_INTERNO=="cum" como criterio (no el texto).
@@ -685,10 +716,20 @@ function estadoCasoHTML(gemmaNet: Record<string, unknown>[] | null): string {
   const activo = String(fila["ACTIVO"] ?? "").toUpperCase() === "SI";
   const cumInvima = String(fila["ESTADO_CUM_INVIMA"] ?? "").trim();
   const listado = String(fila["ESTADO_LISTADO_INVIMA"] ?? "").trim();
+  // Un IUM que no se pudo cruzar contra UN solo CUM tiene el listado en
+  // "ninguno", que se rotula "No existe en INVIMA" -- falso cuando INVIMA SI
+  // publica el medicamento, solo que bajo varios CUM. Se rotula por lo que
+  // realmente es (ver ESTADO_IUM, que calcula el backend).
+  const estadoIum = String(fila["ESTADO_IUM"] ?? "").trim();
+  const iumSinCruce = estadoIum !== "" && estadoIum !== "un_cum";
   return (
     `<span class="badge ${activo ? "pildora--ok" : "pildora--neutro"}">${activo ? "Activo en Gemma Net" : "Inactivo en Gemma Net"}</span>` +
     (cumInvima ? `<span class="badge ${cumInvima.toLowerCase() === "activo" ? "pildora--ok" : "pildora--danger"}">CUM ${escaparHTML(cumInvima)} en INVIMA</span>` : "") +
-    (listado ? `<span class="badge pildora--acento">${escaparHTML(etiquetaEstadoListadoInvima(listado))}</span>` : "")
+    (iumSinCruce
+      ? `<span class="badge pildora--neutro">Identificado por IUM</span>`
+      : listado
+        ? `<span class="badge pildora--acento">${escaparHTML(etiquetaEstadoListadoInvima(listado))}</span>`
+        : "")
   );
 }
 
@@ -753,7 +794,13 @@ function crearComparacionEstadosHTML(
   // comparar" que no aportaban nada. Salen a una linea informativa ENCIMA de
   // la tabla (pedido del usuario, 2026-09-04: "eliminar la redundancia... y
   // fuera de la tabla debe decir en que listado buscarlo").
-  const dondeBuscarlo = estadoInvima
+  // Mismo motivo que el badge: sobre un IUM sin cruce unico, "buscalo en el
+  // listado de No existe en INVIMA" no orienta a nadie -- el panel de abajo
+  // ya dice donde mirar (los CUM que INVIMA le asocia, o la seccion IUM).
+  const iumSinCruceUnico =
+    String(fila["ESTADO_IUM"] ?? "").trim() !== "" &&
+    String(fila["ESTADO_IUM"] ?? "").trim() !== "un_cum";
+  const dondeBuscarlo = estadoInvima && !iumSinCruceUnico
     ? `<p class="consulta-invima__ubicacion">
         📋 En INVIMA búscalo en el listado de <strong>${escaparHTML(estadoInvima)}</strong>${
           estadoInvimaDetalle && estadoInvimaDetalle !== estadoInvima

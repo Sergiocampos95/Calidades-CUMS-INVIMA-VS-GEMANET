@@ -82,7 +82,12 @@ def _fila_invima(codigo_interno, **overrides):
 
 
 def _auditar(
-    gemanet_filas, invima_filas, vencidos_filas=None, otros_estados_filas=None, renovacion_filas=None
+    gemanet_filas,
+    invima_filas,
+    vencidos_filas=None,
+    otros_estados_filas=None,
+    renovacion_filas=None,
+    claves_cruce_alternas=None,
 ):
     reporte = pd.DataFrame(gemanet_filas)
     invima = pd.DataFrame(invima_filas)
@@ -97,7 +102,61 @@ def _auditar(
         df_invima_vencidos=vencidos,
         df_invima_otros_estados=otros_estados,
         df_invima_renovacion=renovacion,
+        claves_cruce_alternas=claves_cruce_alternas,
     ).set_index("CODIGO_INTERNO")
+
+
+# ---- claves_cruce_alternas: usado por el modulo IUM (coherencia_ium.py)
+# para cruzar un CODIGO_INTERNO que no es la clave real de busqueda en
+# INVIMA (ej. un IUM que hay que buscar por el CUM que le corresponde) ----
+
+
+def test_claves_cruce_alternas_none_da_el_mismo_resultado():
+    gemanet = [_fila_gemanet("20083667-1")]
+    invima = [_fila_invima("20083667-1")]
+    con_none = _auditar(gemanet, invima, claves_cruce_alternas=None)
+    sin_parametro = _auditar(gemanet, invima)
+    pd.testing.assert_frame_equal(con_none, sin_parametro)
+
+
+def test_claves_cruce_alternas_cruza_por_la_clave_dada():
+    # CODIGO_INTERNO de Gemma Net es un IUM; la clave real de busqueda en
+    # INVIMA es el CUM que ese IUM tiene asociado.
+    gemanet = [_fila_gemanet("1C1016781003102")]
+    invima = [_fila_invima("20083667-1")]
+    resultado = _auditar(
+        gemanet, invima, claves_cruce_alternas={"1C1016781003102": "20083667-1"}
+    )
+    assert resultado.loc["1C1016781003102", "ESTADO_COHERENCIA"] == "correcto"
+
+
+def test_claves_cruce_alternas_no_altera_codigo_interno_ni_tipo():
+    gemanet = [_fila_gemanet("1C1016781003102")]
+    invima = [_fila_invima("20083667-1")]
+    resultado = _auditar(
+        gemanet, invima, claves_cruce_alternas={"1C1016781003102": "20083667-1"}
+    )
+    # el indice del resultado es CODIGO_INTERNO (ver _auditar) -- sigue
+    # siendo el IUM original, nunca el CUM usado solo para cruzar.
+    assert "1C1016781003102" in resultado.index
+    assert "20083667-1" not in resultado.index
+
+
+def test_claves_cruce_alternas_con_indice_no_contiguo():
+    # mismo caso real que ya cubre el indice no contiguo del reporte (ver
+    # test homonimo mas abajo), mezclado con clave alterna.
+    gemanet = pd.DataFrame(
+        [_fila_gemanet("descartada"), _fila_gemanet("1C1016781003102")], index=[0, 2]
+    )
+    invima = pd.DataFrame([_fila_invima("20083667-1")])
+    resultado = auditar_coherencia(
+        gemanet,
+        invima,
+        _CATALOGO_UNIDAD,
+        _CATALOGO_MARCA,
+        claves_cruce_alternas={"1C1016781003102": "20083667-1"},
+    ).set_index("CODIGO_INTERNO")
+    assert resultado.loc["1C1016781003102", "ESTADO_COHERENCIA"] == "correcto"
 
 
 def test_campos_comparados_coherencia_tiene_los_7_campos_que_arma_la_matriz():

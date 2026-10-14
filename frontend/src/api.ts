@@ -162,6 +162,35 @@ export function obtenerResumenCandidatos(): Promise<Resumen> {
   return obtenerJSON<Resumen>("/candidatos/resumen");
 }
 
+// Modulo IUM (2026-09-28): auditoria propia, separada de CUM -- ver
+// backend/app/routers/ium.py. Fase 1 es solo lectura de lo ya cargado; no
+// hay "candidatos IUM" todavia (ver .ai/planes/2026-09-28-modulo-ium-separado.md).
+export interface ParametrosIum extends ParametrosTabla {
+  estado_ium?: string;
+}
+
+export function obtenerIum(parametros: ParametrosIum = {}): Promise<PaginaTabla> {
+  return obtenerJSON<PaginaTabla>("/ium", parametros);
+}
+
+export function obtenerResumenIum(): Promise<Resumen> {
+  return obtenerJSON<Resumen>("/ium/resumen");
+}
+
+// "Casos por calidad" del modulo IUM -- mismo mecanismo que /auditoria/calidades
+// (ver auditoria/calidades_ium.py en el backend), pero con una sola calidad.
+export function obtenerCalidadesIum(): Promise<CalidadResumen[]> {
+  return obtenerJSON<CalidadResumen[]>("/ium/calidades");
+}
+
+export function obtenerCalidadIum(nombre: string, parametros: ParametrosTabla = {}): Promise<PaginaTabla> {
+  return obtenerJSON<PaginaTabla>(`/ium/calidades/${encodeURIComponent(nombre)}`, parametros);
+}
+
+export function obtenerSeccionesCalidadIum(nombre: string): Promise<SeccionCalidad[]> {
+  return obtenerJSON<SeccionCalidad[]>(`/ium/calidades/${encodeURIComponent(nombre)}/secciones`);
+}
+
 export interface ParametrosAuditoria extends ParametrosTabla {
   estado_coherencia?: string;
   /** Uno o varios niveles de PRIORIDAD_ACCION separados por coma
@@ -256,7 +285,7 @@ export function obtenerAdvertenciasMalla(): Promise<AdvertenciaMalla[]> {
 /** URL completa de un endpoint /descargas/* -- son GET simples con
  * Content-Disposition: attachment, asi que un <a href> nativo alcanza
  * (el navegador dispara la descarga solo, sin fetch+blob de por medio). */
-export function urlDescarga(ruta: "candidatos" | "auditoria" | "cargue-estructura" | "cargue-final"): string {
+export function urlDescarga(ruta: "candidatos" | "auditoria" | "ium" | "cargue-estructura" | "cargue-final"): string {
   return `${BASE_URL}/descargas/${ruta}`;
 }
 
@@ -273,6 +302,19 @@ export function urlDescargaCalidad(
   seccion?: string,
 ): string {
   const url = urlAbsoluta(`/descargas/calidad/${encodeURIComponent(nombre)}`);
+  url.searchParams.set("formato", formato);
+  if (seccion) url.searchParams.set("seccion", seccion);
+  return url.toString();
+}
+
+/** Igual que `urlDescargaCalidad`, para la calidad del modulo IUM: la
+ * seccion completa, sin la paginacion ni los filtros de pantalla. */
+export function urlDescargaCalidadIum(
+  nombre: string,
+  formato: "xlsx" | "csv" | "txt",
+  seccion?: string,
+): string {
+  const url = urlAbsoluta(`/descargas/ium/calidad/${encodeURIComponent(nombre)}`);
   url.searchParams.set("formato", formato);
   if (seccion) url.searchParams.set("seccion", seccion);
   return url.toString();
