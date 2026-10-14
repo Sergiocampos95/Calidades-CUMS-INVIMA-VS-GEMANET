@@ -227,6 +227,76 @@ fila **no** se tocó —una fila cuyos únicos hallazgos son de este tipo puede
 quedar en `correcto`—. El usuario eligió explícitamente "solo los campos
 afectados"; revisar si la fila también necesita un estado propio.
 
+### Varios registros de INVIMA para el mismo CUM: se avisa y se puede elegir
+
+Regla (2026-10-14, pedido del usuario): «debería haber una alerta que diga
+que el cruce tiene más de un registro, porque a veces uno cree que X
+medicamentos hacen falta actualizar y solo se cruzó contra otra
+presentación». El cruce sigue siendo contra la **primera** fila del listado
+(el «registro 1», `drop_duplicates(keep="first")`), pero ahora se compara
+también contra cada uno de los demás y se muestra.
+
+**Las filas repetidas de un CUM NO son presentaciones distintas.** Medido
+antes de diseñar (snapshot 2026-10-02, 133.369 CUM auditables): 79.460 tienen
+varias filas en INVIMA, y dentro de un CUM la presentación es idéntica en
+todas (`DESCRIPCION_COMERCIAL`, `CANTIDAD_CUM`, `FORMA_FARMACEUTICA`,
+`CONCENTRACION`: 0 grupos con variación). Lo que cambia es el **rol**
+(fabricante, importador: 77.272 grupos), el **principio activo** en los
+combinados (37.090), la vía, la unidad de referencia, el ATC y, en 448, el
+titular. Un CUM *es* una presentación: otra presentación tiene otro
+consecutivo.
+
+Por eso un **«registro distinto»** es una combinación distinta de las columnas
+que **sí** entran en la comparación (`COLUMNAS_INVIMA_COMPARADAS` en
+`auditoria/registros_invima.py`: las directas, `TITULAR`, `UNIDAD_MEDIDA`,
+`CANTIDAD`, `UNIDAD_REFERENCIA`). Dos filas que solo cambian el rol dan el
+mismo veredicto y cuentan como uno: avisar en los 79.460 sería ruido. Con este
+criterio son ~30.000 CUM, casi todos combinados.
+
+| Columna nueva en la auditoría | Qué dice |
+|---|---|
+| `REGISTROS_INVIMA_DISTINTOS` | Cuántos registros distintos tiene el CUM en su listado (0 si no está en INVIMA) |
+| `FILAS_INVIMA` | Cuántas filas crudas (incluye las que solo cambian el rol) |
+| `OTRO_REGISTRO_INVIMA_COINCIDE_MAS` | `Sí` / `No`; **vacío** si hay un solo registro — «No» diría que se comparó |
+
+- **Coincidencia de un registro** = de los campos que se pudieron comparar
+  contra él (`coincide` o `difiere`), cuántos coinciden. «Sin dato en Gemma
+  Net», «sin comparar» y «pendiente GyC» no ordenan: el lado de Gemma Net es
+  el mismo para todos los registros.
+- **Orden:** de mayor a menor coincidencia; a igualdad, el orden del archivo de
+  INVIMA. Así el registro 1 queda primero entre empatados y nunca se sugiere
+  «otro» que no mejora nada.
+- **El registro sale del listado que usa el cruce normal** (Vigentes, si no
+  Vencidos > Otros Estados > Renovación): filas viejas de Vencidos de un CUM
+  vigente no son registros alternativos.
+- **No cambia ninguna cifra.** `ESTADO_COHERENCIA`, `PORCENTAJE_CALIDAD`, las
+  calidades y la cadena siguen usando el registro 1. Elegir otro registro en
+  la consulta es una **vista**, no una corrección guardada. Si el negocio
+  quiere que el cruce use el de mayor coincidencia, es una decisión aparte:
+  movería las cifras de todas las calidades.
+- **Pantalla:** tarjeta corta encima de la comparación de la consulta, con un
+  desplegable de los registros ordenados; la tabla «Diferencia de estado o
+  campos» lleva las dos columnas junto a los campos distintos.
+
+**Medido tras refrescar (2026-10-14, 133.370 CUM auditables):** 30.278 con
+más de un registro distinto (79.461 con más de una fila cruda). En **17.802**
+otro registro coincide en más campos; 7.509 de ellos activos. El campo que
+mejora es casi siempre el **principio activo de un combinado** (17.372): Gemma
+Net guarda en `PRINCIPIO_ACTIVO` **uno** de los componentes y el cruce lo
+compara contra el componente de la fila 1, así que sale «difiere» aunque ese
+principio activo sí está en otra fila del mismo CUM. Le siguen unidad de medida
+(1.134), ATC (806) y descripción (353). Solo 289 filas que difieren contra el
+registro 1 no difieren en **ningún** campo contra su mejor registro. Esto
+**no** cambia la excepción de combinados (§ anterior), que sigue pendiente de
+Garantía y Calidad: la alerta lo deja visible, no lo decide. El paso
+«Auditando coherencia» del refresco tarda ~2 min con esta comparación.
+
+La comparación contra cada registro la hace `auditar_coherencia()` misma
+(parámetro `registros_a_comparar`), no una copia de su lógica. Prueba de
+fidelidad: el registro 1 reproduce el trío del cruce normal campo por campo
+(`test_el_registro_1_reproduce_el_trio_del_cruce_normal`). Mecanismo en
+[`mecanismos/auditoria_coherencia.md`](mecanismos/auditoria_coherencia.md) §3.6.
+
 ### Centinelas de "sin dato"
 
 - **`-999`** es el centinela de Gemma Net. No es un número. Si un campo supera

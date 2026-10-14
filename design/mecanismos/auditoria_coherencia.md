@@ -172,6 +172,49 @@ veredicto `VALIDACION_PENDIENTE_GYC` se asigna **al final** de la cascada de
 tocó (decisión del usuario: "solo los campos afectados"). Ver
 `reglas_negocio.md` §4.
 
+### 3.6. Comparar contra CADA registro de INVIMA, no solo el primero (`registros_invima.py`)
+
+El paso del §2 (`invima = df_invima.drop_duplicates("CODIGO_INTERNO",
+keep="first")`) admite un reemplazo: el parámetro opcional
+`registros_a_comparar`. Con `None` (siempre, en el cruce normal) no cambia
+nada. Con un DataFrame (una fila por código), la comparación campo a campo se
+hace contra **esas** filas; todo lo que mira los listados crudos (combinado →
+GyC, solapes) sigue leyendo `df_invima` y los auxiliares tal cual.
+
+`comparar_contra_cada_registro_invima()` lo usa así:
+
+1. `registros_distintos_por_clave()` toma, de cada CUM, el listado de mayor
+   prioridad que lo tiene y deduplica por `COLUMNAS_INVIMA_COMPARADAS`
+   (§1 de `reglas_negocio.md`, «Varios registros»). Numera `REGISTRO` 1..N en
+   el orden del archivo: el 1 es la fila que gana el `drop_duplicates`.
+2. **Una llamada a `auditar_coherencia` por (listado de origen, número de
+   registro)**, solo con las filas de Gemma Net de esos CUM y con los
+   listados recortados a esos CUM (sin recortar, cada llamada arrastraba los
+   ~424.000 registros de INVIMA). El listado de origen va como `df_invima` y
+   como auxiliares **solo los de menor prioridad**.
+
+Por qué el paso 2 no pasa los cuatro listados como en el cruce normal: el
+completado de vacíos (`_completar_invima_desde_auxiliares`) rellenaría el
+registro 2 de un CUM de Vencidos con el registro **1** del mismo Vencidos. En
+datos reales el único campo comparado que aparece vacío en un registro
+alternativo es `UNIDAD_REFERENCIA` (1.870 registros, 466 fuera de Vigentes):
+heredar la del registro 1 hacía que la descripción «según la guía» del
+registro 2 fuera la del 1 y saliera «coincide» contra un dato que ese
+registro no tiene (`test_cum_que_vive_en_vencidos_no_rellena_el_registro_2_con_el_1`).
+Con el listado de origen como base, el registro 1 se completa exactamente
+como en el cruce normal (de los listados de menor prioridad) y los demás
+nunca con datos ajenos.
+
+De cada llamada solo se leen el trío `_INVIMA`/`_VALIDACION`: con
+`registros_a_comparar` el estado, el listado y la vigencia del resultado
+dicen «está en el DataFrame que se pasó», no «está en Vigentes».
+
+**Invariante:** el registro 1 reproduce el trío del cruce normal fila por
+fila — es la prueba de que esto usa la misma lógica y no una copia. Y
+`test_una_columna_que_no_se_compara_no_cambia_el_veredicto` muta cada columna
+de INVIMA fuera de `COLUMNAS_INVIMA_COMPARADAS`: si `auditar_coherencia`
+empieza a comparar otra, falla en vez de esconder registros distintos.
+
 ## 4. Similitud: `token_set_ratio`, vectorizado (línea 1010, `similitud_de_campo`)
 
 ```python
