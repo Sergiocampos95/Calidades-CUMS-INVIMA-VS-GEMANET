@@ -60,6 +60,9 @@ COLUMNAS_ESPERADAS: dict[str, tuple[str, ...]] = {
         "FECHA_VENCIMIENTO_INVIMA",
         "COHERENCIA_FECHAS_INVIMA",
         "VIGENCIA_NO_CONFIRMABLE",
+        # Sin ella la consulta no puede avisar que el CUM tiene varios
+        # registros en INVIMA: se leeria como "un solo registro".
+        "REGISTROS_INVIMA_DISTINTOS",
     ),
     "invima_listados": ("CODIGO_INTERNO", "LISTADO"),
     # Tabla del modulo IUM (2026-09-28, separado de "auditoria"): puede estar
@@ -68,6 +71,7 @@ COLUMNAS_ESPERADAS: dict[str, tuple[str, ...]] = {
     # distinto de "tabla con columnas viejas" (ver su docstring), asi que
     # listar esto aca no genera un falso desfase cuando la tabla no existe.
     "auditoria_ium": ("ESTADO_IUM", "CUM_INVIMA", "N_CUM_INVIMA", "IDENTIDAD_DUPLICADA"),
+    "registros_invima": ("FILA_AUDITORIA", "REGISTRO", "ORDEN_COINCIDENCIA", "PORCENTAJE_COINCIDENCIA"),
 }
 
 

@@ -106,6 +106,25 @@ def _fila_invima_sintetica(fila_auditoria: dict) -> dict | None:
     }
 
 
+def _registros_invima_de_fila(df_registros: pd.DataFrame | None, posicion: object) -> list[dict] | None:
+    """Los registros distintos de INVIMA de UNA fila de auditoria, de mayor a
+    menor coincidencia (ver auditoria/registros_invima.py). Cada uno trae su
+    trio `<CAMPO>_INVIMA` / `_VALIDACION` con los mismos nombres que la fila,
+    asi la pantalla muestra la comparacion contra el registro elegido con el
+    mismo codigo con que muestra la normal, sin recalcular ningun veredicto.
+
+    Lista vacia: la fila tiene un solo registro distinto (nada que elegir).
+    None: el snapshot no trae la tabla (lo genero una version anterior) --
+    no es lo mismo que "un solo registro", y la pantalla lo dice."""
+    if df_registros is None or "FILA_AUDITORIA" not in df_registros.columns:
+        return None
+    filas = df_registros[df_registros["FILA_AUDITORIA"] == posicion]
+    if filas.empty:
+        return []
+    filas = filas.sort_values("ORDEN_COINCIDENCIA")
+    return [_sanitizar_fila(fila) for fila in filas.drop(columns=["FILA_AUDITORIA"]).to_dict("records")]
+
+
 def _leer_snapshot_o_error(nombre: str, carpeta: Path) -> tuple[pd.DataFrame | None, str | None]:
     """`leer_tabla` devuelve None cuando el worker simplemente no ha
     generado ese snapshot todavia -- estado normal, no es un error. Si en
@@ -154,6 +173,9 @@ def consultar_medicamento(codigo: str, carpeta: Path = Depends(carpeta_snapshots
     # sobre el mismo codigo (reportado por el usuario, 2026-10-01). None =
     # snapshot sin modulo IUM: la consulta sigue funcionando como antes.
     df_ium, _error_ium = _leer_snapshot_o_error("auditoria_ium", carpeta)
+    # Mismo criterio: sin esta tabla la consulta responde igual, solo que sin
+    # poder mostrar la comparacion contra los demas registros del CUM.
+    df_registros, error_registros = _leer_snapshot_o_error("registros_invima", carpeta)
 
     if df_universo is None and df_auditoria is None:
         mensaje = " ".join(m for m in (error_universo, error_auditoria) if m) or (
@@ -188,7 +210,11 @@ def consultar_medicamento(codigo: str, carpeta: Path = Depends(carpeta_snapshots
     claves_reconstruidas: set[str] = set()
     if df_auditoria is not None and "CODIGO_INTERNO" in df_auditoria.columns:
         columna_auditoria = df_auditoria["CODIGO_INTERNO"].fillna("").astype(str).str.strip()
-        for fila in df_auditoria[columna_auditoria.isin(codigos_normalizados)].to_dict("records"):
+        encontradas = df_auditoria[columna_auditoria.isin(codigos_normalizados)]
+        # El indice de la auditoria es la posicion de la fila en el snapshot,
+        # que es lo que `registros_invima` guarda como FILA_AUDITORIA: un
+        # CODIGO_INTERNO repetido en el reporte no mezcla registros ajenos.
+        for posicion, fila in zip(encontradas.index, encontradas.to_dict("records"), strict=True):
             codigo_fila = str(fila.get("CODIGO_INTERNO") or "").strip()
             # Un IUM auditado gana sobre su fila de la auditoria de CUM: trae
             # el mismo juego de columnas (sale de la misma `auditar_coherencia`)
@@ -197,6 +223,11 @@ def consultar_medicamento(codigo: str, carpeta: Path = Depends(carpeta_snapshots
             # CUM_RECONSTRUIDO abajo: la llave real no es el codigo literal.
             fila_ium = filas_ium.get(codigo_fila)
             fila_s = _sanitizar_fila(fila_ium if fila_ium is not None else fila)
+            # Los registros alternativos son del cruce POR CUM de esta fila;
+            # una fila IUM se cruzo contra otro CUM y no le corresponden.
+            fila_s["REGISTROS_INVIMA"] = (
+                None if fila_ium is not None else _registros_invima_de_fila(df_registros, posicion)
+            )
             fila_s["ACTIVO_GEMMA_NET"] = fila_s.get("ACTIVO")
             gemma_rows.append(fila_s)
             reconstruido = str(fila.get("CUM_RECONSTRUIDO") or "").strip()
@@ -308,7 +339,7 @@ def consultar_medicamento(codigo: str, carpeta: Path = Depends(carpeta_snapshots
         "codigos_consultados": codigos_consultados,
     }
     error_lecturas = " ".join(
-        m for m in (error_universo, error_auditoria, error_listados) if m
+        m for m in (error_universo, error_auditoria, error_listados, error_registros) if m
     )
     if error_lecturas:
         contenido["error"] = error_lecturas

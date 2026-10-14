@@ -23,6 +23,9 @@ from gemma_cum_loader.armado.cruce_gemanet import (
 )
 from gemma_cum_loader.armado.malla import candidatos_creacion
 from gemma_cum_loader.auditoria.coherencia_invima import auditar_coherencia
+from gemma_cum_loader.auditoria.registros_invima import (
+    comparar_contra_cada_registro_invima,
+)
 from gemma_cum_loader.catalogos.fuentes import FuenteCatalogos, FuenteCatalogosCSV
 from gemma_cum_loader.catalogos.resolver import (
     ResolverCatalogo,
@@ -396,19 +399,29 @@ def auditar_coherencia_gemanet(
     """
     reporte = leer_reporte_gemanet(archivo_gemma_net)
     fuente = _fuente(fuente_catalogos, ruta_catalogo_unidad, ruta_catalogo_marca)
-    resultado = auditar_coherencia(
-        reporte.df,
-        df_invima,
-        fuente.unidad(),
-        fuente.marca(),
-        df_invima_vencidos=df_invima_vencidos,
-        df_invima_otros_estados=df_invima_otros_estados,
-        df_invima_renovacion=df_invima_renovacion,
+    catalogo_unidad, catalogo_marca = fuente.unidad(), fuente.marca()
+    entradas = {
+        "df_invima_vencidos": df_invima_vencidos,
+        "df_invima_otros_estados": df_invima_otros_estados,
+        "df_invima_renovacion": df_invima_renovacion,
         # Los mismos alias que usa la cascada de resolucion. Sin esto la
         # auditoria reportaba como diferencia lo que el resto del sistema ya
         # sabe que es la misma unidad ("IU" = "UI", "%" = "% PORCIENTO").
-        alias_unidad=fuente.alias_unidad(),
+        "alias_unidad": fuente.alias_unidad(),
+    }
+    resultado = auditar_coherencia(reporte.df, df_invima, catalogo_unidad, catalogo_marca, **entradas)
+    # La comparacion contra CADA registro distinto de INVIMA del CUM, no solo
+    # el primero (ver auditoria/registros_invima.py). Con las MISMAS entradas
+    # que la auditoria: es la condicion para que el registro 1 reproduzca su
+    # veredicto. Las columnas de resumen van a la auditoria alineadas por
+    # posicion (una fila por fila del reporte, igual que `resultado`); la
+    # tabla larga viaja en attrs y el worker la guarda como tabla propia.
+    comparacion = comparar_contra_cada_registro_invima(
+        reporte.df, df_invima, catalogo_unidad, catalogo_marca, **entradas
     )
+    for columna in comparacion.resumen.columns:
+        resultado[columna] = comparacion.resumen[columna].to_numpy()
+    resultado.attrs["registros_invima"] = comparacion.registros
     # list(...) + [...] , no .extend(): resultado.attrs ya trae "advertencias_
     # calidad" (ver auditoria/coherencia_invima.py::_detectar_campos_
     # sistemicamente_no_diligenciados) -- se combinan en la misma lista que

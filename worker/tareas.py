@@ -425,6 +425,13 @@ def ejecutar_refresco(
             df_invima, df_invima_vencidos, df_invima_otros_estados, df_invima_renovacion
         )
         tabla_ium = {"auditoria_ium": auditoria_ium} if auditoria_ium is not None else {}
+        # La comparacion contra cada registro distinto de INVIMA (ver
+        # auditoria/registros_invima.py) llega en attrs de la auditoria y se
+        # guarda como tabla propia. Un auditor que no la trae (las pruebas
+        # inyectan uno simple) no deja la tabla, y la consulta lo dice en vez
+        # de inventar que no hay registros alternativos.
+        registros_invima = auditoria.attrs.pop("registros_invima", None)
+        tablas_registros = {} if registros_invima is None else {"registros_invima": registros_invima}
         _paso(
             "Guardando los resultados",
             escribir_snapshot,
@@ -433,6 +440,7 @@ def ejecutar_refresco(
                 "auditoria": auditoria,
                 "universo": universo,
                 "invima_listados": invima_listados,
+                **tablas_registros,
                 **tablas_cargue,
                 **tabla_ium,
             },

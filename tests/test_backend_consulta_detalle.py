@@ -437,3 +437,57 @@ def test_un_cum_vigente_no_sale_duplicado_estando_en_los_dos_snapshots(tmp_path)
         assert len(r.json()["invima"]) == 1
     finally:
         app.dependency_overrides.clear()
+
+
+def test_trae_los_registros_invima_de_la_fila_ordenados_por_coincidencia(tmp_path):
+    """Pedido del usuario (2026-10-14): si el CUM tiene varios registros
+    distintos en INVIMA, la consulta los trae de mayor a menor coincidencia,
+    cada uno con su trio ya calculado por la auditoria. Se casan por la
+    POSICION de la fila, no por el codigo: un codigo repetido en el reporte
+    no se lleva los registros de su hermano."""
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        df_auditoria = pd.DataFrame(
+            {
+                "CODIGO_INTERNO": ["500-1", "500-1", "600-1"],
+                "CUM_RECONSTRUIDO": ["", "", ""],
+                "REGISTROS_INVIMA_DISTINTOS": [2, 2, 1],
+            }
+        )
+        df_registros = pd.DataFrame(
+            {
+                "FILA_AUDITORIA": [1, 1, 0],
+                "REGISTRO": [1, 2, 1],
+                "ORDEN_COINCIDENCIA": [2, 1, 1],
+                "PORCENTAJE_COINCIDENCIA": [50.0, 100.0, 80.0],
+                "PRINCIPIO_ACTIVO_INVIMA": ["IBUPROFENO", "TIOCOLCHICOSIDO", "OTRO"],
+                "PRINCIPIO_ACTIVO_VALIDACION": ["difiere", "coincide", "coincide"],
+            }
+        )
+        escribir_snapshot({"auditoria": df_auditoria, "registros_invima": df_registros}, carpeta=carpeta)
+
+        cuerpo = cliente.get("/consulta-detalle/medicamento", params={"codigo": "500-1,600-1"}).json()
+        primera, segunda, tercera = cuerpo["gemma_net"]
+
+        assert [r["REGISTRO"] for r in segunda["REGISTROS_INVIMA"]] == [2, 1]
+        assert segunda["REGISTROS_INVIMA"][0]["PRINCIPIO_ACTIVO_VALIDACION"] == "coincide"
+        assert [r["REGISTRO"] for r in primera["REGISTROS_INVIMA"]] == [1]
+        # Un solo registro distinto: lista vacia, nada que elegir.
+        assert tercera["REGISTROS_INVIMA"] == []
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_snapshot_sin_tabla_de_registros_no_finge_un_solo_registro(tmp_path):
+    """Un snapshot anterior a la tabla `registros_invima` devuelve None, no
+    lista vacia: "no se sabe" no es "tiene un solo registro"."""
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        df_auditoria = pd.DataFrame({"CODIGO_INTERNO": ["500-1"], "CUM_RECONSTRUIDO": [""]})
+        escribir_snapshot({"auditoria": df_auditoria}, carpeta=carpeta)
+
+        cuerpo = cliente.get("/consulta-detalle/medicamento", params={"codigo": "500-1"}).json()
+
+        assert cuerpo["gemma_net"][0]["REGISTROS_INVIMA"] is None
+    finally:
+        app.dependency_overrides.clear()

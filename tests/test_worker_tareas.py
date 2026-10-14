@@ -433,3 +433,28 @@ def test_el_progreso_dice_de_que_archivo_salio_el_catalogo(tmp_path):
     paso = progreso_actual(ruta=ruta_estado)[0]
     assert paso.estado == ESTADO_PASO_HECHO
     assert "ListadoCodigoUnicoVigentesJulio2026.xlsx" in paso.detalle
+
+
+def test_la_comparacion_contra_cada_registro_invima_se_guarda_como_tabla_propia(tmp_path):
+    """La auditoria la entrega en attrs (ver pipeline.auditar_coherencia_
+    gemanet); el snapshot la guarda aparte y la auditoria NO la arrastra."""
+
+    def _auditor_con_registros(df_invima, reporte_gemanet, df_invima_vencidos, **kwargs):
+        auditoria = _auditor_fake(df_invima, reporte_gemanet, df_invima_vencidos)
+        auditoria.attrs["registros_invima"] = pd.DataFrame({"FILA_AUDITORIA": [0, 0], "REGISTRO": [1, 2]})
+        return auditoria
+
+    kwargs = _kwargs_comunes(tmp_path)
+    kwargs["auditor"] = _auditor_con_registros
+    ejecutar_refresco(**kwargs)
+
+    registros = leer_tabla("registros_invima", tmp_path / "snapshots")
+    assert registros["REGISTRO"].tolist() == [1, 2]
+
+
+def test_un_auditor_sin_registros_no_deja_tabla_de_registros(tmp_path):
+    """Degradacion explicita: sin la comparacion no se escribe una tabla
+    vacia que diria "ningun CUM tiene varios registros"."""
+    ejecutar_refresco(**_kwargs_comunes(tmp_path))
+
+    assert leer_tabla("registros_invima", tmp_path / "snapshots") is None

@@ -2118,6 +2118,22 @@ _LISTADO_OTROS_ESTADOS = "otros_estados"
 _LISTADO_NINGUNO = "ninguno"
 
 
+def clave_cruce_con_invima(codigos: pd.Series, tipo_codigo_interno: pd.Series) -> pd.Series:
+    """El CODIGO_INTERNO de INVIMA contra el que se cruza cada codigo de
+    Gemma Net: el mismo codigo, salvo los "CUM con sufijo ATC", cuyo
+    EXPEDIENTE-CONSECUTIVO real vive dentro del codigo (ver el comentario
+    junto a la llamada en `auditar_coherencia`). Funcion aparte para que
+    `registros_invima.py` cruce con la MISMA clave y no con una copia."""
+    clave = codigos.copy()
+    es_cum_con_sufijo_atc = tipo_codigo_interno == "cum_con_sufijo_atc"
+    if es_cum_con_sufijo_atc.any():
+        partes = codigos[es_cum_con_sufijo_atc].str.split("-", n=2, expand=True)
+        clave.loc[es_cum_con_sufijo_atc] = (
+            partes[0].astype(int).astype(str) + "-" + partes[1].astype(int).astype(str)
+        )
+    return clave
+
+
 def auditar_coherencia(
     reporte_gemanet: pd.DataFrame,
     df_invima: pd.DataFrame,
@@ -2129,6 +2145,7 @@ def auditar_coherencia(
     alias_unidad: dict[str, str] | None = None,
     claves_cruce_alternas: dict[str, str] | None = None,
     campos_sin_comparar: dict[str, Callable[[pd.DataFrame], pd.Series]] | None = None,
+    registros_a_comparar: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Una fila por CODIGO_INTERNO del Reporte de Gemma Net, con
     ESTADO_COHERENCIA (correcto / con_diferencias / vencido_en_invima /
@@ -2215,6 +2232,19 @@ def auditar_coherencia(
     reglas_negocio.md) y a veces una descripcion al estilo CUM que SI se
     compara ("NIFEDIPINO 30MG CAPSULA..." coincide con INVIMA). `None` (el
     defecto) deja el comportamiento identico al de antes de este parametro.
+    registros_a_comparar (opcional, solo para `registros_invima.py`): filas
+    de INVIMA -- una por CODIGO_INTERNO -- contra las que se hace la
+    comparacion campo a campo EN LUGAR de la primera fila de `df_invima`.
+    Existe porque INVIMA publica varias filas por CUM (un principio activo
+    por fila en los combinados, varios titulares, varios roles) y el cruce
+    normal se queda con la primera; para mostrar al auditor la comparacion
+    contra CADA una hace falta la MISMA logica de esta funcion, no una copia
+    que con el tiempo diga otra cosa. Con `None` (lo normal) nada cambia.
+    Cuando se pasa, solo el trio `<CAMPO>_GEMANET/_INVIMA/_VALIDACION` y
+    las similitudes tienen sentido: el estado, el listado y la vigencia
+    pasan a decir "esta en registros_a_comparar", no "esta en Vigentes".
+    Todo lo que mira los listados crudos (combinado a GyC, solapes) sigue
+    leyendo `df_invima` completo, igual que en el cruce normal.
     """
     # sigla_por_codigo, no texto_por_codigo: la sigla ya esta normalizada en
     # la misma forma corta que INVIMA reporta el dato crudo (ej. "MG", no
@@ -2276,13 +2306,8 @@ def auditar_coherencia(
     # a la izquierda, mismo formato que usa el resto del sistema) SOLO para
     # decidir contra que fila de INVIMA cruzar -- el CODIGO_INTERNO real de
     # Gemma Net (`resultado["CODIGO_INTERNO"]`, mas abajo) nunca se toca.
-    clave_cruce_invima = gemanet["CODIGO_INTERNO"].copy()
     es_cum_con_sufijo_atc = tipo_codigo_interno == "cum_con_sufijo_atc"
-    if es_cum_con_sufijo_atc.any():
-        partes = gemanet.loc[es_cum_con_sufijo_atc, "CODIGO_INTERNO"].str.split("-", n=2, expand=True)
-        clave_cruce_invima.loc[es_cum_con_sufijo_atc] = (
-            partes[0].astype(int).astype(str) + "-" + partes[1].astype(int).astype(str)
-        )
+    clave_cruce_invima = clave_cruce_con_invima(gemanet["CODIGO_INTERNO"], tipo_codigo_interno)
 
     # Clave alterna explicita (ver docstring de `claves_cruce_alternas`):
     # gana sobre cualquier reconstruccion automatica de arriba. `.map()` deja
@@ -2296,7 +2321,9 @@ def auditar_coherencia(
         )
     gemanet["_CLAVE_CRUCE_INVIMA"] = clave_cruce_invima
 
-    invima = df_invima.drop_duplicates(subset="CODIGO_INTERNO", keep="first").copy()
+    invima = (df_invima if registros_a_comparar is None else registros_a_comparar).drop_duplicates(
+        subset="CODIGO_INTERNO", keep="first"
+    ).copy()
     invima["_DESCRIPCION_ESPERADA"] = _descripcion_esperada_invima(invima)
     invima["_DESCRIPCION_GUIA"] = _descripcion_segun_guia_invima(invima)
 

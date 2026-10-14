@@ -50,6 +50,7 @@ Sin dependencias de web ni de UI. Es la parte que se puede probar sola.
 | `coherencia_invima.py` | **El corazón del flujo de auditoría.** ~3.000 líneas. Ver desglose abajo |
 | `calidades.py` | Las 7 tarjetas de "Entender la calidad del catálogo" y sus secciones |
 | `cadena_calidad.py` | La cadena H1..H6, encadenada por teoría de conjuntos |
+| `registros_invima.py` | La comparación contra **cada** registro distinto de INVIMA del CUM (no solo el primero), ordenada por coincidencia. Tabla `registros_invima` del snapshot; la consume la consulta del CUM. Ver `reglas_negocio.md` §4 «Varios registros» |
 
 **Qué hay dentro de `coherencia_invima.py`** (lo que más cuesta encontrar):
 

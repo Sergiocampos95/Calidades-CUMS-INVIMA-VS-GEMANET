@@ -359,6 +359,28 @@ def test_auditar_coherencia_gemanet_pasa_otros_estados_y_renovacion_hasta_el_res
     assert fila["ESTADO_INVIMA_DETALLE"] == "Inactivo"
 
 
+def test_auditar_coherencia_gemanet_agrega_la_comparacion_contra_cada_registro(tmp_path):
+    # Wrapper delgado tambien aca: la logica la prueba test_registros_invima.py.
+    # Esto solo confirma que el resumen llega a la auditoria y la tabla larga
+    # viaja en attrs para que el worker la guarde.
+    ruta_invima = _crear_invima_xlsx(tmp_path, [_fila_invima(500, 1)])
+    ruta_gemanet = _crear_gemanet_export(tmp_path, ["500-1"], activo="SI")
+    ruta_catalogo_unidad = _crear_catalogo_csv(tmp_path, "unidad.csv", [(10, "MG - MILIGRAMO")])
+    ruta_catalogo_marca = _crear_catalogo_csv(tmp_path, "marca.csv", [(200, "ACME SAS")])
+
+    resultado = auditar_coherencia_gemanet(
+        leer_catalogo_invima(ruta_invima),
+        ruta_gemanet,
+        ruta_catalogo_unidad=ruta_catalogo_unidad,
+        ruta_catalogo_marca=ruta_catalogo_marca,
+    )
+
+    fila = resultado.set_index("CODIGO_INTERNO").loc["500-1"]
+    assert fila["REGISTROS_INVIMA_DISTINTOS"] == 1
+    assert fila["OTRO_REGISTRO_INVIMA_COINCIDE_MAS"] == ""
+    assert "FILA_AUDITORIA" in resultado.attrs["registros_invima"].columns
+
+
 def test_resolver_por_valor_distinto_da_lo_mismo_que_fila_por_fila():
     """La cascada es deterministica y sin estado, asi que resolver una vez por
     valor distinto tiene que dar exactamente lo mismo que resolver por fila.
