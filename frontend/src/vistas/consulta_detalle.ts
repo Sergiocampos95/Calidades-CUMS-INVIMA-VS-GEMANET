@@ -655,6 +655,7 @@ function mostrarResultado(
   contenedor: HTMLElement,
   datos: RespuestaConsultaDetalle,
   registroElegido?: number,
+  filaVista?: number,
 ): void {
   try {
     if (!datos) throw new Error("Datos vacíos");
@@ -688,12 +689,13 @@ function mostrarResultado(
     // y dos columnas -- izquierda los datos del hallazgo (Gemma Net contra
     // INVIMA campo a campo), derecha que hacer. Sin fila de Gemma Net no hay
     // comparacion y el diagnostico ocupa todo el ancho.
-    const comparacion = crearComparacionEstadosHTML(
-      gemma_net,
-      elegido,
-      filasInvima.find((f) => Number(f["REGISTRO"]) === elegido) ?? null,
-      eleccion,
-    );
+    // La fila de INVIMA que se esta viendo: la elegida en la lista si es de
+    // ese registro, si no la primera del registro.
+    const filaIdx =
+      filaVista !== undefined && Number(filasInvima[filaVista]?.["REGISTRO"]) === elegido
+        ? filaVista
+        : filasInvima.findIndex((f) => Number(f["REGISTRO"]) === elegido);
+    const comparacion = crearComparacionEstadosHTML(gemma_net, elegido, filasInvima, filaIdx, eleccion);
     const tablaRegistros = tablaFilasInvimaHTML(filasInvima, filaAud, elegido, eleccion);
     const cabecera = `<div class="caso-cabecera"><h1>CUM ${codigosTexto}</h1>${estadoCasoHTML(gemma_net)}</div>`;
     const diagnosticoHtml = `
@@ -926,6 +928,7 @@ function tablaFilasInvimaHTML(
           const rol = [f["TIPO_ROL"], f["NOMBRE_ROL"]].map((v) => String(v ?? "").trim()).filter(Boolean).join(": ");
           return `<tr class="${numero === elegido && conCoincidencia ? "registros-invima__fila--elegida" : ""}">
             ${comunes}
+            <td>${filas.indexOf(f) + 1}</td>
             <td class="registros-invima__largo">${texto(f["PRINCIPIO_ACTIVO"])}</td>
             <td>${texto(f["CONCENTRACION"])}</td>
             <td>${texto(cantidad)}</td>
@@ -950,7 +953,7 @@ function tablaFilasInvimaHTML(
         <table class="consulta-invima__tabla registros-invima__tabla">
           <thead><tr>
             <th>Registro</th>${conCoincidencia ? "<th>Coincidencia con Gemma Net</th><th>Cruce</th>" : ""}
-            <th>Principio activo</th><th>Concentración</th><th>Cantidad</th><th>Unidad de referencia</th>
+            <th>Fila</th><th>Principio activo</th><th>Concentración</th><th>Cantidad</th><th>Unidad de referencia</th>
             <th>Forma farmacéutica</th><th>Vía</th><th>ATC</th><th>Titular</th><th>Rol</th>
           </tr></thead>
           <tbody>${cuerpo}</tbody>
@@ -975,12 +978,17 @@ function textoCoincidencia(registro: Record<string, unknown>): string {
  * para elegir. Elegir en la lista muestra la comparacion contra ese registro
  * al instante; el boton la GUARDA para la auditoria. Tarjeta corta, nunca un
  * parrafo largo en un banner (regla del proyecto). */
-function avisoRegistrosHTML(fila: Record<string, unknown>, elegido: number, eleccion: EleccionGuardada | null): string {
+function avisoRegistrosHTML(
+  fila: Record<string, unknown>,
+  elegido: number,
+  eleccion: EleccionGuardada | null,
+  filasInvima: Record<string, unknown>[],
+  filaIdx: number,
+): string {
   const cruzado = registroCruzado(fila);
   const distintos = Number(fila["REGISTROS_INVIMA_DISTINTOS"] ?? 0);
-  const filas = Number(fila["FILAS_INVIMA"] ?? 0);
-  const registros = registrosInvima(fila);
-  if (filas < 2) return "";
+  const registros = registrosInvima(fila) ?? [];
+  if (filasInvima.length < 2) return "";
 
   // Guardado pero todavia no aplicado: la auditoria la corre el worker.
   const pendiente =
@@ -989,73 +997,77 @@ function avisoRegistrosHTML(fila: Record<string, unknown>, elegido: number, elec
   const quien = eleccion
     ? ` por <strong>${escaparHTML(eleccion.usuario)}</strong> el ${escaparHTML(fechaCorta(eleccion.fecha_utc))}`
     : "";
+  const primeraDe = (registro: number) => filasInvima.findIndex((f) => Number(f["REGISTRO"]) === registro) + 1;
   const estadoCruce =
     eleccion && eleccion.registro_actual === null
-      ? `⚠️ El registro elegido${quien} ya no existe en INVIMA con esos datos: se cruza contra el registro ${REGISTRO_DEL_CRUCE}.`
+      ? `⚠️ La fila elegida${quien} ya no existe en INVIMA con esos datos: se cruza contra la primera fila.`
       : pendiente
-        ? `Cruce guardado: <strong>registro ${pendiente}</strong>, elegido${quien}. Se aplica en la próxima actualización de datos; hasta entonces las cifras usan el registro ${cruzado}.`
+        ? `Cruce guardado: <strong>fila ${primeraDe(pendiente)}</strong>, elegida${quien}. Se aplica en la próxima actualización de datos; hasta entonces las cifras usan la fila ${primeraDe(cruzado)}.`
         : cruzado !== REGISTRO_DEL_CRUCE
-          ? `Se cruza contra el <strong>registro ${cruzado}</strong>, elegido${quien}.`
-          : `Se cruza contra el <strong>registro ${REGISTRO_DEL_CRUCE}</strong>, el primero que publica INVIMA (por defecto).`;
+          ? `Se cruza contra la <strong>fila ${primeraDe(cruzado)}</strong>, elegida${quien}.`
+          : `Se cruza contra la <strong>fila 1</strong>, la primera que publica INVIMA (por defecto).`;
   const volver = eleccion
-    ? `<button type="button" class="btn registros-invima__boton" data-quitar-eleccion>Volver al registro ${REGISTRO_DEL_CRUCE}</button>`
+    ? `<button type="button" class="btn registros-invima__boton" data-quitar-eleccion>Volver a la fila 1</button>`
     : "";
 
-  if (distintos <= 1) {
-    // Varias filas que solo cambian lo que no se compara (el rol, la via). La
-    // lista se muestra igual, con su unica opcion y el porque: cruzar contra
-    // cualquiera de esas filas da exactamente el mismo resultado.
-    return `
-      <div class="aviso aviso--info registros-invima">
-        <div class="registros-invima__control">
-          <label class="registros-invima__etiqueta">Cruzar contra
-            <select class="registros-invima__selector" disabled aria-label="Registro de INVIMA contra el que se cruza">
-              <option>Registro 1 — las ${filas} filas de INVIMA tienen los mismos datos que se comparan</option>
-            </select>
-          </label>
-        </div>
-        <p class="registros-invima__estado">INVIMA tiene ${filas} filas para este CUM, pero solo cambian datos que no se comparan (como el rol: fabricante, importador). Cruzar contra cualquiera da el mismo resultado.</p>
-      </div>`;
-  }
-  if (!registros || registros.length < 2) {
-    // El dato de cuantos hay si llego, la comparacion no: snapshot anterior a
-    // esta funcion. Se dice, en vez de esconder que hay varios registros.
-    return `<div class="aviso aviso--info">INVIMA tiene <strong>${distintos} registros distintos</strong> para este CUM. La comparación contra cada uno no está disponible en la última actualización de datos; vuelva a actualizar para verla.</div>`;
-  }
-
-  const mejor = registros[0];
-  const otroMejor = String(fila["OTRO_REGISTRO_INVIMA_COINCIDE_MAS"] ?? "") === "Sí";
-  const resumen = otroMejor
-    ? ` El <strong>registro ${escaparHTML(String(mejor["REGISTRO"]))}</strong> coincide más (${escaparHTML(textoCoincidencia(mejor))}): revíselo antes de actualizar Gemma Net.`
-    : "";
-  const opciones = registros
-    .map((r) => {
-      const numero = Number(r["REGISTRO"]);
-      // Lo que distingue al registro va primero: el texto largo se corta por
-      // la derecha en un desplegable, y el titular casi nunca cambia.
-      const marca = numero === cruzado ? " (cruce actual)" : numero === pendiente ? " (guardado)" : "";
+  // Una opcion por FILA de INVIMA, no por registro: el usuario ve "varias
+  // filas" y quiere elegir entre ellas (2026-10-14). Dos filas del mismo
+  // registro solo cambian lo que no se compara (rol, via): se pueden elegir
+  // igual, y la pantalla dice que el resultado es el mismo.
+  const info = new Map(registros.map((r) => [Number(r["REGISTRO"]), r]));
+  const orden = filasInvima
+    .map((f, i) => ({ f, i, registro: Number(f["REGISTRO"]) }))
+    .sort(
+      (a, b) =>
+        Number(info.get(a.registro)?.["ORDEN_COINCIDENCIA"] ?? a.registro) -
+          Number(info.get(b.registro)?.["ORDEN_COINCIDENCIA"] ?? b.registro) || a.i - b.i,
+    );
+  const opciones = orden
+    .map(({ f, i, registro }) => {
+      const marca = registro === cruzado && i + 1 === primeraDe(cruzado) ? " (cruce actual)" : registro === pendiente && i + 1 === primeraDe(pendiente) ? " (guardada)" : "";
+      const r = info.get(registro);
+      const rol = [f["TIPO_ROL"], f["NOMBRE_ROL"]].map((v) => String(v ?? "").trim()).filter(Boolean).join(": ");
       const partes = [
-        `Registro ${numero}${marca}`,
-        textoCoincidencia(r),
-        String(r["PRINCIPIO_ACTIVO_INVIMA"] ?? "").trim(),
-        String(r["MARCA_MEDICAMENTO_INVIMA"] ?? "").trim(),
+        `Fila ${i + 1}${marca}`,
+        r ? textoCoincidencia(r) : "",
+        String(f["PRINCIPIO_ACTIVO"] ?? "").trim(),
+        rol,
+        String(f["TITULAR"] ?? "").trim(),
       ].filter((p) => p !== "");
-      return `<option value="${numero}"${numero === elegido ? " selected" : ""}>${escaparHTML(partes.join(" · "))}</option>`;
+      return `<option value="${i}"${i === filaIdx ? " selected" : ""}>${escaparHTML(partes.join(" · "))}</option>`;
     })
     .join("");
+
+  const otroMejor = String(fila["OTRO_REGISTRO_INVIMA_COINCIDE_MAS"] ?? "") === "Sí";
+  const mejor = registros[0];
+  const resumen =
+    distintos <= 1
+      ? " Todas tienen los mismos datos que se comparan (cambia el rol, la vía…): cruzar contra cualquiera da el mismo resultado."
+      : otroMejor && mejor
+        ? ` La <strong>fila ${primeraDe(Number(mejor["REGISTRO"]))}</strong> coincide más (${escaparHTML(textoCoincidencia(mejor))}): revísela antes de actualizar Gemma Net.`
+        : "";
+  // Misma fila de datos que otra: se dice, para que elegirla no parezca que
+  // "no hizo nada".
+  const filaPrimeraDelRegistro = primeraDe(elegido);
+  const igualQue =
+    filaIdx + 1 !== filaPrimeraDelRegistro
+      ? ` Tiene los mismos datos que se comparan que la fila ${filaPrimeraDelRegistro}, así que el resultado del cruce es el mismo.`
+      : "";
   const notaVista =
     elegido === destino
-      ? ""
-      : `<p class="registros-invima__estado registros-invima__estado--sin-guardar">Estás viendo la comparación contra el <strong>registro ${elegido}</strong>, todavía sin guardar. Pulsa «Usar este registro para el cruce» para que la auditoría cruce contra él.</p>`;
+      ? igualQue
+        ? `<p class="registros-invima__estado registros-invima__estado--sin-guardar">Viendo la fila ${filaIdx + 1}.${igualQue}</p>`
+        : ""
+      : `<p class="registros-invima__estado registros-invima__estado--sin-guardar">Estás viendo la comparación contra la <strong>fila ${filaIdx + 1}</strong>, todavía sin guardar.${igualQue} Pulsa «Usar esta fila para el cruce» para que la auditoría cruce contra ella.</p>`;
 
   return `
     <div class="aviso ${otroMejor ? "aviso--warn" : "aviso--info"} registros-invima">
-      <p class="registros-invima__titulo">${otroMejor ? "⚠️" : "ℹ️"} INVIMA tiene <strong>${distintos} registros distintos</strong> para este CUM (${filas} filas).${resumen}</p>
+      <p class="registros-invima__titulo">${otroMejor ? "⚠️" : "ℹ️"} INVIMA tiene <strong>${filasInvima.length} filas</strong> para este CUM.${resumen}</p>
       <div class="registros-invima__control">
         <label class="registros-invima__etiqueta">Cruzar contra
-          <select class="registros-invima__selector" aria-label="Registro de INVIMA contra el que se cruza">${opciones}</select>
+          <select class="registros-invima__selector" aria-label="Fila de INVIMA contra la que se cruza">${opciones}</select>
         </label>
-        <button type="button" class="btn btn--primario registros-invima__boton" data-guardar-seleccion${elegido === destino ? " disabled" : ""}>Usar este registro para el cruce</button>
+        <button type="button" class="btn btn--primario registros-invima__boton" data-guardar-seleccion${elegido === destino ? " disabled" : ""}>Usar esta fila para el cruce</button>
         ${volver}
       </div>
       <p class="registros-invima__estado">${estadoCruce}</p>
@@ -1071,10 +1083,12 @@ function conectarEleccionDeRegistro(
   datos: RespuestaConsultaDetalle,
   clave: string | null,
 ): void {
-  const elegir = (numero: number, foco: string) => {
-    mostrarResultado(contenedor, datos, numero);
+  const elegir = (numero: number, foco: string, fila?: number) => {
+    mostrarResultado(contenedor, datos, numero, fila);
     contenedor.querySelector<HTMLElement>(foco)?.focus();
   };
+  const filasInvima = clave ? datos.filas_invima_por_cum?.[clave] ?? [] : [];
+  const registroDeFila = (indice: number) => Number(filasInvima[indice]?.["REGISTRO"]);
   // Guardar o quitar una eleccion y volver a pedir la consulta: lo que se
   // muestra despues sale del backend (eleccion guardada, a nombre de quien),
   // no de suponer en el navegador que se guardo.
@@ -1120,7 +1134,7 @@ function conectarEleccionDeRegistro(
   contenedor.querySelector<HTMLButtonElement>("[data-guardar-seleccion]")?.addEventListener("click", (evento) => {
     const lista = contenedor.querySelector<HTMLSelectElement>(".registros-invima__selector");
     if (!clave || !lista) return;
-    const numero = Number(lista.value);
+    const numero = registroDeFila(Number(lista.value));
     (evento.currentTarget as HTMLButtonElement).disabled = true;
     void cambiarEleccion(
       fetch(urlAbsoluta("/consulta-detalle/eleccion-registro"), {
@@ -1145,7 +1159,10 @@ function conectarEleccionDeRegistro(
     );
   }));
   const selector = contenedor.querySelector<HTMLSelectElement>(".registros-invima__selector");
-  selector?.addEventListener("change", () => elegir(Number(selector.value), ".registros-invima__selector"));
+  selector?.addEventListener("change", () => {
+    const fila = Number(selector.value);
+    elegir(registroDeFila(fila), ".registros-invima__selector", fila);
+  });
   contenedor.querySelectorAll<HTMLButtonElement>("[data-elegir-registro]").forEach((boton) =>
     boton.addEventListener("click", () => elegir(Number(boton.dataset.elegirRegistro), ".registros-invima__selector")),
   );
@@ -1154,12 +1171,14 @@ function conectarEleccionDeRegistro(
 function crearComparacionEstadosHTML(
   gemmaNet: Record<string, unknown>[] | null,
   registroElegido: number,
-  filaInvima: Record<string, unknown> | null,
+  filasInvima: Record<string, unknown>[],
+  filaIdx: number,
   eleccion: EleccionGuardada | null,
 ): string {
   if (!gemmaNet || gemmaNet.length === 0) return "";
   const filaAuditoria = gemmaNet[0];
-  const avisoRegistros = avisoRegistrosHTML(filaAuditoria, registroElegido, eleccion);
+  const filaInvima = filasInvima[filaIdx] ?? null;
+  const avisoRegistros = avisoRegistrosHTML(filaAuditoria, registroElegido, eleccion, filasInvima, filaIdx);
   const fila = filaContraRegistro(filaAuditoria, registroElegido);
 
   // Fechas comodin de Gemma Net: NO son fechas, son "sin dato" (residuo de la
@@ -1364,7 +1383,7 @@ function crearComparacionEstadosHTML(
       ].filter(([, v]) => v !== "")
     : [];
   const datosSinPar = sinPar.length
-    ? `<p class="consulta-invima__ubicacion registros-invima__sin-par">📋 En INVIMA (registro ${registroElegido}), sin equivalente en Gemma Net: ${sinPar
+    ? `<p class="consulta-invima__ubicacion registros-invima__sin-par">📋 En INVIMA (fila ${filaIdx + 1}), sin equivalente en Gemma Net: ${sinPar
         .map(([k, v]) => `${escaparHTML(k)}: <strong>${escaparHTML(v)}</strong>`)
         .join(" · ")}.</p>`
     : "";
