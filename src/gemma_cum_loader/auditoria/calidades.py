@@ -525,7 +525,7 @@ def _definiciones(
                 # auditoria/registros_invima.py). Pedido del usuario
                 # (2026-10-14): que no parezca que hay que actualizar algo que
                 # solo se cruzo contra otro registro.
-                "OTRO_REGISTRO_INVIMA_COINCIDE_MAS", "REGISTROS_INVIMA_DISTINTOS",
+                "OTRO_REGISTRO_INVIMA_COINCIDE_MAS", "REGISTROS_INVIMA_DISTINTOS", "REGISTRO_INVIMA_CRUZADO",
                 "PORCENTAJE_CALIDAD",
                 # Las fechas van en PARES, en el mismo orden en que se
                 # comparan: FECHA_INICIO contra FECHA ACTIVO y FECHA_FIN

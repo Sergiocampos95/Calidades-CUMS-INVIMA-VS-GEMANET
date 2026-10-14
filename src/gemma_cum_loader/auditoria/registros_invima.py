@@ -123,6 +123,18 @@ COLUMNA_OTRO_COINCIDE_MAS = "OTRO_REGISTRO_INVIMA_COINCIDE_MAS"
 OTRO_COINCIDE_MAS_SI = "Sí"
 OTRO_COINCIDE_MAS_NO = "No"
 
+# El registro contra el que la auditoria cruzo de verdad: 1 (el primero del
+# archivo de INVIMA) salvo que alguien haya ELEGIDO otro para ese CUM -- ver
+# `aplicar_elecciones_registro`. 0 si el CUM no esta en INVIMA.
+COLUMNA_REGISTRO_CRUZADO = "REGISTRO_INVIMA_CRUZADO"
+# Si el cruce de esta fila sale de una eleccion guardada: vacio (no hay
+# eleccion), ELECCION_APLICADA o ELECCION_NO_ENCONTRADA -- el registro elegido
+# ya no existe en INVIMA con esos datos y se cruzo contra el 1. Nunca se
+# adivina cual "se parece" al elegido (regla 1 del proyecto).
+COLUMNA_ELECCION = "ELECCION_REGISTRO_INVIMA"
+ELECCION_APLICADA = "elegido"
+ELECCION_NO_ENCONTRADA = "elegido_no_encontrado"
+
 
 @dataclass(frozen=True)
 class ComparacionPorRegistro:
@@ -134,6 +146,56 @@ class ComparacionPorRegistro:
 
     registros: pd.DataFrame
     resumen: pd.DataFrame
+
+
+@dataclass(frozen=True)
+class EleccionesAplicadas:
+    """Los cuatro listados con la fila elegida PRIMERO dentro de su CUM (asi
+    el `drop_duplicates(keep="first")` del cruce normal la toma), el numero de
+    registro elegido por CUM -- en la numeracion del archivo ORIGINAL, la que
+    ve el usuario -- y los CUM cuya eleccion ya no se encontro."""
+
+    listados: tuple[pd.DataFrame | None, ...]
+    registro_por_clave: dict[str, int]
+    no_encontradas: frozenset[str]
+
+
+def aplicar_elecciones_registro(
+    df_invima: pd.DataFrame,
+    df_invima_vencidos: pd.DataFrame | None,
+    df_invima_otros_estados: pd.DataFrame | None,
+    df_invima_renovacion: pd.DataFrame | None,
+    elecciones: dict[str, str],
+) -> EleccionesAplicadas:
+    """Aplica las elecciones guardadas (CUM -> firma del registro elegido, ver
+    `worker/elecciones_registro.py`). Pedido del usuario (2026-10-14): "debe
+    permitirme cual quiero cruzar", y que quede guardado.
+
+    No hay una segunda logica de cruce: elegir un registro es ponerlo PRIMERO
+    entre las filas de su CUM en su listado, y el cruce normal -- que se queda
+    con la primera -- hace el resto en una sola pasada, con todo lo que deriva
+    de el (estado, calidad, calidades, cadena H1-H6). Por eso se identifica por
+    FIRMA (los valores que se comparan) y no por numero: si INVIMA reordena su
+    archivo el numero cambia y la firma no. Si la firma ya no esta, la
+    eleccion no se aplica y se reporta (`no_encontradas`): no se adivina."""
+    originales = (df_invima, df_invima_vencidos, df_invima_otros_estados, df_invima_renovacion)
+    if not elecciones:
+        return EleccionesAplicadas(originales, {}, frozenset())
+    filas = filas_invima_con_registro(*originales)
+    filas = filas[filas["_CLAVE"].isin(set(elecciones))]
+    elegidas = filas[filas["_FIRMA"].eq(filas["_CLAVE"].map(elecciones))].drop_duplicates("_CLAVE")
+    registro_por_clave = dict(zip(elegidas["_CLAVE"], elegidas["REGISTRO"].astype(int)))
+    no_encontradas = frozenset(set(elecciones) - set(registro_por_clave))
+
+    listados = []
+    for listado, df in zip(_ORDEN_LISTADOS, originales):
+        primeras = elegidas.loc[elegidas["LISTADO_INVIMA"].eq(listado), "_FILA_ORIGEN"].astype(int).tolist()
+        if df is None or not primeras:
+            listados.append(df)
+            continue
+        resto = np.setdiff1d(np.arange(len(df)), primeras, assume_unique=False)
+        listados.append(df.iloc[[*primeras, *resto.tolist()]])
+    return EleccionesAplicadas(tuple(listados), registro_por_clave, no_encontradas)
 
 
 def filas_invima_con_registro(
@@ -194,7 +256,9 @@ def filas_invima_con_registro(
     todo["REGISTROS_DISTINTOS"] = todo.groupby("_CLAVE")["REGISTRO"].transform("max")
     todo["FILAS_INVIMA"] = todo.groupby("_CLAVE")["REGISTRO"].transform("size")
     todo["FILAS_DEL_REGISTRO"] = todo.groupby(["_CLAVE", "REGISTRO"])["REGISTRO"].transform("size")
-    return todo.drop(columns=["_PRIORIDAD", "_FIRMA"]).reset_index(drop=True)
+    # _FIRMA se conserva: identifica un registro sin depender de su numero
+    # (es lo que se guarda cuando alguien elige uno, ver aplicar_elecciones_registro).
+    return todo.drop(columns=["_PRIORIDAD"]).reset_index(drop=True)
 
 
 def registros_distintos_por_clave(
@@ -218,8 +282,15 @@ def comparar_contra_cada_registro_invima(
     df_invima_otros_estados: pd.DataFrame | None = None,
     df_invima_renovacion: pd.DataFrame | None = None,
     alias_unidad: dict[str, str] | None = None,
+    registro_cruzado: dict[str, int] | None = None,
+    elecciones_no_encontradas: frozenset[str] = frozenset(),
 ) -> ComparacionPorRegistro:
-    """Mismas entradas que `auditar_coherencia`. Ver el docstring del modulo."""
+    """Mismas entradas que `auditar_coherencia` -- los listados ORIGINALES,
+    sin reordenar, para que la numeracion sea la del archivo de INVIMA.
+    `registro_cruzado` (CUM -> numero): el registro contra el que la auditoria
+    cruzo por una eleccion guardada; el resto cruzo contra el 1. Ver el
+    docstring del modulo."""
+    registro_cruzado = registro_cruzado or {}
     registros = registros_distintos_por_clave(
         df_invima, df_invima_vencidos, df_invima_otros_estados, df_invima_renovacion
     )
@@ -234,6 +305,15 @@ def comparar_contra_cada_registro_invima(
             COLUMNA_FILAS_INVIMA: claves.map(por_clave["FILAS_INVIMA"]).fillna(0).astype(int),
             COLUMNA_OTRO_COINCIDE_MAS: "",
         }
+    )
+    con_invima = resumen[COLUMNA_REGISTROS_DISTINTOS] > 0
+    resumen[COLUMNA_REGISTRO_CRUZADO] = (
+        claves.map(registro_cruzado).fillna(1).astype(int).where(con_invima, 0)
+    )
+    resumen[COLUMNA_ELECCION] = np.select(
+        [claves.isin(set(registro_cruzado)).to_numpy(), claves.isin(elecciones_no_encontradas).to_numpy()],
+        [ELECCION_APLICADA, ELECCION_NO_ENCONTRADA],
+        default="",
     )
 
     con_varios = registros[registros["REGISTROS_DISTINTOS"] > 1]
@@ -329,19 +409,21 @@ def comparar_contra_cada_registro_invima(
     # NaN, no 0 %, si no hubo nada que comparar (regla 6 del proyecto).
     tabla["PORCENTAJE_COINCIDENCIA"] = (coinciden / comparados * 100).round(1).where(comparados > 0)
 
-    # De mayor a menor coincidencia; a igualdad, el orden del archivo de
-    # INVIMA, asi el registro que usa el cruce normal queda primero entre
-    # empatados y nunca se sugiere "otro" que en realidad no mejora nada.
+    # De mayor a menor coincidencia; a igualdad, primero el registro contra el
+    # que cruzo la auditoria y despues el orden del archivo de INVIMA: nunca se
+    # sugiere "otro" que en realidad no mejora nada.
+    tabla["_CRUZADO"] = tabla["_CLAVE"].map(registro_cruzado).fillna(1).astype(int)
+    tabla["_ES_CRUZADO"] = tabla["REGISTRO"].eq(tabla["_CRUZADO"])
     tabla = tabla.sort_values(
-        ["FILA_AUDITORIA", "PORCENTAJE_COINCIDENCIA", "CAMPOS_COINCIDEN", "REGISTRO"],
-        ascending=[True, False, False, True],
+        ["FILA_AUDITORIA", "PORCENTAJE_COINCIDENCIA", "CAMPOS_COINCIDEN", "_ES_CRUZADO", "REGISTRO"],
+        ascending=[True, False, False, False, True],
         na_position="last",
         kind="stable",
     )
     tabla["ORDEN_COINCIDENCIA"] = tabla.groupby("FILA_AUDITORIA").cumcount() + 1
 
     porcentaje = tabla["PORCENTAJE_COINCIDENCIA"].fillna(-1)
-    del_cruzado = porcentaje.where(tabla["REGISTRO"] == 1).groupby(tabla["FILA_AUDITORIA"]).max()
+    del_cruzado = porcentaje.where(tabla["_ES_CRUZADO"]).groupby(tabla["FILA_AUDITORIA"]).max()
     del_mejor = porcentaje.groupby(tabla["FILA_AUDITORIA"]).max()
     otro_mejor = del_mejor > del_cruzado
     resumen.loc[otro_mejor.index, COLUMNA_OTRO_COINCIDE_MAS] = np.where(

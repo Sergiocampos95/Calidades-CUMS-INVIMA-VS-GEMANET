@@ -279,6 +279,8 @@ export const ETIQUETAS_COLUMNA_COMUNES: Record<string, string> = {
   // la auditoria cruza contra la primera.
   OTRO_REGISTRO_INVIMA_COINCIDE_MAS: "Otro registro de INVIMA coincide más",
   REGISTROS_INVIMA_DISTINTOS: "Registros distintos en INVIMA",
+  // 1 salvo que alguien eligiera otro en Consultar INVIMA (registros_invima.py).
+  REGISTRO_INVIMA_CRUZADO: "Registro INVIMA cruzado",
   DETALLE_DIFERENCIAS: "Ver diferencias",
   PORCENTAJE_CALIDAD: "Calidad (%)",
   CONSEJO: "Qué hacer",

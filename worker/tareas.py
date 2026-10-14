@@ -47,6 +47,7 @@ from gemma_cum_loader.pipeline import (
     procesar_desde_catalogo_invima,
 )
 from worker.almacen_snapshots import escribir_snapshot
+from worker.elecciones_registro import firmas_elegidas
 from worker.estado import (
     ESTADO_ERROR,
     ESTADO_OK,
@@ -258,6 +259,7 @@ def ejecutar_refresco(
     fuente_catalogos: FuenteCatalogos | None = None,
     carpeta_snapshots: Path | None = None,
     ruta_estado: Path | None = None,
+    ruta_elecciones: Path | None = None,
 ) -> EstadoRefresco:
     """Corre una vez el ciclo completo: leer -> procesar -> auditar ->
     guardar snapshot -> registrar salud. Nunca deja una excepcion sin
@@ -357,6 +359,10 @@ def ejecutar_refresco(
             df_invima_otros_estados=df_invima_otros_estados,
             df_invima_renovacion=df_invima_renovacion,
             fuente_catalogos=fuente,
+            # Los registros de INVIMA que un usuario eligio para cruzar (ver
+            # worker/elecciones_registro.py): se leen en cada corrida, asi una
+            # eleccion guardada entra en la proxima actualizacion.
+            elecciones_registro=firmas_elegidas(ruta_elecciones),
             ruta_estado=ruta_estado,
         )
         # Universo COMPLETO de INVIMA clasificado (los 101.183 registros del

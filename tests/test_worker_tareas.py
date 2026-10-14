@@ -56,6 +56,8 @@ def _kwargs_comunes(tmp_path):
         "localizador_malla": lambda: None,
         "carpeta_snapshots": tmp_path / "snapshots",
         "ruta_estado": tmp_path / "estado.sqlite3",
+        # Nunca el SQLite real de elecciones de esta maquina.
+        "ruta_elecciones": tmp_path / "elecciones.sqlite3",
     }
 
 
@@ -417,3 +419,22 @@ def test_un_auditor_sin_registros_no_deja_tabla_de_registros(tmp_path):
     ejecutar_refresco(**_kwargs_comunes(tmp_path))
 
     assert leer_tabla("registros_invima", tmp_path / "snapshots") is None
+
+
+def test_las_elecciones_guardadas_llegan_a_la_auditoria(tmp_path):
+    """Una eleccion de registro guardada desde la consulta entra en la
+    proxima actualizacion: el worker se la pasa a la auditoria."""
+    from worker.elecciones_registro import guardar_eleccion
+
+    recibidas = {}
+
+    def _auditor_que_anota(df_invima, reporte_gemanet, df_invima_vencidos, **kwargs):
+        recibidas.update(kwargs.get("elecciones_registro") or {})
+        return _auditor_fake(df_invima, reporte_gemanet, df_invima_vencidos)
+
+    kwargs = _kwargs_comunes(tmp_path)
+    guardar_eleccion("1-1", "vigente", "firma-elegida", 2, "", "ana", kwargs["ruta_elecciones"])
+    kwargs["auditor"] = _auditor_que_anota
+    ejecutar_refresco(**kwargs)
+
+    assert recibidas == {"1-1": "firma-elegida"}

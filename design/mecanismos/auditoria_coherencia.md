@@ -214,8 +214,29 @@ Vencidos/Otros Estados/Renovación, el listado va como `df_invima` y el estado
 diría «correcto/con diferencias» donde el cruce normal dice «vencido»: se deja
 vacío y la consulta conserva el de la auditoría (`COLUMNAS_CASO_POR_REGISTRO`).
 
-**Invariante:** el registro 1 reproduce el trío del cruce normal fila por
-fila — es la prueba de que esto usa la misma lógica y no una copia. Y
+Dos detalles que el refresco real destapó (2026-10-14) y que el código ya
+cubre: (a) cada lote se audita con el índice **renumerado**
+(`reset_index`) — con el índice salteado de un subconjunto,
+`auditar_coherencia` alinea mal varias columnas por índice (defecto latente
+de la función; el cruce normal recibe el reporte entero y no lo pisa); (b) se
+compara contra la fila **original** de su listado (`_FILA_ORIGEN`, `.iloc`),
+no contra la copia del concat de los cuatro listados.
+
+**Elecciones guardadas** (`aplicar_elecciones_registro`): el pipeline pone la
+fila elegida primera entre las de su CUM en su listado y llama a
+`auditar_coherencia` con esos listados — el `drop_duplicates(keep="first")`
+la toma y todo lo demás sale igual que siempre. La comparación por registro se
+hace con los listados **originales**, para que la numeración sea la del
+archivo de INVIMA, y recibe `registro_cruzado` (CUM → número elegido) para
+marcar contra cuál cruzó la auditoría y medir `OTRO_REGISTRO_INVIMA_COINCIDE_MAS`
+contra ese.
+
+**Invariante:** el registro **cruzado** (el 1, o el elegido) reproduce el trío
+del cruce normal fila por fila — y, en Vigentes, también el estado, los campos
+distintos y la calidad. Es la prueba de que esto usa la misma lógica y no una
+copia (`test_el_registro_1_reproduce_el_trio_del_cruce_normal`,
+`test_elegir_el_registro_2_hace_que_la_auditoria_cruce_contra_el`; medido
+sobre refresco real: 0 diferencias en 30.306 filas). Y
 `test_una_columna_que_no_se_compara_no_cambia_el_veredicto` muta cada columna
 de INVIMA fuera de `COLUMNAS_INVIMA_COMPARADAS`: si `auditar_coherencia`
 empieza a comparar otra, falla en vez de esconder registros distintos.

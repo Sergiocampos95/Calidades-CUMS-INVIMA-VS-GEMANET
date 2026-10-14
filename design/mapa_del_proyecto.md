@@ -50,7 +50,7 @@ Sin dependencias de web ni de UI. Es la parte que se puede probar sola.
 | `coherencia_invima.py` | **El corazón del flujo de auditoría.** ~3.000 líneas. Ver desglose abajo |
 | `calidades.py` | Las 7 tarjetas de "Entender la calidad del catálogo" y sus secciones |
 | `cadena_calidad.py` | La cadena H1..H6, encadenada por teoría de conjuntos |
-| `registros_invima.py` | La comparación contra **cada** registro distinto de INVIMA del CUM (no solo el primero), ordenada por coincidencia. Tabla `registros_invima` del snapshot; la consume la consulta del CUM. Ver `reglas_negocio.md` §4 «Varios registros» |
+| `registros_invima.py` | La comparación contra **cada** registro distinto de INVIMA del CUM (no solo el primero), ordenada por coincidencia. Tabla `registros_invima` del snapshot; la consume la consulta del CUM. También aplica las elecciones guardadas (`aplicar_elecciones_registro`). Ver `reglas_negocio.md` §4 «Varios registros» |
 
 **Qué hay dentro de `coherencia_invima.py`** (lo que más cuesta encontrar):
 
@@ -92,6 +92,7 @@ Proceso **separado** del backend. Se arranca con `python -m worker.refresco`.
 | `tareas.py` | `ejecutar_refresco()`: leer → procesar → auditar → guardar snapshot. **Nunca lanza excepción**: registra `ESTADO_ERROR` y devuelve el estado |
 | `almacen_snapshots.py` | Escribe y lee los Parquet. `COLUMNAS_ESPERADAS`, `desfases_de_esquema()` |
 | `estado.py` | SQLite de salud: último refresco, progreso paso a paso, solicitud manual, **latido del worker** |
+| `elecciones_registro.py` | SQLite de las elecciones de registro de INVIMA por CUM (quién, cuándo, historial). La escribe el backend (consulta), la lee el worker en cada refresco |
 
 **Cómo se comunican backend y worker.** No hay broker ni segundo servidor HTTP:
 una tabla `control` en `data_runtime/estado_worker.sqlite3`.

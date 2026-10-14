@@ -446,7 +446,9 @@ tbody tr:hover td { background: var(--azul-fondo); }
 .consulta-invima__tabla.registros-invima__tabla td { vertical-align: top; white-space: nowrap; word-break: normal; }
 .consulta-invima__tabla.registros-invima__tabla td.registros-invima__largo { white-space: normal; min-width: 150px; }
 .registros-invima__fila--elegida td, .registros-invima__fila--elegida th { background: var(--ok-soft); }
-.registros-invima__elegir { font-size: 12px; padding: 3px 8px; white-space: nowrap; }
+.registros-invima__elegir { font-size: 12px; padding: 3px 8px; white-space: nowrap; margin: 0 4px 4px 0; }
+.registros-invima__eleccion { margin: 0 0 10px; font-size: 13px; line-height: 1.6; }
+.registros-invima__sin-par { margin-top: 10px; }
 .registros-invima__etiqueta { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; }
 .registros-invima__selector { flex: 1; min-width: 0; max-width: 100%; font: inherit; font-weight: 400; padding: 3px 6px; border: 1px solid var(--borde); border-radius: 4px; background: var(--blanco); color: var(--texto); }
 .consulta-invima__envoltorio { overflow-x: auto; border: 1px solid var(--borde); border-radius: 4px; background: var(--blanco); }

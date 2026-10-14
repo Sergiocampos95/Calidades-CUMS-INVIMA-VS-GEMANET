@@ -12,13 +12,21 @@ from decimal import Decimal
 from pathlib import Path
 
 import pandas as pd
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
-from backend.app.dependencies import carpeta_snapshots
+from backend.app.auth.dependencias import usuario_actual
+from backend.app.auth.servicio import Sesion
+from backend.app.dependencies import carpeta_snapshots, ruta_elecciones
 from gemma_cum_loader.auditoria.registros_invima import filas_invima_con_registro
 from gemma_cum_loader.ingesta.invima_socrata import consultar_cum_en_listados
 from worker.almacen_snapshots import leer_tabla
+from worker.elecciones_registro import (
+    elecciones_vigentes,
+    guardar_eleccion,
+    quitar_eleccion,
+)
 
 router = APIRouter(prefix="/consulta-detalle", tags=["consulta-detalle"])
 
@@ -121,6 +129,23 @@ _COLUMNAS_FILAS_INVIMA = (
 )
 
 
+def _filas_numeradas(df_listados: pd.DataFrame | None, claves: set[str]) -> pd.DataFrame:
+    """Las filas de INVIMA de esos CUM, numeradas por registro con la MISMA
+    funcion de la auditoria. Vacio si el snapshot no trae los listados."""
+    if df_listados is None or df_listados.empty or not {"CODIGO_INTERNO", "LISTADO"} <= set(df_listados.columns):
+        return pd.DataFrame()
+    propias = df_listados[df_listados["CODIGO_INTERNO"].fillna("").astype(str).str.strip().isin(claves)]
+    if propias.empty:
+        return pd.DataFrame()
+    por_listado = {nombre: grupo.drop(columns=["LISTADO"]) for nombre, grupo in propias.groupby("LISTADO", sort=False)}
+    return filas_invima_con_registro(
+        por_listado.get("vigente", pd.DataFrame()),
+        por_listado.get("vencido"),
+        por_listado.get("otros_estados"),
+        por_listado.get("renovacion"),
+    )
+
+
 def _filas_invima_por_clave(df_listados: pd.DataFrame | None, claves: set[str]) -> dict[str, list[dict]]:
     """TODAS las filas de INVIMA de cada CUM consultado, con su numero de
     registro -- el "cuantos y cuales" del pedido del usuario (2026-10-14).
@@ -130,18 +155,9 @@ def _filas_invima_por_clave(df_listados: pd.DataFrame | None, claves: set[str]) 
     de numerar (los ~424.000 registros completos tardarian segundos por
     consulta); el numero depende solo de las filas de cada CUM, asi que
     recortar no lo cambia."""
-    if df_listados is None or df_listados.empty or not {"CODIGO_INTERNO", "LISTADO"} <= set(df_listados.columns):
+    filas = _filas_numeradas(df_listados, claves)
+    if filas.empty:
         return {}
-    propias = df_listados[df_listados["CODIGO_INTERNO"].fillna("").astype(str).str.strip().isin(claves)]
-    if propias.empty:
-        return {}
-    por_listado = {nombre: grupo.drop(columns=["LISTADO"]) for nombre, grupo in propias.groupby("LISTADO", sort=False)}
-    filas = filas_invima_con_registro(
-        por_listado.get("vigente", pd.DataFrame()),
-        por_listado.get("vencido"),
-        por_listado.get("otros_estados"),
-        por_listado.get("renovacion"),
-    )
     columnas = [c for c in _COLUMNAS_FILAS_INVIMA if c in filas.columns]
     return {
         clave: [_sanitizar_fila(f) for f in grupo[columnas].to_dict("records")]
@@ -185,8 +201,84 @@ def _leer_snapshot_o_error(nombre: str, carpeta: Path) -> tuple[pd.DataFrame | N
         return None, f"No se pudo leer el snapshot '{nombre}': {error}"
 
 
+def _elecciones_de(
+    claves: set[str], df_listados: pd.DataFrame | None, ruta: Path
+) -> dict[str, dict]:
+    """La eleccion guardada de cada CUM consultado, con el numero que su
+    registro tiene HOY en el snapshot (se busca por firma: si INVIMA reordeno
+    el archivo, el numero cambio; si el registro ya no esta, queda en None y la
+    pantalla lo dice en vez de suponer otro)."""
+    guardadas = {c: e for c, e in elecciones_vigentes(ruta).items() if c in claves}
+    if not guardadas:
+        return {}
+    filas = _filas_numeradas(df_listados, set(guardadas))
+    resultado = {}
+    for cum, e in guardadas.items():
+        actual = filas[(filas["_CLAVE"] == cum) & (filas["_FIRMA"] == e.firma)] if not filas.empty else filas
+        resultado[cum] = {
+            "registro_actual": int(actual["REGISTRO"].iloc[0]) if not actual.empty else None,
+            "registro_al_elegir": e.registro_al_elegir,
+            "resumen": e.resumen,
+            "usuario": e.usuario,
+            "fecha_utc": e.fecha_utc,
+        }
+    return resultado
+
+
+class PedidoEleccion(BaseModel):
+    cum: str
+    registro: int
+
+
+@router.post("/eleccion-registro")
+def elegir_registro(
+    pedido: PedidoEleccion,
+    sesion: Sesion = Depends(usuario_actual),
+    carpeta: Path = Depends(carpeta_snapshots),
+    ruta: Path = Depends(ruta_elecciones),
+):
+    """Guarda contra cual registro de INVIMA se cruza un CUM. Pedido del
+    usuario (2026-10-14): "debe permitirme cual quiero cruzar", guardado. Se
+    guarda la FIRMA del registro, sacada del snapshot vigente con la misma
+    numeracion que vio el usuario; la auditoria la aplica en la proxima
+    actualizacion (este request no corre la auditoria: eso es del worker,
+    ver la regla de dependencies.py)."""
+    cum = _limpiar_codigo(pedido.cum)
+    df_listados, error = _leer_snapshot_o_error("invima_listados", carpeta)
+    if df_listados is None:
+        raise HTTPException(status_code=503, detail=error or "Todavía no hay datos de INVIMA para elegir un registro.")
+    filas = _filas_numeradas(df_listados, {cum})
+    elegida = filas[filas["REGISTRO"] == pedido.registro] if not filas.empty else filas
+    if elegida.empty:
+        raise HTTPException(status_code=404, detail=f"El CUM {cum} no tiene un registro {pedido.registro} en INVIMA.")
+    if int(filas["REGISTROS_DISTINTOS"].max()) < 2:
+        raise HTTPException(status_code=400, detail=f"El CUM {cum} tiene un solo registro en INVIMA: no hay nada que elegir.")
+    primera = elegida.iloc[0]
+    resumen = " · ".join(
+        str(primera.get(c) or "").strip() for c in ("PRINCIPIO_ACTIVO", "TITULAR") if str(primera.get(c) or "").strip()
+    )
+    eleccion = guardar_eleccion(
+        cum, str(primera["LISTADO_INVIMA"]), str(primera["_FIRMA"]), pedido.registro, resumen, sesion.usuario, ruta
+    )
+    return {"cum": eleccion.cum, "registro": eleccion.registro_al_elegir, "usuario": eleccion.usuario, "fecha_utc": eleccion.fecha_utc}
+
+
+@router.delete("/eleccion-registro")
+def quitar_registro_elegido(
+    cum: str,
+    sesion: Sesion = Depends(usuario_actual),
+    ruta: Path = Depends(ruta_elecciones),
+):
+    """Vuelve el CUM al cruce de siempre (el registro 1 del archivo)."""
+    return {"cum": _limpiar_codigo(cum), "quitada": quitar_eleccion(_limpiar_codigo(cum), sesion.usuario, ruta)}
+
+
 @router.get("/medicamento")
-def consultar_medicamento(codigo: str, carpeta: Path = Depends(carpeta_snapshots)):
+def consultar_medicamento(
+    codigo: str,
+    carpeta: Path = Depends(carpeta_snapshots),
+    ruta: Path = Depends(ruta_elecciones),
+):
     """Consulta uno o varios codigos (separados por coma) en INVIMA y
     Gemma Net para comparacion lado a lado."""
     codigos_consultados = [_limpiar_codigo(c) for c in codigo.split(",") if _limpiar_codigo(c)]
@@ -328,6 +420,8 @@ def consultar_medicamento(codigo: str, carpeta: Path = Depends(carpeta_snapshots
         # CUM_RECONSTRUIDO), con su registro. Aparte de "invima", que trae UNA
         # fila por codigo y conserva su forma de siempre.
         "filas_invima_por_cum": _filas_invima_por_clave(df_listados, todas_las_claves),
+        # La eleccion de registro guardada de cada CUM consultado (si hay).
+        "elecciones_por_cum": _elecciones_de(todas_las_claves, df_listados, ruta),
         "invima": invima_rows,
         "gemma_net": gemma_rows if gemma_rows else None,
         "total_encontrados": len(invima_rows) + len(gemma_rows),

@@ -24,6 +24,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from worker.almacen_snapshots import CARPETA_SNAPSHOTS_DEFECTO
+from worker.elecciones_registro import RUTA_ELECCIONES_DEFECTO
 from worker.estado import RUTA_ESTADO_DEFECTO
 
 
@@ -35,3 +36,8 @@ def carpeta_snapshots() -> Path:
 @lru_cache(maxsize=1)
 def ruta_estado() -> Path:
     return RUTA_ESTADO_DEFECTO
+
+
+@lru_cache(maxsize=1)
+def ruta_elecciones() -> Path:
+    return RUTA_ELECCIONES_DEFECTO
