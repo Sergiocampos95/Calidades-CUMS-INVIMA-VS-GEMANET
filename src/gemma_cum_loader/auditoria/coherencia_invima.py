@@ -2128,6 +2128,7 @@ def auditar_coherencia(
     df_invima_renovacion: pd.DataFrame | None = None,
     alias_unidad: dict[str, str] | None = None,
     claves_cruce_alternas: dict[str, str] | None = None,
+    campos_sin_comparar: dict[str, Callable[[pd.DataFrame], pd.Series]] | None = None,
 ) -> pd.DataFrame:
     """Una fila por CODIGO_INTERNO del Reporte de Gemma Net, con
     ESTADO_COHERENCIA (correcto / con_diferencias / vencido_en_invima /
@@ -2201,6 +2202,19 @@ def auditar_coherencia(
     para buscar en INVIMA -- el CODIGO_INTERNO real de Gemma Net en el
     resultado nunca cambia. `None` (el defecto) deja el comportamiento
     identico al de antes de este parametro.
+
+    campos_sin_comparar (opcional): campo de CAMPOS_COMPARADOS_COHERENCIA ->
+    funcion que recibe la tabla cruzada (columnas de Gemma Net con su nombre
+    original) y devuelve, POR FILA, si ese campo no tiene una regla de
+    comparacion definida. Esas celdas quedan "sin comparar" en su trio, fuera
+    de CAMPOS_CON_DIFERENCIA, de la similitud y del denominador de
+    PORCENTAJE_CALIDAD -- mismo trato que un campo en manos de GyC. Por fila y
+    no por campo entero: caso real (2026-10-02), en las filas IUM la
+    DESCRIPCION a veces es el nombre oficial del IUM (formula pendiente, D4 del
+    plan IUM -- compararla seria decidir a ciegas, regla 2 de
+    reglas_negocio.md) y a veces una descripcion al estilo CUM que SI se
+    compara ("NIFEDIPINO 30MG CAPSULA..." coincide con INVIMA). `None` (el
+    defecto) deja el comportamiento identico al de antes de este parametro.
     """
     # sigla_por_codigo, no texto_por_codigo: la sigla ya esta normalizada en
     # la misma forma corta que INVIMA reporta el dato crudo (ej. "MG", no
@@ -2447,6 +2461,25 @@ def auditar_coherencia(
     )
     matriz_diferencias = matriz_diferencias & ~matriz_sin_dato
 
+    # Campos sin regla de comparacion en este universo (ver docstring): no son
+    # diferencia, ni "sin dato", ni pendiente de GyC -- simplemente no se
+    # comparan. Se apagan aqui, antes de que cualquier columna derivada lea
+    # las matrices, para que todas salgan coherentes entre si.
+    reglas_sin_comparar = campos_sin_comparar or {}
+    matriz_no_comparable = pd.DataFrame(
+        {
+            campo: (
+                pd.Series(reglas_sin_comparar[campo](combinado), index=combinado.index).fillna(False).astype(bool)
+                if campo in reglas_sin_comparar
+                else pd.Series(False, index=combinado.index)
+            )
+            for campo in CAMPOS_COMPARADOS_COHERENCIA
+        },
+        index=combinado.index,
+    )
+    matriz_diferencias = matriz_diferencias & ~matriz_no_comparable
+    matriz_sin_dato = matriz_sin_dato & ~matriz_no_comparable
+
     # Medicamento COMBINADO: la plataforma oficial Gemma Net guardo en UNA
     # fila (un solo EXPEDIENTE-CONSECUTIVO) un medicamento que INVIMA publica
     # como VARIAS -- una por principio activo -- pegando sus descripciones y
@@ -2483,13 +2516,14 @@ def auditar_coherencia(
     # entra al denominador de PORCENTAJE_CALIDAD (mismo trato que
     # `sin_dato_en_ambos`).
     matriz_diferencias = matriz_diferencias & ~matriz_pendiente_gyc
+    matriz_pendiente_gyc = matriz_pendiente_gyc & ~matriz_no_comparable
 
     # Una columna SIMILITUD_<CAMPO> por campo comparable: el binario dice que
     # hay un problema, el porcentaje dice si es una tilde o si son dos
     # medicamentos distintos (ver `similitud_de_campo`).
     similitudes = {
         f"{PREFIJO_SIMILITUD}{campo}": similitud_de_campo(local, oficial).where(
-            tiene_correspondencia
+            tiene_correspondencia & ~matriz_no_comparable[campo]
         )
         for campo, (local, oficial) in pares.items()
     }
@@ -2521,7 +2555,9 @@ def auditar_coherencia(
     # `| matriz_pendiente_gyc`: un campo que se mando a GyC (medicamento
     # combinado) no se puede exigir alineado con una sola fila de INVIMA, asi
     # que sale del denominador igual que un campo que ninguna fuente trae.
-    sin_dato_en_ambos = (matriz_sin_dato & ~matriz_oficial_presente) | matriz_pendiente_gyc
+    sin_dato_en_ambos = (
+        (matriz_sin_dato & ~matriz_oficial_presente) | matriz_pendiente_gyc | matriz_no_comparable
+    )
     sin_dato_solo_local = matriz_sin_dato & matriz_oficial_presente & ~matriz_pendiente_gyc
     campos_comparables_fila = len(matriz_diferencias.columns) - sin_dato_en_ambos.sum(axis=1)
     campos_ok = (
@@ -2853,6 +2889,7 @@ def auditar_coherencia(
         # no compite con SIN_DATO_LOCAL -- pero se deja al final para que el
         # orden de esta cascada no dependa de ese detalle.
         veredicto[matriz_pendiente_gyc[campo]] = VALIDACION_PENDIENTE_GYC
+        veredicto[matriz_no_comparable[campo]] = VALIDACION_SIN_COMPARAR
         resultado[f"{campo}{SUFIJO_VALIDACION}"] = veredicto.values
 
     # Aviso TEMPRANO de vencimiento. Todo lo demas mira hacia atras ("esto ya

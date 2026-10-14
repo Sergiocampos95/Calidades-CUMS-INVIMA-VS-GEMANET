@@ -82,14 +82,16 @@ def _definiciones_ium(
             NOMBRE_CALIDAD_DIFERENCIAS,
             ("Medicamentos que Gemma Net identifica por IUM, comparados contra INVIMA a través "
             "del único CUM que INVIMA le asocia a ese IUM: diferencias en el estado de "
-            "vigencia, en alguno de los 7 campos comparados o en las fechas."),
+            "vigencia, en alguno de los 7 campos comparados o en las fechas. La descripción "
+            "solo se compara si está escrita como la de un CUM; si es el nombre oficial del "
+            "IUM queda sin comparar, porque falta definir cómo debe escribirse la de un IUM."),
             (
                 ("Solo entran los IUM donde INVIMA asocia un único CUM -- con varios, no se "
                 "compara nada (ver «IUM ya cargados» para esos casos)."),
                 "Discrepancia de vigencia en cualquier dirección.",
                 ("O activo en Gemma Net con al menos un campo que no coincide con INVIMA: "
-                "descripción, principio activo, concentración, forma farmacéutica, unidad de "
-                "medida, código ATC o marca."),
+                "descripción (si está escrita como la de un CUM), principio activo, "
+                "concentración, forma farmacéutica, unidad de medida, código ATC o marca."),
                 "O activo en Gemma Net con una fecha de inicio o de fin distinta de la de INVIMA.",
             ),
             ("Abrir el tipo de diferencia en la columna de la izquierda para ver, campo por "

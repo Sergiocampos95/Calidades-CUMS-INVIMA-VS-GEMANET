@@ -146,7 +146,7 @@ def listar_secciones_calidad_ium(
     ]
 
 
-def _tabla_calidad_ium_filtrada(
+def tabla_calidad_ium_filtrada(
     nombre: str,
     carpeta: Path,
     *,
@@ -179,7 +179,7 @@ def obtener_calidad_ium(
     seccion: str | None = None,
     carpeta: Path = Depends(carpeta_snapshots),
 ) -> PaginaTabla:
-    tabla = _tabla_calidad_ium_filtrada(nombre, carpeta, seccion=seccion, q=q, filtros_json=filtros_json)
+    tabla = tabla_calidad_ium_filtrada(nombre, carpeta, seccion=seccion, q=q, filtros_json=filtros_json)
     return paginar(
         tabla,
         limite=limite,

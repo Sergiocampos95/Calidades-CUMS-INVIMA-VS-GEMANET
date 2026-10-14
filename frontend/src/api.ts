@@ -285,7 +285,7 @@ export function obtenerAdvertenciasMalla(): Promise<AdvertenciaMalla[]> {
 /** URL completa de un endpoint /descargas/* -- son GET simples con
  * Content-Disposition: attachment, asi que un <a href> nativo alcanza
  * (el navegador dispara la descarga solo, sin fetch+blob de por medio). */
-export function urlDescarga(ruta: "candidatos" | "auditoria" | "cargue-estructura" | "cargue-final"): string {
+export function urlDescarga(ruta: "candidatos" | "auditoria" | "ium" | "cargue-estructura" | "cargue-final"): string {
   return `${BASE_URL}/descargas/${ruta}`;
 }
 
@@ -302,6 +302,19 @@ export function urlDescargaCalidad(
   seccion?: string,
 ): string {
   const url = urlAbsoluta(`/descargas/calidad/${encodeURIComponent(nombre)}`);
+  url.searchParams.set("formato", formato);
+  if (seccion) url.searchParams.set("seccion", seccion);
+  return url.toString();
+}
+
+/** Igual que `urlDescargaCalidad`, para la calidad del modulo IUM: la
+ * seccion completa, sin la paginacion ni los filtros de pantalla. */
+export function urlDescargaCalidadIum(
+  nombre: string,
+  formato: "xlsx" | "csv" | "txt",
+  seccion?: string,
+): string {
+  const url = urlAbsoluta(`/descargas/ium/calidad/${encodeURIComponent(nombre)}`);
   url.searchParams.set("formato", formato);
   if (seccion) url.searchParams.set("seccion", seccion);
   return url.toString();

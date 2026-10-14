@@ -5,7 +5,9 @@ import {
   obtenerResumenIum,
   obtenerSeccionesCalidadIum,
   obtenerValoresColumna,
+  urlDescargaCalidadIum,
 } from "../api";
+import { cabeceraConDescarga } from "../descargas";
 import { ETIQUETAS_COLUMNA_COMUNES, ETIQUETAS_IUM, pildoraEstadoCoherencia, pildoraEstadoIum } from "../pildoras";
 import { TablaFiltrable } from "../tabla";
 import type { CalidadResumen, SeccionCalidad } from "../tipos";
@@ -29,10 +31,13 @@ function formatearCeldaIum(columna: string, valor: unknown): string | null {
 }
 
 export async function montarIum(contenedor: HTMLElement): Promise<void> {
-  contenedor.innerHTML =
-    `<p class="vista__intro">Medicamentos que Gemma Net identifica por IUM, comparados contra INVIMA -- ` +
-    `módulo separado del de CUM, no repite esas cifras. Solo se compara campo a campo cuando INVIMA ` +
-    `asocia el IUM a un único CUM; con varios, queda marcado para revisión en vez de elegir uno.</p>`;
+  contenedor.innerHTML = cabeceraConDescarga(
+    `Medicamentos que Gemma Net identifica por IUM, comparados contra INVIMA -- ` +
+      `módulo separado del de CUM, no repite esas cifras. Solo se compara campo a campo cuando INVIMA ` +
+      `asocia el IUM a un único CUM; con varios, queda marcado para revisión en vez de elegir uno.`,
+    "Descargar IUM cargados (.xlsx)",
+    "ium",
+  );
 
   const banner = document.createElement("div");
   contenedor.appendChild(banner);
@@ -137,6 +142,7 @@ export async function montarIumCalidad(contenedor: HTMLElement): Promise<void> {
       formatearCelda: formatearCeldaCalidad,
       etiquetasColumna: ETIQUETAS_CALIDAD_IUM,
       cargarPagina: (p) => obtenerCalidadIum(calidad.nombre, { ...p, seccion: clave }),
+      urlDescarga: (formato) => urlDescargaCalidadIum(calidad.nombre, formato, clave),
       obtenerValoresColumna: (columna) =>
         obtenerValoresColumna(`/ium/calidades/${encodeURIComponent(calidad.nombre)}/valores`, columna, clave),
     });

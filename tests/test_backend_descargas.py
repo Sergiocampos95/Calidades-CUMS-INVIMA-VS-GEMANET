@@ -80,6 +80,127 @@ def test_descargar_ium_convierte_la_lista_de_cum_a_texto(tmp_path):
         app.dependency_overrides.clear()
 
 
+_CALIDAD_IUM = "Diferencia de estado o campos"
+
+
+def _auditoria_ium_con_una_diferencia() -> pd.DataFrame:
+    """Un IUM comparable con diferencia en PRINCIPIO_ACTIVO y otro con varios
+    CUM (que NO entra a la calidad). CUM_INVIMA es lista, como en el snapshot."""
+    return pd.DataFrame(
+        [
+            {
+                "CODIGO_INTERNO": "1C1016781003102",
+                "DESCRIPCION": "ACETAMINOFÉN 500MG",
+                "ACTIVO": "SI",
+                "ESTADO_IUM": "un_cum",
+                "CUM_INVIMA": ["20083667-1"],
+                "IDENTIDAD_DUPLICADA": "",
+                "ESTADO_CUM_INVIMA": "Activo",
+                "ESTADO_LISTADO_INVIMA": "vigente",
+                "CAMPOS_CON_DIFERENCIA": "PRINCIPIO_ACTIVO",
+                "INCONSISTENCIA_FECHAS_ACTIVO": "",
+            },
+            {
+                "CODIGO_INTERNO": "2H2016781003103",
+                "DESCRIPCION": "Y",
+                "ACTIVO": "SI",
+                "ESTADO_IUM": "varios_cum",
+                "CUM_INVIMA": ["20083667-1", "20083667-2"],
+                "IDENTIDAD_DUPLICADA": "",
+                "ESTADO_CUM_INVIMA": "",
+                "ESTADO_LISTADO_INVIMA": "",
+                "CAMPOS_CON_DIFERENCIA": "",
+                "INCONSISTENCIA_FECHAS_ACTIVO": "",
+            },
+        ]
+    )
+
+
+def test_descargar_calidad_ium_xlsx_completa_no_revienta_con_la_lista_de_cum(tmp_path):
+    """Sin seccion el archivo lleva CUM_INVIMA, que en el snapshot es una lista:
+    `to_excel` no sabe escribirla, asi que sin la conversion a texto daria 500."""
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        escribir_snapshot({"auditoria_ium": _auditoria_ium_con_una_diferencia()}, carpeta=carpeta)
+        r = cliente.get(f"/descargas/ium/calidad/{_CALIDAD_IUM}", params={"formato": "xlsx"})
+        assert r.status_code == 200
+        assert r.headers["content-type"].startswith("application/vnd.openxmlformats")
+        assert "ium_diferencia_de_estado_o_campos.xlsx" in r.headers["content-disposition"]
+        tabla = pd.read_excel(io.BytesIO(r.content))
+        assert tabla["CODIGO_INTERNO"].tolist() == ["1C1016781003102"]
+        assert tabla.loc[0, "CUM_INVIMA"] == "20083667-1"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_descargar_calidad_ium_de_una_seccion_trae_solo_esa_seccion(tmp_path):
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        escribir_snapshot({"auditoria_ium": _auditoria_ium_con_una_diferencia()}, carpeta=carpeta)
+        r = cliente.get(
+            f"/descargas/ium/calidad/{_CALIDAD_IUM}",
+            params={"formato": "xlsx", "seccion": "campo:PRINCIPIO_ACTIVO"},
+        )
+        assert r.status_code == 200
+        assert "ium_diferencia_de_estado_o_campos_campo_principio_activo.xlsx" in r.headers["content-disposition"]
+        tabla = pd.read_excel(io.BytesIO(r.content))
+        assert tabla["CODIGO_INTERNO"].tolist() == ["1C1016781003102"]
+
+        otra = cliente.get(
+            f"/descargas/ium/calidad/{_CALIDAD_IUM}",
+            params={"formato": "xlsx", "seccion": "campo:MARCA_MEDICAMENTO"},
+        )
+        assert otra.status_code == 200
+        assert pd.read_excel(io.BytesIO(otra.content)).empty
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_descargar_calidad_ium_csv_lleva_bom_pipe_y_el_cum_sin_corchetes(tmp_path):
+    """El csv no revienta con listas, pero las imprimiria como "['20083667-1']":
+    el auditor abre esto en Excel, tiene que ver el CUM tal cual."""
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        escribir_snapshot({"auditoria_ium": _auditoria_ium_con_una_diferencia()}, carpeta=carpeta)
+        r = cliente.get(f"/descargas/ium/calidad/{_CALIDAD_IUM}", params={"formato": "csv"})
+        assert r.status_code == 200
+        assert r.headers["content-type"].startswith("text/csv")
+        assert r.content.startswith(b"\xef\xbb\xbf")
+        tabla = pd.read_csv(io.BytesIO(r.content), sep="|", encoding="utf-8-sig")
+        assert tabla.loc[0, "CUM_INVIMA"] == "20083667-1"
+        assert tabla.loc[0, "DESCRIPCION"] == "ACETAMINOFÉN 500MG"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_descargar_calidad_ium_sin_snapshot_da_503(tmp_path):
+    cliente, _ = _cliente(tmp_path)
+    try:
+        r = cliente.get(f"/descargas/ium/calidad/{_CALIDAD_IUM}", params={"formato": "xlsx"})
+        assert r.status_code == 503
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_descargar_calidad_ium_desconocida_da_404(tmp_path):
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        escribir_snapshot({"auditoria_ium": _auditoria_ium_con_una_diferencia()}, carpeta=carpeta)
+        assert cliente.get("/descargas/ium/calidad/no-existe").status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_descargar_calidad_ium_con_formato_no_reconocido_da_400(tmp_path):
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        escribir_snapshot({"auditoria_ium": _auditoria_ium_con_una_diferencia()}, carpeta=carpeta)
+        r = cliente.get(f"/descargas/ium/calidad/{_CALIDAD_IUM}", params={"formato": "pdf"})
+        assert r.status_code == 400
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_descargar_auditoria_agrupa_por_estado_coherencia(tmp_path):
     cliente, carpeta = _cliente(tmp_path)
     try:
