@@ -205,9 +205,14 @@ Con el listado de origen como base, el registro 1 se completa exactamente
 como en el cruce normal (de los listados de menor prioridad) y los demás
 nunca con datos ajenos.
 
-De cada llamada solo se leen el trío `_INVIMA`/`_VALIDACION`: con
-`registros_a_comparar` el estado, el listado y la vigencia del resultado
-dicen «está en el DataFrame que se pasó», no «está en Vigentes».
+De cada llamada se leen el trío `_INVIMA`/`_VALIDACION` y
+`CAMPOS_CON_DIFERENCIA` (se arma con `invima_tiene_datos`, igual para
+cualquier listado). `ESTADO_COHERENCIA` y `PORCENTAJE_CALIDAD` solo se toman
+si el listado de origen es **Vigentes**: ahí la llamada alternativa ve lo
+mismo que el cruce normal (`tiene_correspondencia` incluido). Para un CUM de
+Vencidos/Otros Estados/Renovación, el listado va como `df_invima` y el estado
+diría «correcto/con diferencias» donde el cruce normal dice «vencido»: se deja
+vacío y la consulta conserva el de la auditoría (`COLUMNAS_CASO_POR_REGISTRO`).
 
 **Invariante:** el registro 1 reproduce el trío del cruce normal fila por
 fila — es la prueba de que esto usa la misma lógica y no una copia. Y

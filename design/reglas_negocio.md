@@ -274,9 +274,21 @@ criterio son ~30.000 CUM, casi todos combinados.
   la consulta es una **vista**, no una corrección guardada. Si el negocio
   quiere que el cruce use el de mayor coincidencia, es una decisión aparte:
   movería las cifras de todas las calidades.
-- **Pantalla:** tarjeta corta encima de la comparación de la consulta, con un
-  desplegable de los registros ordenados; la tabla «Diferencia de estado o
-  campos» lleva las dos columnas junto a los campos distintos.
+- **Pantalla (Consultar INVIMA):** tarjeta corta encima de la comparación,
+  con un desplegable de los registros ordenados, y debajo la tabla
+  **«Registros de INVIMA de este CUM»**: todas las filas que INVIMA publica
+  para el CUM, agrupadas por registro, con su coincidencia y un botón
+  «Comparar contra este». Sale también para un CUM que no está en Gemma Net
+  (sin coincidencia ni botón). La numeración la da
+  `filas_invima_con_registro`, la misma función que numera la auditoría.
+- **Elegir un registro cambia el caso entero** (2026-10-14, «pedí más que
+  una simple alerta»): la tabla campo a campo, el diagnóstico y «Qué hacer».
+  Por registro la auditoría entrega `CAMPOS_CON_DIFERENCIA` y, si el registro
+  es de Vigentes, `ESTADO_COHERENCIA` y `PORCENTAJE_CALIDAD`. Fuera de
+  Vigentes se conserva el estado de la auditoría: allí es «vencido», «otro
+  estado»… y no depende del registro.
+- La tabla «Diferencia de estado o campos» lleva las dos columnas junto a los
+  campos distintos.
 
 **Medido tras refrescar (2026-10-14, 133.370 CUM auditables):** 30.278 con
 más de un registro distinto (79.461 con más de una fila cruda). En **17.802**
