@@ -835,15 +835,15 @@ function tablaFilasInvimaHTML(
           const rol = [f["TIPO_ROL"], f["NOMBRE_ROL"]].map((v) => String(v ?? "").trim()).filter(Boolean).join(": ");
           return `<tr class="${numero === elegido && conCoincidencia ? "registros-invima__fila--elegida" : ""}">
             ${comunes}
-            <td>${texto(f["PRINCIPIO_ACTIVO"])}</td>
+            <td class="registros-invima__largo">${texto(f["PRINCIPIO_ACTIVO"])}</td>
             <td>${texto(f["CONCENTRACION"])}</td>
             <td>${texto(cantidad)}</td>
-            <td>${texto(f["UNIDAD_REFERENCIA"])}</td>
-            <td>${texto(f["FORMA_FARMACEUTICA"])}</td>
+            <td class="registros-invima__largo">${texto(f["UNIDAD_REFERENCIA"])}</td>
+            <td class="registros-invima__largo">${texto(f["FORMA_FARMACEUTICA"])}</td>
             <td>${texto(f["VIA_ADMINISTRACION"])}</td>
             <td>${texto(f["ATC"])}</td>
-            <td>${texto(f["TITULAR"])}</td>
-            <td>${texto(rol)}</td>
+            <td class="registros-invima__largo">${texto(f["TITULAR"])}</td>
+            <td class="registros-invima__largo">${texto(rol)}</td>
             ${i === 0 && conCoincidencia ? `<td rowspan="${grupo.length}">${accion}</td>` : ""}
           </tr>`;
         })
