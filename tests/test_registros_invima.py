@@ -293,3 +293,20 @@ def test_filas_invima_con_registro_lista_todas_las_filas_con_su_registro():
     assert filas["REGISTROS_DISTINTOS"].unique().tolist() == [2]
     assert filas["FILAS_INVIMA"].unique().tolist() == [3]
     assert filas["FILAS_DEL_REGISTRO"].tolist() == [2, 1, 2]
+
+
+def test_cada_fila_apunta_a_su_posicion_en_el_listado_original():
+    """La comparacion se hace contra la fila ORIGINAL del listado (`.iloc`),
+    no contra la copia del concat de los cuatro, que puede cambiar tipos. Una
+    fila sin codigo descartada no corre la posicion de las demas."""
+    vigentes = pd.DataFrame(
+        [
+            _fila_invima("20012345-1"),
+            {**_fila_invima("20012345-1"), "CODIGO_INTERNO": None},
+            _fila_invima("20012345-1", TITULAR="OTRO LABORATORIO SAS"),
+        ]
+    )
+    filas = filas_invima_con_registro(vigentes)
+
+    assert filas["_FILA_ORIGEN"].tolist() == [0, 2]
+    assert vigentes.iloc[filas["_FILA_ORIGEN"]]["TITULAR"].tolist() == ["ACME SAS", "OTRO LABORATORIO SAS"]

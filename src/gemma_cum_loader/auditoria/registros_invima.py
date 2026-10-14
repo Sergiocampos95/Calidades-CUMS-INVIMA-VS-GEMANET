@@ -160,11 +160,16 @@ def filas_invima_con_registro(
     ):
         if df is None or df.empty or "CODIGO_INTERNO" not in df.columns:
             continue
-        parte = df.dropna(subset=["CODIGO_INTERNO"]).copy()
+        # _FILA_ORIGEN: la posicion de la fila en SU listado, antes de juntar los
+        # cuatro. La comparacion se hace contra ESA fila (`.iloc`), no contra la
+        # copia del concat: juntar listados puede cambiar el tipo de una
+        # columna (una fecha comodin 3000-01-01 leida como texto en uno y como
+        # objeto en otro) y el estado ya no seria el del cruce normal -- medido
+        # el 2026-10-14: 2 de 13.652 registros 1 de Vigentes daban otro estado.
+        parte = df.assign(_FILA_ORIGEN=np.arange(len(df))).dropna(subset=["CODIGO_INTERNO"])
         parte["_CLAVE"] = parte["CODIGO_INTERNO"].astype(str).str.strip()
         parte["LISTADO_INVIMA"] = listado
         parte["_PRIORIDAD"] = prioridad
-        parte["_ORDEN"] = np.arange(len(parte))
         partes.append(parte)
     if not partes:
         return pd.DataFrame(
@@ -174,12 +179,12 @@ def filas_invima_con_registro(
     # Solo el listado de mayor prioridad de cada CUM: si esta en Vigentes, las
     # filas que tambien tenga en Vencidos no son el registro que se cruza.
     todo = todo[todo["_PRIORIDAD"].eq(todo.groupby("_CLAVE")["_PRIORIDAD"].transform("min"))]
-    todo = todo.sort_values(["_CLAVE", "_ORDEN"], kind="stable")
+    todo = todo.sort_values(["_CLAVE", "_FILA_ORIGEN"], kind="stable")
 
     firma = pd.Series("", index=todo.index, dtype="object")
     for columna in COLUMNAS_INVIMA_COMPARADAS:
         valores = todo[columna] if columna in todo.columns else pd.Series("", index=todo.index)
-        firma = firma + "" + valores.fillna("").astype(str).str.strip()
+        firma = firma + "\x1f" + valores.fillna("").astype(str).str.strip()
     todo["_FIRMA"] = firma
 
     primeras = todo.drop_duplicates(["_CLAVE", "_FIRMA"])
@@ -189,7 +194,7 @@ def filas_invima_con_registro(
     todo["REGISTROS_DISTINTOS"] = todo.groupby("_CLAVE")["REGISTRO"].transform("max")
     todo["FILAS_INVIMA"] = todo.groupby("_CLAVE")["REGISTRO"].transform("size")
     todo["FILAS_DEL_REGISTRO"] = todo.groupby(["_CLAVE", "REGISTRO"])["REGISTRO"].transform("size")
-    return todo.drop(columns=["_PRIORIDAD", "_ORDEN", "_FIRMA"]).reset_index(drop=True)
+    return todo.drop(columns=["_PRIORIDAD", "_FIRMA"]).reset_index(drop=True)
 
 
 def registros_distintos_por_clave(
@@ -239,9 +244,6 @@ def comparar_contra_cada_registro_invima(
     listados = dict(
         zip(_ORDEN_LISTADOS, (df_invima, df_invima_vencidos, df_invima_otros_estados, df_invima_renovacion))
     )
-    columnas_crudas = [c for c in registros.columns if c not in ("_CLAVE", "LISTADO_INVIMA") and c not in (
-        "REGISTRO", "REGISTROS_DISTINTOS", "FILAS_INVIMA", "FILAS_DEL_REGISTRO"
-    )]
     piezas = []
     for prioridad, listado in enumerate(_ORDEN_LISTADOS):
         de_este_listado = con_varios[con_varios["LISTADO_INVIMA"] == listado]
@@ -282,7 +284,7 @@ def comparar_contra_cada_registro_invima(
                 df_invima_otros_estados=menores[1],
                 df_invima_renovacion=menores[2],
                 alias_unidad=alias_unidad,
-                registros_a_comparar=registros_numero[columnas_crudas],
+                registros_a_comparar=listados[listado].iloc[registros_numero["_FILA_ORIGEN"].to_numpy()],
             )
             pieza = pd.DataFrame(
                 {
