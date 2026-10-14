@@ -1,7 +1,9 @@
 import pandas as pd
 from fastapi.testclient import TestClient
 
-from backend.app.dependencies import carpeta_snapshots
+from backend.app.auth.dependencias import usuario_actual
+from backend.app.auth.servicio import Sesion
+from backend.app.dependencies import carpeta_snapshots, ruta_elecciones
 from backend.app.main import app
 from worker.almacen_snapshots import escribir_snapshot
 
@@ -9,6 +11,8 @@ from worker.almacen_snapshots import escribir_snapshot
 def _cliente(tmp_path):
     carpeta = tmp_path / "snapshots"
     app.dependency_overrides[carpeta_snapshots] = lambda: carpeta
+    # Nunca el SQLite real de elecciones de esta maquina.
+    app.dependency_overrides[ruta_elecciones] = lambda: tmp_path / "elecciones.sqlite3"
     return TestClient(app), carpeta
 
 
@@ -516,5 +520,74 @@ def test_trae_todas_las_filas_invima_del_cum_con_su_registro(tmp_path):
         assert [f["REGISTRO"] for f in filas] == [1, 2, 1]
         assert [f["TIPO_ROL"] for f in filas] == ["FABRICANTE", "FABRICANTE", "IMPORTADOR"]
         assert {f["LISTADO_INVIMA"] for f in filas} == {"vigente"}
+    finally:
+        app.dependency_overrides.clear()
+
+
+
+def _snapshot_combinado(carpeta):
+    df_auditoria = pd.DataFrame({"CODIGO_INTERNO": ["500-1"], "CUM_RECONSTRUIDO": [""]})
+    df_listados = pd.DataFrame(
+        {
+            "CODIGO_INTERNO": ["500-1", "500-1"],
+            "LISTADO": ["vigente", "vigente"],
+            "PRINCIPIO_ACTIVO": ["PIPERACILINA", "TAZOBACTAM"],
+            "TITULAR": ["FRESENIUS", "FRESENIUS"],
+        }
+    )
+    escribir_snapshot({"auditoria": df_auditoria, "invima_listados": df_listados}, carpeta=carpeta)
+
+
+def test_elegir_registro_lo_guarda_con_el_usuario_y_la_consulta_lo_muestra(tmp_path):
+    """Pedido del usuario (2026-10-14): "debe permitirme cual quiero cruzar",
+    guardado. Queda quien lo eligio, y la consulta dice el numero que ese
+    registro tiene HOY (se busca por sus datos, no por el numero viejo)."""
+    cliente, carpeta = _cliente(tmp_path)
+    app.dependency_overrides[usuario_actual] = lambda: Sesion(usuario="ana", nombre="Ana", admin=False)
+    try:
+        _snapshot_combinado(carpeta)
+
+        r = cliente.post("/consulta-detalle/eleccion-registro", json={"cum": "500-1", "registro": 2})
+        assert r.status_code == 200
+        assert r.json()["usuario"] == "ana"
+
+        eleccion = cliente.get("/consulta-detalle/medicamento", params={"codigo": "500-1"}).json()["elecciones_por_cum"]["500-1"]
+        assert eleccion["registro_actual"] == 2
+        assert eleccion["usuario"] == "ana"
+        assert "TAZOBACTAM" in eleccion["resumen"]
+
+        assert cliente.delete("/consulta-detalle/eleccion-registro", params={"cum": "500-1"}).json()["quitada"] is True
+        assert cliente.get("/consulta-detalle/medicamento", params={"codigo": "500-1"}).json()["elecciones_por_cum"] == {}
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_elegir_un_registro_que_no_existe_se_rechaza(tmp_path):
+    cliente, carpeta = _cliente(tmp_path)
+    app.dependency_overrides[usuario_actual] = lambda: Sesion(usuario="ana", nombre="Ana", admin=False)
+    try:
+        _snapshot_combinado(carpeta)
+
+        r = cliente.post("/consulta-detalle/eleccion-registro", json={"cum": "500-1", "registro": 7})
+
+        assert r.status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_elegir_registro_exige_sesion(tmp_path):
+    """Sin sesion no se guarda nada: elegir contra que se audita es una
+    decision y queda a nombre de alguien."""
+    cliente, carpeta = _cliente(tmp_path)
+    # conftest.py simula una sesion para TODAS las pruebas: aca se quita.
+    app.dependency_overrides.pop(usuario_actual, None)
+    try:
+        _snapshot_combinado(carpeta)
+
+        r = cliente.post(
+            "/consulta-detalle/eleccion-registro", json={"cum": "500-1", "registro": 2}, headers={"X-Requested-With": "fetch"}
+        )
+
+        assert r.status_code == 401
     finally:
         app.dependency_overrides.clear()

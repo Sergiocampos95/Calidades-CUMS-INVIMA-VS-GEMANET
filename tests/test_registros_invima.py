@@ -11,13 +11,18 @@ from gemma_cum_loader.auditoria.coherencia_invima import (
     auditar_coherencia,
 )
 from gemma_cum_loader.auditoria.registros_invima import (
+    COLUMNA_ELECCION,
     COLUMNA_FILAS_INVIMA,
     COLUMNA_OTRO_COINCIDE_MAS,
+    COLUMNA_REGISTRO_CRUZADO,
     COLUMNA_REGISTROS_DISTINTOS,
     COLUMNAS_INVIMA_COMPARADAS,
     COLUMNAS_TABLA_REGISTROS,
+    ELECCION_APLICADA,
+    ELECCION_NO_ENCONTRADA,
     OTRO_COINCIDE_MAS_NO,
     OTRO_COINCIDE_MAS_SI,
+    aplicar_elecciones_registro,
     comparar_contra_cada_registro_invima,
     filas_invima_con_registro,
     registros_distintos_por_clave,
@@ -310,3 +315,74 @@ def test_cada_fila_apunta_a_su_posicion_en_el_listado_original():
 
     assert filas["_FILA_ORIGEN"].tolist() == [0, 2]
     assert vigentes.iloc[filas["_FILA_ORIGEN"]]["TITULAR"].tolist() == ["ACME SAS", "OTRO LABORATORIO SAS"]
+
+
+def _firma(invima_filas, clave, registro, vencidos_filas=None):
+    filas = filas_invima_con_registro(
+        pd.DataFrame(invima_filas), pd.DataFrame(vencidos_filas) if vencidos_filas else None
+    )
+    return filas[(filas["_CLAVE"] == clave) & (filas["REGISTRO"] == registro)]["_FIRMA"].iloc[0]
+
+
+def _cruzar_con_eleccion(gemanet_filas, invima_filas, elecciones, vencidos_filas=None):
+    """Lo mismo que hace pipeline.auditar_coherencia_gemanet: la auditoria con
+    los listados reordenados y la comparacion con los originales."""
+    reporte = pd.DataFrame(gemanet_filas)
+    invima = pd.DataFrame(invima_filas)
+    vencidos = pd.DataFrame(vencidos_filas) if vencidos_filas is not None else None
+    aplicadas = aplicar_elecciones_registro(invima, vencidos, None, None, elecciones)
+    normal = auditar_coherencia(
+        reporte, aplicadas.listados[0], _CATALOGO_UNIDAD, _CATALOGO_MARCA, df_invima_vencidos=aplicadas.listados[1]
+    )
+    comparacion = comparar_contra_cada_registro_invima(
+        reporte, invima, _CATALOGO_UNIDAD, _CATALOGO_MARCA, df_invima_vencidos=vencidos,
+        registro_cruzado=aplicadas.registro_por_clave, elecciones_no_encontradas=aplicadas.no_encontradas,
+    )
+    return aplicadas, normal, comparacion
+
+
+def test_elegir_el_registro_2_hace_que_la_auditoria_cruce_contra_el():
+    """Pedido del usuario (2026-10-14): "debe permitirme cual quiero cruzar",
+    guardado. La auditoria cruza contra el elegido -- y da EXACTAMENTE lo que la
+    comparacion mostraba para ese registro: es la misma logica, no otra."""
+    gemanet = [_fila_gemanet("20086888-11", DESCRIPCION="TIOCOLCHICOSIDO 4MG TABLETA", PRINCIPIO_ACTIVO="TIOCOLCHICOSIDO", CONCENTRACION="400 MG")]
+    elecciones = {"20086888-11": _firma(_combinado(), "20086888-11", 2)}
+    aplicadas, normal, comparacion = _cruzar_con_eleccion(gemanet, _combinado(), elecciones)
+
+    assert aplicadas.registro_por_clave == {"20086888-11": 2}
+    assert normal.loc[0, "PRINCIPIO_ACTIVO_VALIDACION"] == VALIDACION_COINCIDE
+    segundo = _registro(comparacion, 2)
+    for columna in [*_TRIO, "CAMPOS_CON_DIFERENCIA", "ESTADO_COHERENCIA", "PORCENTAJE_CALIDAD"]:
+        assert segundo[columna] == normal.loc[0, columna], columna
+    assert comparacion.resumen.loc[0, COLUMNA_REGISTRO_CRUZADO] == 2
+    assert comparacion.resumen.loc[0, COLUMNA_ELECCION] == ELECCION_APLICADA
+    # El elegido ya es el que mas coincide: no hay "otro" que sugerir.
+    assert comparacion.resumen.loc[0, COLUMNA_OTRO_COINCIDE_MAS] == OTRO_COINCIDE_MAS_NO
+    # La numeracion sigue siendo la del archivo de INVIMA, no la del reordenado.
+    assert _registro(comparacion, 1)["PRINCIPIO_ACTIVO_INVIMA"] == "IBUPROFENO"
+
+
+def test_una_eleccion_que_ya_no_existe_en_invima_no_se_aplica_ni_se_adivina():
+    gemanet = [_fila_gemanet("20086888-11")]
+    aplicadas, _normal, comparacion = _cruzar_con_eleccion(gemanet, _combinado(), {"20086888-11": "firma que ya no existe"})
+
+    assert aplicadas.registro_por_clave == {}
+    assert aplicadas.no_encontradas == frozenset({"20086888-11"})
+    assert aplicadas.listados[0]["PRINCIPIO_ACTIVO"].tolist() == ["IBUPROFENO", "TIOCOLCHICOSIDO"]
+    assert comparacion.resumen.loc[0, COLUMNA_REGISTRO_CRUZADO] == 1
+    assert comparacion.resumen.loc[0, COLUMNA_ELECCION] == ELECCION_NO_ENCONTRADA
+
+
+def test_elegir_un_registro_de_un_cum_que_vive_en_vencidos():
+    gemanet = [_fila_gemanet("20012345-1", MARCA_MEDICAMENTO=201)]
+    vencidos = [
+        _fila_invima("20012345-1", TITULAR="ACME SAS"),
+        _fila_invima("20012345-1", TITULAR="OTRO LABORATORIO SAS"),
+    ]
+    elecciones = {"20012345-1": _firma([_fila_invima("99999999-1")], "20012345-1", 2, vencidos)}
+    aplicadas, normal, comparacion = _cruzar_con_eleccion(gemanet, [_fila_invima("99999999-1")], elecciones, vencidos)
+
+    assert aplicadas.registro_por_clave == {"20012345-1": 2}
+    assert normal.loc[0, "MARCA_MEDICAMENTO_VALIDACION"] == VALIDACION_COINCIDE
+    assert normal.loc[0, "ESTADO_COHERENCIA"] == "vencido_en_invima"
+    assert comparacion.resumen.loc[0, COLUMNA_REGISTRO_CRUZADO] == 2

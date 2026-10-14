@@ -63,6 +63,8 @@ COLUMNAS_ESPERADAS: dict[str, tuple[str, ...]] = {
         # Sin ella la consulta no puede avisar que el CUM tiene varios
         # registros en INVIMA: se leeria como "un solo registro".
         "REGISTROS_INVIMA_DISTINTOS",
+        # Sin ella una eleccion de registro guardada no se ve aplicada.
+        "REGISTRO_INVIMA_CRUZADO",
     ),
     "invima_listados": ("CODIGO_INTERNO", "LISTADO"),
     # Tabla del modulo IUM (2026-09-28, separado de "auditoria"): puede estar

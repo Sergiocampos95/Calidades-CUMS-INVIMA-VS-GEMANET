@@ -24,6 +24,7 @@ from gemma_cum_loader.armado.cruce_gemanet import (
 from gemma_cum_loader.armado.malla import candidatos_creacion
 from gemma_cum_loader.auditoria.coherencia_invima import auditar_coherencia
 from gemma_cum_loader.auditoria.registros_invima import (
+    aplicar_elecciones_registro,
     comparar_contra_cada_registro_invima,
 )
 from gemma_cum_loader.catalogos.fuentes import FuenteCatalogos, FuenteCatalogosCSV
@@ -378,6 +379,7 @@ def auditar_coherencia_gemanet(
     ruta_catalogo_unidad: str | Path = RUTA_CATALOGO_UNIDAD,
     ruta_catalogo_marca: str | Path = RUTA_CATALOGO_MARCA,
     fuente_catalogos: FuenteCatalogos | None = None,
+    elecciones_registro: dict[str, str] | None = None,
 ) -> pd.DataFrame:
     """Audita los medicamentos que YA existen en el Reporte de Gemma Net
     contra el catalogo INVIMA vigente, campo por campo (ver
@@ -396,6 +398,11 @@ def auditar_coherencia_gemanet(
     "en tramite de renovacion" (riesgo medio) y "sin correspondencia"
     (codigo legado) -- sin alguno, esa distincion puntual no esta disponible
     y cae en el siguiente estado de la cascada como antes.
+
+    `elecciones_registro` (CUM -> firma, opcional): el registro de INVIMA que
+    un usuario eligio para cruzar ese CUM (ver auditoria/registros_invima.py
+    `aplicar_elecciones_registro` y worker/elecciones_registro.py). Sin
+    elecciones el cruce es el de siempre: la primera fila del listado.
     """
     reporte = leer_reporte_gemanet(archivo_gemma_net)
     fuente = _fuente(fuente_catalogos, ruta_catalogo_unidad, ruta_catalogo_marca)
@@ -409,7 +416,26 @@ def auditar_coherencia_gemanet(
         # sabe que es la misma unidad ("IU" = "UI", "%" = "% PORCIENTO").
         "alias_unidad": fuente.alias_unidad(),
     }
-    resultado = auditar_coherencia(reporte.df, df_invima, catalogo_unidad, catalogo_marca, **entradas)
+    # Las elecciones se aplican poniendo la fila elegida primero en su listado:
+    # la auditoria cruza contra ella sin una segunda logica de cruce. La
+    # comparacion de abajo usa los listados ORIGINALES, para que el numero de
+    # cada registro sea el del archivo de INVIMA, el que ve el usuario.
+    aplicadas = aplicar_elecciones_registro(
+        df_invima, df_invima_vencidos, df_invima_otros_estados, df_invima_renovacion, elecciones_registro or {}
+    )
+    invima_cruce, vencidos_cruce, otros_cruce, renovacion_cruce = aplicadas.listados
+    resultado = auditar_coherencia(
+        reporte.df,
+        invima_cruce,
+        catalogo_unidad,
+        catalogo_marca,
+        **{
+            **entradas,
+            "df_invima_vencidos": vencidos_cruce,
+            "df_invima_otros_estados": otros_cruce,
+            "df_invima_renovacion": renovacion_cruce,
+        },
+    )
     # La comparacion contra CADA registro distinto de INVIMA del CUM, no solo
     # el primero (ver auditoria/registros_invima.py). Con las MISMAS entradas
     # que la auditoria: es la condicion para que el registro 1 reproduzca su
@@ -417,7 +443,13 @@ def auditar_coherencia_gemanet(
     # posicion (una fila por fila del reporte, igual que `resultado`); la
     # tabla larga viaja en attrs y el worker la guarda como tabla propia.
     comparacion = comparar_contra_cada_registro_invima(
-        reporte.df, df_invima, catalogo_unidad, catalogo_marca, **entradas
+        reporte.df,
+        df_invima,
+        catalogo_unidad,
+        catalogo_marca,
+        **entradas,
+        registro_cruzado=aplicadas.registro_por_clave,
+        elecciones_no_encontradas=aplicadas.no_encontradas,
     )
     for columna in comparacion.resumen.columns:
         resultado[columna] = comparacion.resumen[columna].to_numpy()

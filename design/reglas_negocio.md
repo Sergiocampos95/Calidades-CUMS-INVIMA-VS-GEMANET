@@ -272,16 +272,37 @@ criterio son ~30.000 CUM, casi todos combinados.
 - **El registro sale del listado que usa el cruce normal** (Vigentes, si no
   Vencidos > Otros Estados > Renovación): filas viejas de Vencidos de un CUM
   vigente no son registros alternativos.
-- **No cambia ninguna cifra.** `ESTADO_COHERENCIA`, `PORCENTAJE_CALIDAD`, las
-  calidades y la cadena siguen usando el registro 1. Elegir otro registro en
-  la consulta es una **vista**, no una corrección guardada. Si el negocio
-  quiere que el cruce use el de mayor coincidencia, es una decisión aparte:
-  movería las cifras de todas las calidades.
+- **Por defecto se cruza contra el registro 1** (el primero del archivo), como
+  siempre. **Si un usuario elige otro y lo guarda** («Usar para el cruce»,
+  2026-10-14: «debe permitirme cuál quiero cruzar», guardado), la auditoría
+  cruza ESE CUM contra el elegido desde la próxima actualización: cambian su
+  veredicto, su `ESTADO_COHERENCIA`, su `PORCENTAJE_CALIDAD` y, con ellos, las
+  calidades, la cadena H1–H6 y las descargas. «Ver comparación» no guarda nada.
+  - **Cómo se aplica:** la fila elegida se pone **primera** entre las de su CUM
+    en su listado y el cruce normal hace el resto — no hay una segunda lógica
+    de cruce (`aplicar_elecciones_registro`).
+  - **Se guarda por firma** (los valores que se comparan), no por número: si
+    INVIMA reordena su archivo, el número cambia y la elección sigue. Si el
+    registro elegido ya no existe con esos datos, **no se aplica ni se
+    adivina**: se cruza contra el 1 y la consulta lo dice
+    (`ELECCION_REGISTRO_INVIMA = elegido_no_encontrado`).
+  - **Queda a nombre de quien eligió**, con fecha, en
+    `data_runtime/elecciones_registro_invima.sqlite3` (no versionado), con un
+    historial que solo crece. «Volver al registro 1» la quita.
+  - Columnas: `REGISTRO_INVIMA_CRUZADO` (1, o el elegido; 0 sin INVIMA) y
+    `ELECCION_REGISTRO_INVIMA`. `OTRO_REGISTRO_INVIMA_COINCIDE_MAS` se mide
+    contra el registro **cruzado**, no contra el 1.
+  - Que la auditoría elija sola el de mayor coincidencia, para todos los CUM, es
+    otra decisión (no tomada): movería las cifras de todas las calidades.
+- **Cantidad, unidad de referencia y vía** del registro se muestran como datos
+  de INVIMA, **sin veredicto**, fuera de la tabla campo a campo: Gemma Net no
+  los guarda (verificado contra `administrativo.tb_medicamento`, 2026-10-14:
+  sus 40 columnas no los tienen). Decisión del usuario: informativos.
 - **Pantalla (Consultar INVIMA):** tarjeta corta encima de la comparación,
   con un desplegable de los registros ordenados, y debajo la tabla
   **«Registros de INVIMA de este CUM»**: todas las filas que INVIMA publica
-  para el CUM, agrupadas por registro, con su coincidencia y un botón
-  «Comparar contra este». Sale también para un CUM que no está en Gemma Net
+  para el CUM, agrupadas por registro, con su coincidencia y los botones
+  «Ver comparación» (sin guardar) y «Usar para el cruce» (guarda). Sale también para un CUM que no está en Gemma Net
   (sin coincidencia ni botón). La numeración la da
   `filas_invima_con_registro`, la misma función que numera la auditoría.
 - **Elegir un registro cambia el caso entero** (2026-10-14, «pedí más que
