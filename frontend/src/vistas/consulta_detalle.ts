@@ -981,15 +981,19 @@ function avisoRegistrosHTML(
         Number(info.get(a.registro)?.["ORDEN_COINCIDENCIA"] ?? a.registro) -
           Number(info.get(b.registro)?.["ORDEN_COINCIDENCIA"] ?? b.registro) || a.i - b.i,
     );
+  const mismoPrincipioActivo =
+    new Set(filasInvima.map((f) => String(f["PRINCIPIO_ACTIVO"] ?? "").trim())).size === 1;
   const opciones = orden
     .map(({ f, i, registro }) => {
       const marca = registro === cruzado && i + 1 === primeraDe(cruzado) ? " (cruce actual)" : registro === pendiente && i + 1 === primeraDe(pendiente) ? " (guardada)" : "";
       const r = info.get(registro);
       const rol = [f["TIPO_ROL"], f["NOMBRE_ROL"]].map((v) => String(v ?? "").trim()).filter(Boolean).join(": ");
+      // Primero lo que DISTINGUE a la fila: si el principio activo es el mismo
+      // en todas (lo comun), taparia el rol, que es lo que cambia.
       const partes = [
         `Fila ${i + 1}${marca}`,
         r ? textoCoincidencia(r) : "",
-        String(f["PRINCIPIO_ACTIVO"] ?? "").trim(),
+        mismoPrincipioActivo ? "" : String(f["PRINCIPIO_ACTIVO"] ?? "").trim(),
         rol,
         String(f["TITULAR"] ?? "").trim(),
       ].filter((p) => p !== "");
