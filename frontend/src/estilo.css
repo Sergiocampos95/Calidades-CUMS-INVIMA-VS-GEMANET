@@ -410,7 +410,8 @@ tbody tr:hover td { background: var(--azul-fondo); }
 .consulta-invima__mensaje--advertencia { color: var(--naranja-texto); }
 .consulta-invima__mensaje--error { color: var(--rojo-texto); }
 
-.caso-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 14px; align-items: start; }
+.caso-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+/* minmax(0, ...): sin el 0, el texto largo de la lista de registros (el selector del cruce) ensanchaba la columna izquierda y apretaba el diagnostico. */
 @media (max-width: 900px) { .caso-grid { grid-template-columns: 1fr; } }
 .caso-cabecera { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 12px; }
 .caso-cabecera h1 { color: var(--azul-oscuro); font-size: 19px; font-weight: 600; margin: 0; }
