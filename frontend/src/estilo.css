@@ -438,6 +438,12 @@ tbody tr:hover td { background: var(--azul-fondo); }
 .consulta-invima__nota { margin: 0 0 8px; font-size: 12px; color: var(--muted); line-height: 1.4; }
 /* Varios registros de INVIMA para el mismo CUM: tarjeta corta + desplegable pequeno. */
 .registros-invima__titulo { margin: 0 0 6px; line-height: 1.4; }
+/* Tabla "Registros de INVIMA de este CUM": todas las filas, agrupadas por registro. */
+.registros-invima__panel { margin-top: 16px; }
+.registros-invima__tabla th[scope="row"] { vertical-align: top; white-space: nowrap; }
+.registros-invima__tabla td { vertical-align: top; }
+.registros-invima__fila--elegida td, .registros-invima__fila--elegida th { background: var(--ok-soft); }
+.registros-invima__elegir { font-size: 12px; padding: 3px 8px; white-space: nowrap; }
 .registros-invima__etiqueta { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; }
 .registros-invima__selector { flex: 1; min-width: 0; max-width: 100%; font: inherit; font-weight: 400; padding: 3px 6px; border: 1px solid var(--borde); border-radius: 4px; background: var(--blanco); color: var(--texto); }
 .consulta-invima__envoltorio { overflow-x: auto; border: 1px solid var(--borde); border-radius: 4px; background: var(--blanco); }
