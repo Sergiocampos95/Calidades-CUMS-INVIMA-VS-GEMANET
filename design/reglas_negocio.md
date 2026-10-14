@@ -298,6 +298,14 @@ criterio son ~30.000 CUM, casi todos combinados.
   de INVIMA, **sin veredicto**, fuera de la tabla campo a campo: Gemma Net no
   los guarda (verificado contra `administrativo.tb_medicamento`, 2026-10-14:
   sus 40 columnas no los tienen). Decisión del usuario: informativos.
+- **Selector del cruce (Consultar INVIMA, 2026-10-14):** arriba de la
+  comparación, «Cruzar contra [lista] [Usar esta fila para el cruce]». La lista
+  ofrece **todas las filas** de INVIMA del CUM —no solo las que difieren en algo
+  comparado: el usuario ve «varias filas» y quiere elegir entre ellas—, de mayor
+  a menor coincidencia. Elegir una fila que tiene los mismos datos comparados que
+  otra se permite, y la pantalla dice que el resultado es el mismo. Lo que se
+  guarda sigue siendo el registro (la firma), no la fila: dos filas del mismo
+  registro dan el mismo cruce.
 - **Pantalla (Consultar INVIMA):** tarjeta corta encima de la comparación,
   con un desplegable de los registros ordenados, y debajo la tabla
   **«Registros de INVIMA de este CUM»**: todas las filas que INVIMA publica
