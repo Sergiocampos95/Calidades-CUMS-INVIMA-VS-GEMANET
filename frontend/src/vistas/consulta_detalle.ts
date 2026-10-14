@@ -724,9 +724,10 @@ function filaContraRegistro(fila: Record<string, unknown>, numero: number): Reco
 function textoCoincidencia(registro: Record<string, unknown>): string {
   const coinciden = Number(registro["CAMPOS_COINCIDEN"] ?? 0);
   const comparados = Number(registro["CAMPOS_COMPARADOS"] ?? 0);
-  const porcentaje = registro["PORCENTAJE_COINCIDENCIA"];
   if (!comparados) return "sin campos para comparar";
-  return `${coinciden} de ${comparados} campos coinciden (${String(porcentaje)} %)`;
+  // Coma decimal solo al pintar (71,4 %): el dato sigue siendo un numero.
+  const porcentaje = Number(registro["PORCENTAJE_COINCIDENCIA"]).toLocaleString("es-CO", { maximumFractionDigits: 1 });
+  return `${coinciden} de ${comparados} campos coinciden (${porcentaje} %)`;
 }
 
 /** Tarjeta corta encima de la tabla -- nunca un parrafo largo en un banner
@@ -758,12 +759,13 @@ function avisoRegistrosHTML(fila: Record<string, unknown>, elegido: number): str
   const opciones = registros
     .map((r) => {
       const numero = Number(r["REGISTRO"]);
+      // Lo que distingue al registro va primero: el texto largo se corta por
+      // la derecha en un desplegable pequeno, y el titular casi nunca cambia.
       const partes = [
-        `Registro ${numero}`,
+        numero === REGISTRO_DEL_CRUCE ? `Registro ${numero} (auditoría)` : `Registro ${numero}`,
         textoCoincidencia(r),
         String(r["PRINCIPIO_ACTIVO_INVIMA"] ?? "").trim(),
         String(r["MARCA_MEDICAMENTO_INVIMA"] ?? "").trim(),
-        numero === REGISTRO_DEL_CRUCE ? "el que usa la auditoría" : "",
       ].filter((p) => p !== "");
       return `<option value="${numero}"${numero === elegido ? " selected" : ""}>${escaparHTML(partes.join(" · "))}</option>`;
     })
@@ -771,7 +773,7 @@ function avisoRegistrosHTML(fila: Record<string, unknown>, elegido: number): str
   const notaVista =
     elegido === REGISTRO_DEL_CRUCE
       ? ""
-      : `<p class="consulta-invima__nota">Viendo el registro ${elegido}. Las cifras y tablas de calidades siguen comparando contra el registro ${REGISTRO_DEL_CRUCE}.</p>`;
+      : `<p class="consulta-invima__nota">Viendo el registro ${elegido}. El diagnóstico de la derecha, las cifras y las tablas de calidades siguen comparando contra el registro ${REGISTRO_DEL_CRUCE}.</p>`;
 
   return `
     <div class="aviso ${otroMejor ? "aviso--warn" : "aviso--info"} registros-invima">
