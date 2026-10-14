@@ -452,7 +452,9 @@ def auditar_coherencia_gemanet(
         elecciones_no_encontradas=aplicadas.no_encontradas,
     )
     for columna in comparacion.resumen.columns:
-        resultado[columna] = comparacion.resumen[columna].to_numpy()
+        # `.array` y no `.to_numpy()`: conserva el entero con vacios (Int64) de
+        # REGISTRO_INVIMA_CRUZADO en vez de volverlo objetos mezclados.
+        resultado[columna] = comparacion.resumen[columna].array
     resultado.attrs["registros_invima"] = comparacion.registros
     # list(...) + [...] , no .extend(): resultado.attrs ya trae "advertencias_
     # calidad" (ver auditoria/coherencia_invima.py::_detectar_campos_

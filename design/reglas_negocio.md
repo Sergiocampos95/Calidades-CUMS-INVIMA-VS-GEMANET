@@ -289,7 +289,7 @@ criterio son ~30.000 CUM, casi todos combinados.
   - **Queda a nombre de quien eligió**, con fecha, en
     `data_runtime/elecciones_registro_invima.sqlite3` (no versionado), con un
     historial que solo crece. «Volver al registro 1» la quita.
-  - Columnas: `REGISTRO_INVIMA_CRUZADO` (1, o el elegido; 0 sin INVIMA) y
+  - Columnas: `REGISTRO_INVIMA_CRUZADO` (1, o el elegido; **vacío** si el CUM no está en INVIMA, no 0) y
     `ELECCION_REGISTRO_INVIMA`. `OTRO_REGISTRO_INVIMA_COINCIDE_MAS` se mide
     contra el registro **cruzado**, no contra el 1.
   - Que la auditoría elija sola el de mayor coincidencia, para todos los CUM, es

@@ -724,6 +724,7 @@ function mostrarResultado(
     // buscarlo en una tabla y despues en la otra.
     contenedor.innerHTML = html;
     conectarEleccionDeRegistro(contenedor, datos, clave);
+    conectarFiltroFilasInvima(contenedor);
   } catch (err) {
     contenedor.innerHTML = `
       <div class="consulta-invima__error">
@@ -926,7 +927,13 @@ function tablaFilasInvimaHTML(
               : "";
           const cantidad = [f["CANTIDAD"], f["UNIDAD_MEDIDA"]].map((v) => String(v ?? "").trim()).filter(Boolean).join(" ");
           const rol = [f["TIPO_ROL"], f["NOMBRE_ROL"]].map((v) => String(v ?? "").trim()).filter(Boolean).join(": ");
-          return `<tr class="${numero === elegido && conCoincidencia ? "registros-invima__fila--elegida" : ""}">
+          // data-* para el filtro (conectarFiltroFilasInvima): el texto de la
+          // fila y su rol, ya en minusculas.
+          const textoFila = [numero, filas.indexOf(f) + 1, f["PRINCIPIO_ACTIVO"], f["CONCENTRACION"], cantidad, f["UNIDAD_REFERENCIA"], f["FORMA_FARMACEUTICA"], f["VIA_ADMINISTRACION"], f["ATC"], f["TITULAR"], rol]
+            .map((v) => String(v ?? ""))
+            .join(" ")
+            .toLowerCase();
+          return `<tr data-grupo="${numero}" data-rol="${escaparHTML(String(f["TIPO_ROL"] ?? "").trim())}" data-texto="${escaparHTML(textoFila)}" class="${numero === elegido && conCoincidencia ? "registros-invima__fila--elegida" : ""}">
             ${comunes}
             <td>${filas.indexOf(f) + 1}</td>
             <td class="registros-invima__largo">${texto(f["PRINCIPIO_ACTIVO"])}</td>
@@ -949,6 +956,7 @@ function tablaFilasInvimaHTML(
     <div class="panel registros-invima__panel">
       <h3>Registros de INVIMA de este CUM</h3>
       <p class="consulta-invima__nota">INVIMA publica <strong>${filas.length} filas</strong> para este CUM en el listado de ${escaparHTML(listado)}: <strong>${cuantos}</strong>. Las filas de un mismo registro solo cambian datos que no se comparan (el rol, la vía).${conCoincidencia ? " Ordenados de mayor a menor coincidencia con Gemma Net." : ""}</p>
+      ${filtrosFilasInvimaHTML(filas)}
       <div class="consulta-invima__envoltorio">
         <table class="consulta-invima__tabla registros-invima__tabla">
           <thead><tr>
@@ -960,6 +968,50 @@ function tablaFilasInvimaHTML(
         </table>
       </div>
     </div>`;
+}
+
+/** Busqueda libre y filtro por rol de la tabla de filas de INVIMA -- regla
+ * del proyecto: ninguna tabla de medicamentos se muestra en crudo (un CUM
+ * llega a tener 232 filas). Filtra por REGISTRO completo: un registro se ve si
+ * alguna de sus filas coincide, y sus filas que no coinciden se atenuan en vez
+ * de ocultarse (las celdas del registro, la coincidencia y los botones van
+ * combinadas sobre todas sus filas). */
+function filtrosFilasInvimaHTML(filas: Record<string, unknown>[]): string {
+  const roles = [...new Set(filas.map((f) => String(f["TIPO_ROL"] ?? "").trim()).filter(Boolean))].sort();
+  return `
+    <div class="registros-invima__filtros">
+      <input type="search" class="registros-invima__buscar" placeholder="Buscar en las filas (principio activo, titular, rol…)" aria-label="Buscar en las filas de INVIMA" />
+      <select class="registros-invima__rol" aria-label="Filtrar por rol">
+        <option value="">Todos los roles</option>
+        ${roles.map((r) => `<option value="${escaparHTML(r)}">${escaparHTML(r)}</option>`).join("")}
+      </select>
+      <span class="registros-invima__conteo">${filas.length} filas</span>
+    </div>`;
+}
+
+function conectarFiltroFilasInvima(contenedor: HTMLElement): void {
+  const buscar = contenedor.querySelector<HTMLInputElement>(".registros-invima__buscar");
+  const rol = contenedor.querySelector<HTMLSelectElement>(".registros-invima__rol");
+  const conteo = contenedor.querySelector<HTMLElement>(".registros-invima__conteo");
+  const filas = [...contenedor.querySelectorAll<HTMLTableRowElement>(".registros-invima__tabla tbody tr")];
+  if (!buscar || !rol || !conteo || filas.length === 0) return;
+  const aplicar = () => {
+    const q = buscar.value.trim().toLowerCase();
+    const r = rol.value;
+    const coincide = (tr: HTMLTableRowElement) =>
+      (!q || (tr.dataset.texto ?? "").includes(q)) && (!r || tr.dataset.rol === r);
+    const gruposVisibles = new Set(filas.filter(coincide).map((tr) => tr.dataset.grupo));
+    let visibles = 0;
+    for (const tr of filas) {
+      const enGrupo = gruposVisibles.has(tr.dataset.grupo);
+      tr.hidden = !enGrupo;
+      tr.classList.toggle("registros-invima__fila--atenuada", enGrupo && !coincide(tr));
+      if (enGrupo && coincide(tr)) visibles += 1;
+    }
+    conteo.textContent = q || r ? `${visibles} de ${filas.length} filas coinciden` : `${filas.length} filas`;
+  };
+  buscar.addEventListener("input", aplicar);
+  rol.addEventListener("change", aplicar);
 }
 
 function textoCoincidencia(registro: Record<string, unknown>): string {
@@ -987,8 +1039,20 @@ function avisoRegistrosHTML(
 ): string {
   const cruzado = registroCruzado(fila);
   const distintos = Number(fila["REGISTROS_INVIMA_DISTINTOS"] ?? 0);
-  const registros = registrosInvima(fila) ?? [];
   if (filasInvima.length < 2) return "";
+  const registrosDeLaFila = registrosInvima(fila);
+  if (registrosDeLaFila === null) {
+    // La fila no trae la comparacion por registro: es un IUM (se cruzo contra
+    // el CUM que INVIMA le asocia, en su propio modulo) o un snapshot anterior.
+    // Sin selector: guardar desde aca cambiaria el cruce de OTRO medicamento
+    // -- el del CUM -- y el modulo IUM no usa elecciones (revision de reglas,
+    // 2026-10-14).
+    const cumDelIum = [fila["CUM_INVIMA"]].flat().map((c) => String(c ?? "").trim()).filter(Boolean).join(", ");
+    return String(fila["ESTADO_IUM"] ?? "").trim()
+      ? `<p class="consulta-invima__nota">Este IUM se compara contra el CUM que INVIMA le asocia${cumDelIum ? ` (${escaparHTML(cumDelIum)})` : ""}, que tiene ${filasInvima.length} filas en INVIMA. La fila contra la que se cruza se elige consultando ese CUM.</p>`
+      : `<p class="consulta-invima__nota">INVIMA tiene ${filasInvima.length} filas para este CUM. La comparación contra cada una no está disponible en la última actualización de datos; vuelva a actualizar para elegir contra cuál cruzar.</p>`;
+  }
+  const registros = registrosDeLaFila;
 
   // Guardado pero todavia no aplicado: la auditoria la corre el worker.
   const pendiente =

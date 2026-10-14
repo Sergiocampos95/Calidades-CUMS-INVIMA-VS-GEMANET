@@ -125,7 +125,9 @@ OTRO_COINCIDE_MAS_NO = "No"
 
 # El registro contra el que la auditoria cruzo de verdad: 1 (el primero del
 # archivo de INVIMA) salvo que alguien haya ELEGIDO otro para ese CUM -- ver
-# `aplicar_elecciones_registro`. 0 si el CUM no esta en INVIMA.
+# `aplicar_elecciones_registro`. VACIO (no 0) si el CUM no esta en INVIMA: no
+# se cruzo contra nada, y un 0 se leeria como un numero de registro -- mismo
+# criterio que PORCENTAJE_CALIDAD (regla 6 del proyecto).
 COLUMNA_REGISTRO_CRUZADO = "REGISTRO_INVIMA_CRUZADO"
 # Si el cruce de esta fila sale de una eleccion guardada: vacio (no hay
 # eleccion), ELECCION_APLICADA o ELECCION_NO_ENCONTRADA -- el registro elegido
@@ -308,7 +310,7 @@ def comparar_contra_cada_registro_invima(
     )
     con_invima = resumen[COLUMNA_REGISTROS_DISTINTOS] > 0
     resumen[COLUMNA_REGISTRO_CRUZADO] = (
-        claves.map(registro_cruzado).fillna(1).astype(int).where(con_invima, 0)
+        claves.map(registro_cruzado).fillna(1).astype("Int64").where(con_invima, pd.NA)
     )
     resumen[COLUMNA_ELECCION] = np.select(
         [claves.isin(set(registro_cruzado)).to_numpy(), claves.isin(elecciones_no_encontradas).to_numpy()],
