@@ -876,7 +876,10 @@ function tablaFilasInvimaHTML(
           const comunes =
             i === 0
               ? `<th scope="row" rowspan="${grupo.length}">Registro ${numero}<br/>${marcas}</th>` +
-                (conCoincidencia ? `<td rowspan="${grupo.length}">${info ? escaparHTML(textoCoincidencia(info)) : "—"}</td>` : "")
+                (conCoincidencia ? `<td rowspan="${grupo.length}">${info ? escaparHTML(textoCoincidencia(info)) : "—"}</td>` : "") +
+                // Los botones junto a la coincidencia, que es donde se decide:
+                // al final de la fila quedaban fuera de la vista (tabla ancha).
+                (conCoincidencia ? `<td rowspan="${grupo.length}">${accion}</td>` : "")
               : "";
           const cantidad = [f["CANTIDAD"], f["UNIDAD_MEDIDA"]].map((v) => String(v ?? "").trim()).filter(Boolean).join(" ");
           const rol = [f["TIPO_ROL"], f["NOMBRE_ROL"]].map((v) => String(v ?? "").trim()).filter(Boolean).join(": ");
@@ -891,7 +894,6 @@ function tablaFilasInvimaHTML(
             <td>${texto(f["ATC"])}</td>
             <td class="registros-invima__largo">${texto(f["TITULAR"])}</td>
             <td class="registros-invima__largo">${texto(rol)}</td>
-            ${i === 0 && conCoincidencia ? `<td rowspan="${grupo.length}">${accion}</td>` : ""}
           </tr>`;
         })
         .join("");
@@ -914,9 +916,9 @@ function tablaFilasInvimaHTML(
       <div class="consulta-invima__envoltorio">
         <table class="consulta-invima__tabla registros-invima__tabla">
           <thead><tr>
-            <th>Registro</th>${conCoincidencia ? "<th>Coincidencia con Gemma Net</th>" : ""}
+            <th>Registro</th>${conCoincidencia ? "<th>Coincidencia con Gemma Net</th><th>Cruce</th>" : ""}
             <th>Principio activo</th><th>Concentración</th><th>Cantidad</th><th>Unidad de referencia</th>
-            <th>Forma farmacéutica</th><th>Vía</th><th>ATC</th><th>Titular</th><th>Rol</th>${conCoincidencia ? "<th></th>" : ""}
+            <th>Forma farmacéutica</th><th>Vía</th><th>ATC</th><th>Titular</th><th>Rol</th>
           </tr></thead>
           <tbody>${cuerpo}</tbody>
         </table>
