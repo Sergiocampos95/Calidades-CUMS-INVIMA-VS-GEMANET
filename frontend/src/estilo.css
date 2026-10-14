@@ -449,7 +449,12 @@ tbody tr:hover td { background: var(--azul-fondo); }
 .registros-invima__elegir { font-size: 12px; padding: 3px 8px; white-space: nowrap; margin: 0 4px 4px 0; }
 .registros-invima__eleccion { margin: 0 0 10px; font-size: 13px; line-height: 1.6; }
 .registros-invima__sin-par { margin-top: 10px; }
-.registros-invima__etiqueta { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; }
+.registros-invima__etiqueta { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; flex: 1 1 320px; min-width: 0; }
+/* Selector del cruce: lista + "Usar este registro para el cruce" en una linea (baja en pantallas angostas). */
+.registros-invima__control { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0; }
+.registros-invima__boton { white-space: nowrap; }
+.registros-invima__estado { margin: 4px 0 0; font-size: 13px; line-height: 1.5; }
+.registros-invima__estado--sin-guardar { font-style: italic; }
 .registros-invima__selector { flex: 1; min-width: 0; max-width: 100%; font: inherit; font-weight: 400; padding: 3px 6px; border: 1px solid var(--borde); border-radius: 4px; background: var(--blanco); color: var(--texto); }
 .consulta-invima__envoltorio { overflow-x: auto; border: 1px solid var(--borde); border-radius: 4px; background: var(--blanco); }
 .consulta-invima__tabla { width: 100%; border-collapse: collapse; font-size: 13px; }
