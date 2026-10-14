@@ -173,6 +173,25 @@ def test_leer_vencidos_con_hoja_candidata_plural(tmp_path):
     assert set(df["CODIGO_INTERNO"]) == {"10815-3", "20147-1", "30111-1", "40222-1"}
 
 
+def test_leer_vencidos_con_formato_actual_sin_filas_preliminares_ni_ium(tmp_path):
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Data"
+    encabezados = [col.replace(" ", "").replace("_", "") for col in COLUMNAS[:-1]]
+    encabezados[8] = "CONSECUTIVOCUM"
+    ws.append(encabezados)
+    for fila in FILAS:
+        ws.append(fila[:-1])
+    ruta = tmp_path / "Codigo_Unico_Medicamentos_Vencidos.xlsx"
+    wb.save(ruta)
+
+    df = leer_catalogo_invima_vencidos(ruta)
+
+    assert set(df["CODIGO_INTERNO"]) == {"10815-3", "20147-1", "30111-1", "40222-1"}
+    assert "ESTADO_REGISTRO" in df.columns
+    assert "IUM" not in df.columns
+
+
 def test_leer_vencidos_con_hoja_renombrada_por_coincidencia_de_substring(tmp_path):
     # nombre real del archivo puede variar entre copias -- ninguno de los
     # candidatos exactos calza, pero "venc" si aparece y es la unica hoja

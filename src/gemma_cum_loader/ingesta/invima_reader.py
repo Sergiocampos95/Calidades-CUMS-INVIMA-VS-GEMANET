@@ -58,6 +58,13 @@ reconfirmados contra archivos reales del usuario (2026-08-19):
   (`_resolver_hoja_auxiliar`, candidatos `HOJAS_CATALOGO_VIGENTES`) que
   los demas -- los 4 lectores son consistentes.
 
+El listado de Vencidos descargado el 2026-10-01 llego con los encabezados en
+la primera fila, en MAYUSCULA y con las palabras juntas (`REGISTROSANITARIO`,
+`CONSECUTIVOCUM`) y sin IUM. Es el mismo formato del portal (ver
+`_es_formato_portal`) en otra capitalizacion: el renombre contra CAMPOS_API no
+distingue mayusculas, e IUM queda ausente, no se inventa. (Arreglo de la rama
+chore/actualizar-listados-septiembre, integrado con el lector del portal.)
+
 FILA_ENCABEZADO/RANGO_COLUMNAS confirmados correctos sin cambios para los
 4. La unica tolerancia que sigue sin verificar contra un caso real es el
 propio encabezado/rango de columnas si INVIMA cambia el formato del
@@ -163,7 +170,11 @@ def _leer_hoja_detectando_formato(libro: pd.ExcelFile, hoja: str) -> pd.DataFram
     primera_fila = pd.read_excel(libro, sheet_name=hoja, header=0, nrows=0).columns.tolist()
     if _es_formato_portal(primera_fila):
         df = pd.read_excel(libro, sheet_name=hoja, header=0)
-        df = df.rename(columns={api: excel for api, excel in CAMPOS_API.items() if api in df.columns})
+        # Sin distinguir mayusculas: el portal exporta `registrosanitario` y el
+        # Vencidos del 2026-10-01 trajo `REGISTROSANITARIO` (mismo nombre).
+        df = df.rename(
+            columns={c: CAMPOS_API[str(c).strip().lower()] for c in df.columns if str(c).strip().lower() in CAMPOS_API}
+        )
     else:
         df = pd.read_excel(libro, sheet_name=hoja, header=FILA_ENCABEZADO, usecols=RANGO_COLUMNAS)
     return _normalizar_catalogo_invima(df)
