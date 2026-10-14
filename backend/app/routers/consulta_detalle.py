@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
 from backend.app.dependencies import carpeta_snapshots
+from gemma_cum_loader.auditoria.registros_invima import filas_invima_con_registro
 from gemma_cum_loader.ingesta.invima_socrata import consultar_cum_en_listados
 from worker.almacen_snapshots import leer_tabla
 
@@ -103,6 +104,56 @@ def _fila_invima_sintetica(fila_auditoria: dict) -> dict | None:
         "FECHA_ACTIVO_INVIMA": fila_auditoria.get("FECHA_ACTIVO_INVIMA"),
         "FECHA_INACTIVO_INVIMA": fila_auditoria.get("FECHA_INACTIVO_INVIMA"),
         "FECHA_VENCIMIENTO_INVIMA": fila_auditoria.get("FECHA_VENCIMIENTO_INVIMA"),
+    }
+
+
+# Lo que identifica cada fila de INVIMA de un CUM en la tabla "cuales son":
+# lo que entra en la comparacion y lo que hace que INVIMA repita la fila (el
+# rol, la via). Solo se mandan las que el snapshot trae.
+_COLUMNAS_FILAS_INVIMA = (
+    "REGISTRO",
+    "LISTADO_INVIMA",
+    "PRINCIPIO_ACTIVO",
+    "CONCENTRACION",
+    "CANTIDAD",
+    "UNIDAD_MEDIDA",
+    "UNIDAD_REFERENCIA",
+    "FORMA_FARMACEUTICA",
+    "VIA_ADMINISTRACION",
+    "ATC",
+    "TITULAR",
+    "TIPO_ROL",
+    "NOMBRE_ROL",
+    "ESTADO_CUM",
+    "ESTADO_REGISTRO",
+)
+
+
+def _filas_invima_por_clave(df_listados: pd.DataFrame | None, claves: set[str]) -> dict[str, list[dict]]:
+    """TODAS las filas de INVIMA de cada CUM consultado, con su numero de
+    registro -- el "cuantos y cuales" del pedido del usuario (2026-10-14).
+    Numeradas por `filas_invima_con_registro`, la MISMA funcion que numera la
+    tabla `registros_invima` de la auditoria: el "registro 2" de esta tabla es
+    el "registro 2" del desplegable. Se recorta a las claves consultadas antes
+    de numerar (los ~424.000 registros completos tardarian segundos por
+    consulta); el numero depende solo de las filas de cada CUM, asi que
+    recortar no lo cambia."""
+    if df_listados is None or df_listados.empty or not {"CODIGO_INTERNO", "LISTADO"} <= set(df_listados.columns):
+        return {}
+    propias = df_listados[df_listados["CODIGO_INTERNO"].fillna("").astype(str).str.strip().isin(claves)]
+    if propias.empty:
+        return {}
+    por_listado = {nombre: grupo.drop(columns=["LISTADO"]) for nombre, grupo in propias.groupby("LISTADO", sort=False)}
+    filas = filas_invima_con_registro(
+        por_listado.get("vigente", pd.DataFrame()),
+        por_listado.get("vencido"),
+        por_listado.get("otros_estados"),
+        por_listado.get("renovacion"),
+    )
+    columnas = [c for c in _COLUMNAS_FILAS_INVIMA if c in filas.columns]
+    return {
+        clave: [_sanitizar_fila(f) for f in grupo[columnas].to_dict("records")]
+        for clave, grupo in filas.groupby("_CLAVE", sort=False)
     }
 
 
@@ -333,6 +384,10 @@ def consultar_medicamento(codigo: str, carpeta: Path = Depends(carpeta_snapshots
             invima_rows.append(sintetica)
 
     contenido = {
+        # Todas las filas de INVIMA de cada CUM consultado (por codigo y por
+        # CUM_RECONSTRUIDO), con su registro. Aparte de "invima", que trae UNA
+        # fila por codigo y conserva su forma de siempre.
+        "filas_invima_por_cum": _filas_invima_por_clave(df_listados, todas_las_claves),
         "invima": invima_rows,
         "gemma_net": gemma_rows if gemma_rows else None,
         "total_encontrados": len(invima_rows) + len(gemma_rows),

@@ -19,6 +19,7 @@ from gemma_cum_loader.auditoria.registros_invima import (
     OTRO_COINCIDE_MAS_NO,
     OTRO_COINCIDE_MAS_SI,
     comparar_contra_cada_registro_invima,
+    filas_invima_con_registro,
     registros_distintos_por_clave,
 )
 from gemma_cum_loader.catalogos.resolver import cargar_catalogo
@@ -152,7 +153,10 @@ def test_el_registro_1_reproduce_el_trio_del_cruce_normal():
 
     for fila in (0, 1):
         registro_1 = _registro(comparacion, 1, fila)
-        for columna in _TRIO:
+        # Tambien lo que arma el diagnostico de la consulta: si el registro 1
+        # no reproduce estado, campos distintos y calidad, elegir un registro
+        # cambiaria el caso por algo distinto de "otro registro".
+        for columna in [*_TRIO, "CAMPOS_CON_DIFERENCIA", "ESTADO_COHERENCIA", "PORCENTAJE_CALIDAD"]:
             assert registro_1[columna] == normal.loc[fila, columna], columna
     # Y el combinado pegado sigue en GyC contra cualquiera de los registros.
     assert _registro(comparacion, 2, 1)["DESCRIPCION_VALIDACION"] == VALIDACION_PENDIENTE_GYC
@@ -218,8 +222,12 @@ def test_cum_que_vive_en_vencidos_no_rellena_el_registro_2_con_el_1():
     comparacion, normal = _comparar(gemanet, [_fila_invima("99999999-1")], vencidos)
 
     registro_1 = _registro(comparacion, 1)
-    for columna in _TRIO:
+    for columna in [*_TRIO, "CAMPOS_CON_DIFERENCIA"]:
         assert registro_1[columna] == normal.loc[0, columna], columna
+    # Fuera de Vigentes el estado de la llamada alternativa no es el del cruce
+    # normal ("vencido"): se deja vacio y la pantalla conserva el de la auditoria.
+    assert registro_1["ESTADO_COHERENCIA"] == ""
+    assert pd.isna(registro_1["PORCENTAJE_CALIDAD"])
     segundo = _registro(comparacion, 2)
     assert "IBUPROFENO" not in segundo["DESCRIPCION_INVIMA"]
     assert segundo["DESCRIPCION_VALIDACION"] == VALIDACION_DIFIERE
@@ -265,3 +273,23 @@ def test_una_columna_que_no_se_compara_no_cambia_el_veredicto(columna):
 
     for trio in _TRIO:
         assert mutada.loc[0, trio] == base.loc[0, trio], trio
+
+
+def test_filas_invima_con_registro_lista_todas_las_filas_con_su_registro():
+    """Lo que la consulta muestra como "cuales son": TODAS las filas del CUM,
+    no solo una por registro. Las que solo cambian el rol comparten numero."""
+    filas = filas_invima_con_registro(
+        pd.DataFrame(
+            [
+                _fila_invima("20012345-1", PRINCIPIO_ACTIVO="IBUPROFENO", TIPO_ROL="FABRICANTE"),
+                _fila_invima("20012345-1", PRINCIPIO_ACTIVO="TIOCOLCHICOSIDO", TIPO_ROL="FABRICANTE"),
+                _fila_invima("20012345-1", PRINCIPIO_ACTIVO="IBUPROFENO", TIPO_ROL="IMPORTADOR"),
+            ]
+        )
+    )
+
+    assert filas["REGISTRO"].tolist() == [1, 2, 1]
+    assert filas["TIPO_ROL"].tolist() == ["FABRICANTE", "FABRICANTE", "IMPORTADOR"]
+    assert filas["REGISTROS_DISTINTOS"].unique().tolist() == [2]
+    assert filas["FILAS_INVIMA"].unique().tolist() == [3]
+    assert filas["FILAS_DEL_REGISTRO"].tolist() == [2, 1, 2]

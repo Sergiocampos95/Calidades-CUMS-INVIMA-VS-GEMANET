@@ -491,3 +491,30 @@ def test_snapshot_sin_tabla_de_registros_no_finge_un_solo_registro(tmp_path):
         assert cuerpo["gemma_net"][0]["REGISTROS_INVIMA"] is None
     finally:
         app.dependency_overrides.clear()
+
+
+def test_trae_todas_las_filas_invima_del_cum_con_su_registro(tmp_path):
+    """El "cuantos y cuales" del pedido: TODAS las filas de INVIMA del CUM,
+    numeradas por registro, aunque el CUM no este en Gemma Net. Solo las del
+    listado que usa el cruce (Vigentes gana sobre Vencidos)."""
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        df_auditoria = pd.DataFrame({"CODIGO_INTERNO": ["999-9"], "CUM_RECONSTRUIDO": [""]})
+        df_listados = pd.DataFrame(
+            {
+                "CODIGO_INTERNO": ["500-1", "500-1", "500-1", "500-1"],
+                "LISTADO": ["vigente", "vigente", "vigente", "vencido"],
+                "PRINCIPIO_ACTIVO": ["PIPERACILINA", "TAZOBACTAM", "PIPERACILINA", "VIEJO"],
+                "TIPO_ROL": ["FABRICANTE", "FABRICANTE", "IMPORTADOR", "FABRICANTE"],
+            }
+        )
+        escribir_snapshot({"auditoria": df_auditoria, "invima_listados": df_listados}, carpeta=carpeta)
+
+        cuerpo = cliente.get("/consulta-detalle/medicamento", params={"codigo": "500-1"}).json()
+        filas = cuerpo["filas_invima_por_cum"]["500-1"]
+
+        assert [f["REGISTRO"] for f in filas] == [1, 2, 1]
+        assert [f["TIPO_ROL"] for f in filas] == ["FABRICANTE", "FABRICANTE", "IMPORTADOR"]
+        assert {f["LISTADO_INVIMA"] for f in filas} == {"vigente"}
+    finally:
+        app.dependency_overrides.clear()

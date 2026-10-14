@@ -80,6 +80,17 @@ COLUMNAS_INVIMA_COMPARADAS: tuple[str, ...] = (
 # El registro de un CUM sale del primero de estos listados que lo tiene.
 _ORDEN_LISTADOS = (_LISTADO_VIGENTES, _LISTADO_VENCIDOS, _LISTADO_OTROS_ESTADOS, _LISTADO_RENOVACION)
 
+# Lo que la consulta necesita para que el CASO ENTERO (diagnostico y "que
+# hacer", no solo la tabla campo a campo) siga al registro elegido. Mismos
+# nombres que en la auditoria: la pantalla los superpone a la fila tal cual.
+# CAMPOS_CON_DIFERENCIA sale fiel de cualquier listado (se arma con la misma
+# condicion `invima_tiene_datos` que el cruce normal). ESTADO_COHERENCIA y
+# PORCENTAJE_CALIDAD solo cuando el registro es de VIGENTES: para un CUM de
+# Vencidos/Otros Estados/Renovacion la llamada alternativa pasa ese listado
+# como `df_invima` y su estado diria "correcto/con diferencias" donde el cruce
+# normal dice "vencido". Vacio/NaN = "el mismo de la auditoria".
+COLUMNAS_CASO_POR_REGISTRO: tuple[str, ...] = ("CAMPOS_CON_DIFERENCIA", "ESTADO_COHERENCIA", "PORCENTAJE_CALIDAD")
+
 # Columnas de la tabla larga, en el orden en que se guardan.
 COLUMNAS_TABLA_REGISTROS: tuple[str, ...] = (
     "FILA_AUDITORIA",
@@ -93,6 +104,7 @@ COLUMNAS_TABLA_REGISTROS: tuple[str, ...] = (
     "CAMPOS_COINCIDEN",
     "CAMPOS_COMPARADOS",
     "PORCENTAJE_COINCIDENCIA",
+    *COLUMNAS_CASO_POR_REGISTRO,
     *(
         f"{campo}{sufijo}"
         for campo in CAMPOS_COMPARADOS_COHERENCIA
@@ -124,18 +136,24 @@ class ComparacionPorRegistro:
     resumen: pd.DataFrame
 
 
-def registros_distintos_por_clave(
+def filas_invima_con_registro(
     df_invima: pd.DataFrame,
     df_invima_vencidos: pd.DataFrame | None = None,
     df_invima_otros_estados: pd.DataFrame | None = None,
     df_invima_renovacion: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """Una fila por (CUM, registro distinto), sacada del listado que el cruce
-    normal usa para ese CUM. Conserva las columnas crudas de INVIMA y agrega
-    `_CLAVE`, `LISTADO_INVIMA`, `REGISTRO` (1..N en el orden del archivo de
-    INVIMA: el 1 es el que usa el cruce normal), `REGISTROS_DISTINTOS`,
-    `FILAS_INVIMA` (filas del CUM en ese listado) y `FILAS_DEL_REGISTRO`
-    (cuantas de esas filas son este mismo registro, p.ej. un rol distinto)."""
+    """TODAS las filas de INVIMA de cada CUM -- del listado que el cruce normal
+    usa para ese CUM -- con el numero de `REGISTRO` al que pertenecen. Es lo que
+    la consulta muestra como "cuales son": dos filas con el mismo numero solo
+    difieren en lo que no se compara (el rol, la via...).
+
+    El numero se asigna por orden de PRIMERA aparicion en el archivo de
+    INVIMA, asi que el registro 1 es siempre la fila que gana el
+    `drop_duplicates(keep="first")` del cruce normal. `registros_distintos_por_
+    clave` sale de aca: los dos no pueden numerar distinto.
+
+    Agrega `_CLAVE`, `LISTADO_INVIMA`, `REGISTRO`, `REGISTROS_DISTINTOS`,
+    `FILAS_INVIMA` (filas del CUM en ese listado) y `FILAS_DEL_REGISTRO`."""
     partes = []
     for prioridad, (listado, df) in enumerate(
         zip(_ORDEN_LISTADOS, (df_invima, df_invima_vencidos, df_invima_otros_estados, df_invima_renovacion))
@@ -156,27 +174,34 @@ def registros_distintos_por_clave(
     # Solo el listado de mayor prioridad de cada CUM: si esta en Vigentes, las
     # filas que tambien tenga en Vencidos no son el registro que se cruza.
     todo = todo[todo["_PRIORIDAD"].eq(todo.groupby("_CLAVE")["_PRIORIDAD"].transform("min"))]
+    todo = todo.sort_values(["_CLAVE", "_ORDEN"], kind="stable")
 
     firma = pd.Series("", index=todo.index, dtype="object")
     for columna in COLUMNAS_INVIMA_COMPARADAS:
         valores = todo[columna] if columna in todo.columns else pd.Series("", index=todo.index)
-        firma = firma + "\x1f" + valores.fillna("").astype(str).str.strip()
+        firma = firma + "" + valores.fillna("").astype(str).str.strip()
     todo["_FIRMA"] = firma
 
-    filas_invima = todo.groupby("_CLAVE").size()
-    filas_por_firma = todo.groupby(["_CLAVE", "_FIRMA"]).size()
-    registros = (
-        todo.sort_values(["_CLAVE", "_ORDEN"], kind="stable")
-        .drop_duplicates(["_CLAVE", "_FIRMA"])
-        .copy()
-    )
-    registros["REGISTRO"] = registros.groupby("_CLAVE").cumcount() + 1
-    registros["REGISTROS_DISTINTOS"] = registros.groupby("_CLAVE")["REGISTRO"].transform("max")
-    registros["FILAS_INVIMA"] = registros["_CLAVE"].map(filas_invima)
-    registros["FILAS_DEL_REGISTRO"] = pd.MultiIndex.from_frame(registros[["_CLAVE", "_FIRMA"]]).map(
-        filas_por_firma
-    )
-    return registros.drop(columns=["_PRIORIDAD", "_ORDEN", "_FIRMA"]).reset_index(drop=True)
+    primeras = todo.drop_duplicates(["_CLAVE", "_FIRMA"])
+    numero = pd.Series(primeras.groupby("_CLAVE").cumcount().to_numpy() + 1, index=pd.MultiIndex.from_frame(primeras[["_CLAVE", "_FIRMA"]]))
+    llave = pd.MultiIndex.from_frame(todo[["_CLAVE", "_FIRMA"]])
+    todo["REGISTRO"] = llave.map(numero).astype(int)
+    todo["REGISTROS_DISTINTOS"] = todo.groupby("_CLAVE")["REGISTRO"].transform("max")
+    todo["FILAS_INVIMA"] = todo.groupby("_CLAVE")["REGISTRO"].transform("size")
+    todo["FILAS_DEL_REGISTRO"] = todo.groupby(["_CLAVE", "REGISTRO"])["REGISTRO"].transform("size")
+    return todo.drop(columns=["_PRIORIDAD", "_ORDEN", "_FIRMA"]).reset_index(drop=True)
+
+
+def registros_distintos_por_clave(
+    df_invima: pd.DataFrame,
+    df_invima_vencidos: pd.DataFrame | None = None,
+    df_invima_otros_estados: pd.DataFrame | None = None,
+    df_invima_renovacion: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Una fila por (CUM, registro distinto): la PRIMERA fila de cada registro
+    de `filas_invima_con_registro`, con las columnas crudas de INVIMA."""
+    filas = filas_invima_con_registro(df_invima, df_invima_vencidos, df_invima_otros_estados, df_invima_renovacion)
+    return filas.drop_duplicates(["_CLAVE", "REGISTRO"]).reset_index(drop=True)
 
 
 def comparar_contra_cada_registro_invima(
@@ -270,6 +295,10 @@ def comparar_contra_cada_registro_invima(
             for campo in CAMPOS_COMPARADOS_COHERENCIA:
                 for sufijo in (SUFIJO_INVIMA, SUFIJO_VALIDACION):
                     pieza[f"{campo}{sufijo}"] = resultado[f"{campo}{sufijo}"].to_numpy()
+            pieza["CAMPOS_CON_DIFERENCIA"] = resultado["CAMPOS_CON_DIFERENCIA"].to_numpy()
+            es_vigentes = listado == _LISTADO_VIGENTES
+            pieza["ESTADO_COHERENCIA"] = resultado["ESTADO_COHERENCIA"].to_numpy() if es_vigentes else ""
+            pieza["PORCENTAJE_CALIDAD"] = resultado["PORCENTAJE_CALIDAD"].to_numpy() if es_vigentes else np.nan
             piezas.append(pieza)
 
     tabla = pd.concat(piezas, ignore_index=True)
