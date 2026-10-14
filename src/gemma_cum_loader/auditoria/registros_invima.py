@@ -276,7 +276,14 @@ def comparar_contra_cada_registro_invima(
             if not filas.any():
                 continue
             resultado = auditar_coherencia(
-                gemanet[filas],
+                # Renumerado 0..n-1, como llega el reporte al cruce normal.
+                # Con el indice salteado de un subconjunto, `auditar_coherencia`
+                # alinea mal varias columnas por indice: medido el 2026-10-14,
+                # 2 de 13.652 registros 1 de Vigentes salian "con diferencias"
+                # siendo "correcto" (y se movian fechas y similitudes). Es un
+                # defecto latente de esa funcion -- el cruce normal no lo pisa
+                # porque recibe el reporte entero --, anotado para su propia sesion.
+                gemanet[filas].reset_index(drop=True),
                 fuente,
                 catalogo_unidad,
                 catalogo_marca,
