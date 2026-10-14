@@ -1090,10 +1090,11 @@ function conectarEleccionDeRegistro(
     if (!clave) return;
     (evento.currentTarget as HTMLButtonElement).disabled = true;
     void cambiarEleccion(
-      fetch(urlAbsoluta(`/consulta-detalle/eleccion-registro?cum=${encodeURIComponent(clave)}`), {
-        method: "DELETE",
+      fetch(urlAbsoluta("/consulta-detalle/eleccion-registro/quitar"), {
+        method: "POST",
         credentials: "include",
-        headers: ENCABEZADOS_FETCH,
+        headers: { ...ENCABEZADOS_FETCH, "Content-Type": "application/json" },
+        body: JSON.stringify({ cum: clave }),
       }),
     );
   });

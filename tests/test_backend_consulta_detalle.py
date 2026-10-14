@@ -556,7 +556,7 @@ def test_elegir_registro_lo_guarda_con_el_usuario_y_la_consulta_lo_muestra(tmp_p
         assert eleccion["usuario"] == "ana"
         assert "TAZOBACTAM" in eleccion["resumen"]
 
-        assert cliente.delete("/consulta-detalle/eleccion-registro", params={"cum": "500-1"}).json()["quitada"] is True
+        assert cliente.post("/consulta-detalle/eleccion-registro/quitar", json={"cum": "500-1"}).json()["quitada"] is True
         assert cliente.get("/consulta-detalle/medicamento", params={"codigo": "500-1"}).json()["elecciones_por_cum"] == {}
     finally:
         app.dependency_overrides.clear()
