@@ -245,6 +245,8 @@ def test_sin_registro_en_invima_queda_en_cero_y_sin_aviso():
     assert comparacion.resumen.loc[0, COLUMNA_REGISTROS_DISTINTOS] == 0
     assert comparacion.resumen.loc[0, COLUMNA_FILAS_INVIMA] == 0
     assert comparacion.resumen.loc[0, COLUMNA_OTRO_COINCIDE_MAS] == ""
+    # Vacio, no 0: no se cruzo contra ningun registro (regla 6 del proyecto).
+    assert pd.isna(comparacion.resumen.loc[0, COLUMNA_REGISTRO_CRUZADO])
 
 
 def test_el_registro_sale_del_listado_que_usa_el_cruce_normal():
