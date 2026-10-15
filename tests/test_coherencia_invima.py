@@ -37,11 +37,11 @@ _CATALOGO_MARCA = cargar_catalogo(
 def _fila_gemanet(codigo_interno, **overrides):
     base = {
         "CODIGO_INTERNO": codigo_interno,
-        # Como la arma Gemma Net: PRINCIPIO_ACTIVO + CANTIDAD+UNIDAD + FORMA.
-        # Antes decia "ACETAMINOFEN TABLETA", que codificaba la formula vieja
-        # (PA + UNIDAD_REFERENCIA) -- la que fallaba en el 100 % de los casos
-        # reales. Ver _descripcion_esperada_invima.
-        "DESCRIPCION": "ACETAMINOFEN 500MG TABLETA",
+        # Como la dicta la guia: PRINCIPIO_ACTIVO + UNIDAD_REFERENCIA, la unica
+        # forma contra la que se compara desde el 2026-10-15 (ver
+        # _descripcion_segun_guia_invima). La de la plataforma ("ACETAMINOFEN
+        # 500MG TABLETA") ya no coincide.
+        "DESCRIPCION": "ACETAMINOFEN CADA TABLETA CONTIENE",
         # CONCENTRACION se cruza contra CONCENTRACION de INVIMA (decision del
         # usuario 2026-09-08, ver _CAMPOS_DIRECTOS). El fixture "bien
         # diligenciado" trae la concentracion real; una fila con la
@@ -64,9 +64,7 @@ def _fila_invima(codigo_interno, **overrides):
         "UNIDAD_MEDIDA": "mg",
         "CANTIDAD": 500,
         "PRINCIPIO_ACTIVO": "ACETAMINOFEN",
-        # UNIDAD_REFERENCIA se conserva porque el archivo real la trae, pero
-        # ya NO participa de la descripcion esperada: es una frase ("CADA
-        # CAPSULA DE GELATINA DURA CONTIENE"), no un dato.
+        # Con PRINCIPIO_ACTIVO arma la descripcion segun la guia.
         "UNIDAD_REFERENCIA": "CADA TABLETA CONTIENE",
         # CONCENTRACION de INVIMA es la concentracion real y es contra lo que
         # se cruza el campo homonimo del reporte (ver _CAMPOS_DIRECTOS).
@@ -1291,20 +1289,19 @@ def test_vencido_e_inactivo_es_coherente_no_no_verificable():
 # ---- Los tres defectos de conteo, corregidos el 2026-08-20 ----
 
 
-def test_descripcion_se_arma_con_cantidad_unidad_y_forma():
-    """La formula vieja (PA + UNIDAD_REFERENCIA) fallaba en el 100 % de los
-    casos reales: 0 exactas sobre 43.266. La verificada da 74,9 %."""
+def test_descripcion_armada_como_la_guia_no_es_diferencia():
     resultado = _auditar([_fila_gemanet("500-1")], [_fila_invima("500-1")])
     assert "DESCRIPCION" not in resultado.loc["500-1", "CAMPOS_CON_DIFERENCIA"]
 
 
-def test_unidad_referencia_ya_no_participa_de_la_descripcion():
-    """Es una frase, no un dato: cambiarla no debe alterar el veredicto."""
+def test_unidad_referencia_distinta_hace_diferir_la_descripcion():
+    """La unidad de referencia es la mitad de la forma de la guia: si INVIMA
+    publica otra, la descripcion guardada ya no la sigue."""
     resultado = _auditar(
         [_fila_gemanet("500-1")],
         [_fila_invima("500-1", UNIDAD_REFERENCIA="CUALQUIER OTRA FRASE")],
     )
-    assert "DESCRIPCION" not in resultado.loc["500-1", "CAMPOS_CON_DIFERENCIA"]
+    assert "DESCRIPCION" in resultado.loc["500-1", "CAMPOS_CON_DIFERENCIA"]
 
 
 def test_clasificado_no_es_hallazgo_por_diferencia_de_mayusculas():
@@ -2405,24 +2402,21 @@ def test_una_sola_fila_invima_nunca_va_a_gyc_aunque_el_principio_activo_tenga_va
     assert resultado["PRINCIPIO_ACTIVO_VALIDACION"] == VALIDACION_COINCIDE
 
 
-# ---- DESCRIPCION: que se compara y contra que (2026-09-10) ----------------
+# ---- DESCRIPCION: que se compara y contra que ------------------------------
 #
-# Medido contra la base real (replica de Gemma Net) y los listados de julio
-# 2026, sobre los 46.002 CUMs activos con correspondencia en Vigentes:
-#   PA + CANTIDAD+UNIDAD + FORMA (la plataforma)    29.949 exactas (65,1 %)
-#   PA + UNIDAD_REFERENCIA (la guia del SOP)         2.381 exactas ( 5,2 %)
-#   solo espacios ("100 MG" vs "100MG")                351
-# Las dos formas conviven en la base y las dos son "como debe ser": la primera
-# es la que trae el ejemplo de la propia guia (20055054-1), la segunda es la
-# que la guia dicta por escrito. Ninguna es una diferencia real.
+# Desde el 2026-10-15, solo contra la forma de la guia (PA + UNIDAD_REFERENCIA),
+# en CUM y en IUM -- decision del usuario, "eso es obligatorio". Hasta entonces
+# se aceptaba ademas la forma de la plataforma (PA + CANTIDAD+UNIDAD + FORMA),
+# que en la base real era la mayoritaria: 29.949 de 46.002 CUMs activos
+# (65,1 %) contra 2.381 (5,2 %) de la guia, medido el 2026-09-10.
 
 
-def test_descripcion_no_difiere_solo_por_el_espacio_entre_cantidad_y_unidad():
-    """"KETOPROFENO 100 MG TABLETA" y "KETOPROFENO 100MG TABLETA" son la misma
-    descripcion. 351 filas reales salian como "difiere" solo por ese espacio."""
+def test_descripcion_no_difiere_solo_por_espacios():
+    """"TINIDAZOL CADA 100 ML" y "TINIDAZOL CADA 100ML" son la misma
+    descripcion. 351 filas reales salian como "difiere" solo por un espacio."""
     resultado = _auditar(
-        [_fila_gemanet("500-1", DESCRIPCION="ACETAMINOFEN 500 MG TABLETA")],
-        [_fila_invima("500-1")],
+        [_fila_gemanet("500-1", DESCRIPCION="ACETAMINOFEN CADA 100ML")],
+        [_fila_invima("500-1", UNIDAD_REFERENCIA="CADA 100 ML")],
     )
     fila = resultado.loc["500-1"]
     assert "DESCRIPCION" not in fila["CAMPOS_CON_DIFERENCIA"]
@@ -2446,18 +2440,32 @@ def test_descripcion_armada_como_dice_la_guia_coincide_y_se_muestra_esa_forma():
     assert fila["SIMILITUD_DESCRIPCION"] == 100
 
 
-def test_descripcion_que_no_sigue_ninguna_de_las_dos_formas_difiere():
-    """Sin la concentracion no es ni la forma de la plataforma ni la de la
-    guia: es una diferencia real. El lado INVIMA muestra la forma de la
-    plataforma, que es la mayoritaria en la base."""
+def test_descripcion_con_la_forma_de_la_plataforma_difiere():
+    """La forma de la plataforma (PA + CANTIDAD+UNIDAD + FORMA) se acepto hasta
+    el 2026-10-15. Ya no: la guia es obligatoria, y el lado INVIMA muestra la
+    forma de la guia, que es contra la que se comparo."""
     resultado = _auditar(
-        [_fila_gemanet("500-1", DESCRIPCION="ACETAMINOFEN TABLETA")],
+        [_fila_gemanet("500-1", DESCRIPCION="ACETAMINOFEN 500MG TABLETA")],
         [_fila_invima("500-1")],
     )
     fila = resultado.loc["500-1"]
     assert "DESCRIPCION" in fila["CAMPOS_CON_DIFERENCIA"]
     assert fila["DESCRIPCION_VALIDACION"] == "difiere"
-    assert fila["DESCRIPCION_INVIMA"] == "ACETAMINOFEN 500mg TABLETA"
+    assert fila["DESCRIPCION_INVIMA"] == "ACETAMINOFEN CADA TABLETA CONTIENE"
+
+
+def test_descripcion_sin_unidad_de_referencia_en_invima_queda_sin_comparar():
+    """Sin UNIDAD_REFERENCIA la forma de la guia no se puede armar: comparar
+    contra el principio activo solo seria decidir a ciegas. Queda fuera de las
+    diferencias y del porcentaje, no como "difiere"."""
+    resultado = _auditar(
+        [_fila_gemanet("500-1", DESCRIPCION="ACETAMINOFEN 500MG TABLETA")],
+        [_fila_invima("500-1", UNIDAD_REFERENCIA=None)],
+    )
+    fila = resultado.loc["500-1"]
+    assert "DESCRIPCION" not in fila["CAMPOS_CON_DIFERENCIA"]
+    assert fila["DESCRIPCION_VALIDACION"] == "sin comparar"
+    assert fila["PORCENTAJE_CALIDAD"] == 100
 
 
 def test_descripcion_segun_la_guia_tambien_vale_para_un_cum_de_un_listado_auxiliar():
@@ -2475,18 +2483,13 @@ def test_descripcion_segun_la_guia_tambien_vale_para_un_cum_de_un_listado_auxili
     assert fila["DESCRIPCION_INVIMA"] == "ACETAMINOFEN CADA TABLETA CONTIENE"
 
 
-def test_descripcion_es_consecuencia_de_principio_activo_unidad_y_forma():
-    """La descripcion se arma con esos tres campos comparados: si uno de ellos
-    difiere, la descripcion difiere por consecuencia. Declararlo incompleto
-    hacia que la seccion "Descripcion" no avisara que muchas veces el problema
-    de fondo es la forma farmaceutica."""
+def test_descripcion_es_consecuencia_solo_del_principio_activo():
+    """La forma de la guia se arma con el principio activo y la unidad de
+    referencia, y de esos solo el principio activo es un campo comparado. La
+    unidad de medida y la forma farmaceutica ya no la arrastran."""
     from gemma_cum_loader.auditoria.coherencia_invima import CAMPOS_DERIVADOS
 
-    assert set(CAMPOS_DERIVADOS["DESCRIPCION"]) == {
-        "PRINCIPIO_ACTIVO",
-        "UNIDAD_MEDIDA",
-        "FORMA_FARMACEUTICA",
-    }
+    assert set(CAMPOS_DERIVADOS["DESCRIPCION"]) == {"PRINCIPIO_ACTIVO"}
 
 
 def test_combinado_que_solo_vive_en_un_listado_auxiliar_tambien_va_a_gyc():

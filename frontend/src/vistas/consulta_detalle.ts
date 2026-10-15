@@ -1,6 +1,6 @@
 import { fechaLegible } from "../fechas";
 import { ENCABEZADOS_FETCH, urlAbsoluta } from "../api";
-import { ETIQUETA_CAMPO_COMPARADO, etiquetaEstadoListadoInvima, pildoraValidacion } from "../pildoras";
+import { ETIQUETA_CAMPO_COMPARADO, etiquetaCamposConDiferencia, etiquetaEstadoListadoInvima, pildoraValidacion } from "../pildoras";
 
 // Los 7 campos que la auditoria compara lado a lado, en el orden en que se
 // leen. El vocabulario (y sus porques) vive en pildoras.ts, compartido con
@@ -9,14 +9,13 @@ import { ETIQUETA_CAMPO_COMPARADO, etiquetaEstadoListadoInvima, pildoraValidacio
 const CAMPOS_COMPARABLES = Object.entries(ETIQUETA_CAMPO_COMPARADO).map(([columna, etiqueta]) => ({ columna, etiqueta }));
 
 // INVIMA no publica una descripcion: la auditoria la arma (ver
-// _descripcion_esperada_invima / _descripcion_segun_guia_invima en
-// coherencia_invima.py). Sin decirlo, la fila "Descripción" se lee como si
-// INVIMA tuviera ese campo y "Difiere" como un error de cruce (pedido del
-// usuario, 2026-09-10).
+// _descripcion_segun_guia_invima en coherencia_invima.py). Sin decirlo, la
+// fila "Descripción" se lee como si INVIMA tuviera ese campo y "No coincide"
+// como un error de cruce (pedido del usuario, 2026-09-10).
 const NOTA_DESCRIPCION_INVIMA =
-  "La descripción del lado INVIMA no existe como tal en INVIMA: se arma con principio activo + cantidad + " +
-  "unidad de medida + forma farmacéutica (como la guarda la plataforma) o con principio activo + unidad de " +
-  "referencia (como dicta la guía de actualización de CUMS). Se muestra la forma con la que se comparó.";
+  "La descripción del lado INVIMA no existe como tal en INVIMA: se arma con principio activo + unidad de " +
+  "referencia, como dicta la guía de actualización de CUMS. Esa forma es obligatoria para CUM e IUM; si " +
+  "INVIMA no publica la unidad de referencia, la descripción no se compara.";
 
 interface RespuestaConsultaDetalle {
   invima: Record<string, unknown>[];
@@ -261,7 +260,7 @@ const VALIDACIONES_DE_DATO: { columna: string; titulo: string; paso: (valor: str
   {
     columna: "CAMPOS_CON_DIFERENCIA",
     titulo: "hay campos distintos a INVIMA",
-    paso: (v) => `Actualizar con el dato oficial de INVIMA los campos: ${v}`,
+    paso: (v) => `Actualizar con el dato oficial de INVIMA los campos: ${etiquetaCamposConDiferencia(v)}`,
   },
   {
     columna: "INCONSISTENCIA_FECHAS_ACTIVO",
@@ -442,9 +441,11 @@ function diagnosticoDeVigencia(invima: Record<string, unknown>[], gemmaNet: Reco
           nivel: "advertencia",
           titulo: "⚠ Con diferencias frente a INVIMA",
           icono: "🔀",
-          mensaje: detalleVigencia || `Coincide con un registro de INVIMA, pero difiere en: ${camposConDiferencia || "uno o más campos"}.`,
+          // "No coincide", nunca "difiere": vocabulario del auditor (usuario, 2026-10-15);
+          // "difiere" es solo el valor interno de *_VALIDACION.
+          mensaje: detalleVigencia || `El medicamento está en INVIMA, pero no coincide en: ${etiquetaCamposConDiferencia(camposConDiferencia) || "uno o más campos"}.`,
           pasos: [
-            camposConDiferencia ? `Revisar y corregir en Gemma Net: ${camposConDiferencia}` : "Revisar los campos marcados como diferentes",
+            camposConDiferencia ? `Revisar y corregir en Gemma Net: ${etiquetaCamposConDiferencia(camposConDiferencia)}` : "Revisar los campos marcados como diferentes",
             "Actualizar con el dato oficial de INVIMA (ver la tabla de INVIMA más abajo)",
           ],
         };
@@ -697,7 +698,9 @@ function mostrarResultado(
         : filasInvima.findIndex((f) => Number(f["REGISTRO"]) === elegido);
     const comparacion = crearComparacionEstadosHTML(gemma_net, elegido, filasInvima, filaIdx, eleccion);
     const tablaRegistros = tablaFilasInvimaHTML(filasInvima, filaAud, elegido, eleccion);
-    const cabecera = `<div class="caso-cabecera"><h1>CUM ${codigosTexto}</h1>${estadoCasoHTML(gemma_net)}</div>`;
+    // ESTADO_IUM solo viene poblado en las filas del modulo IUM (backend).
+    const tipoCodigo = filaAud && String(filaAud["ESTADO_IUM"] ?? "").trim() ? "IUM" : "CUM";
+    const cabecera = `<div class="caso-cabecera"><h1>${tipoCodigo} ${codigosTexto}</h1>${estadoCasoHTML(gemma_net)}</div>`;
     const diagnosticoHtml = `
       <div class="consulta-invima__diagnostico consulta-invima__diagnostico--${diagnostico.nivel}">
         <h3>${diagnostico.icono} ${escaparHTML(diagnostico.titulo)}</h3>

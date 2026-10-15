@@ -383,7 +383,7 @@ def _definiciones(
                 "Su código es un CUM (expediente-consecutivo) y aparece en el listado de Vigentes de INVIMA.",
                 "INVIMA marca el CUM como Activo.",
             ),
-            "Nada por la vigencia. Si alguna fecha o campo difiere, se revisa en «Diferencia de estado o campos».",
+            "Nada por la vigencia. Si alguna fecha o campo no coincide, se revisa en «Diferencia de estado o campos».",
             # El listado tiene que ser EXACTAMENTE 'vigente' -- pedido
             # explicito y repetido del usuario (2026-09-02 y 2026-09-03):
             # "en este apartado meramente deben de aparecer los que
@@ -696,13 +696,11 @@ ETIQUETAS_CAMPO_DIFERENCIA = {
 #: el texto.
 EXPLICACION_CAMPO_DIFERENCIA = {
     "DESCRIPCION": (
-        "INVIMA no publica una descripción: se arma con principio activo + cantidad + "
-        "unidad de medida + forma farmacéutica, que es como la guarda la plataforma "
-        "(ejemplo: PREDNISOLONA 5MG TABLETA). También se acepta principio activo + "
-        "unidad de referencia, la forma que dicta la guía de actualización de CUMS "
-        "(ejemplo: ACETAMINOFEN AMPOLLA). Coincide si la descripción de Gemma Net "
-        "iguala cualquiera de las dos, sin distinguir mayúsculas, tildes, puntos ni "
-        "espacios; la columna de INVIMA muestra la forma con la que se comparó."
+        "INVIMA no publica una descripción: se arma con principio activo + unidad de "
+        "referencia, la forma que dicta la guía de actualización de CUMS (ejemplo: "
+        "ACETAMINOFEN AMPOLLA). Es obligatoria para CUM e IUM: coincide solo si la "
+        "descripción de Gemma Net la iguala, sin distinguir mayúsculas, tildes, puntos "
+        "ni espacios. Si INVIMA no publica la unidad de referencia, no se compara."
     ),
     "PRINCIPIO_ACTIVO": (
         "El principio activo de Gemma Net contra el de INVIMA, texto contra texto, sin "
@@ -713,7 +711,7 @@ EXPLICACION_CAMPO_DIFERENCIA = {
         "tal cual vienen (decisión del negocio: comparar el campo contra su homónimo). "
         "Ojo: INVIMA guarda ahí un código de una letra y la cifra real vive en cantidad "
         "+ unidad, y Gemma Net suele guardar la presentación comercial, así que casi "
-        "todos difieren."
+        "todos salen «No coincide»."
     ),
     "FORMA_FARMACEUTICA": (
         "La forma farmacéutica de Gemma Net contra la de INVIMA, texto contra texto, "

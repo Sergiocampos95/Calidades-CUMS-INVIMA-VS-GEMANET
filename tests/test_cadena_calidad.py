@@ -21,7 +21,8 @@ def _fila_gemanet(codigo_interno, **overrides):
     # dia diverge, es porque un campo de esta lista dejo de ser comparable.
     base = {
         "CODIGO_INTERNO": codigo_interno,
-        "DESCRIPCION": "ACETAMINOFEN 500MG TABLETA",
+        # Forma de la guia (PA + UNIDAD_REFERENCIA), la unica que coincide.
+        "DESCRIPCION": "ACETAMINOFEN CADA TABLETA CONTIENE",
         # CONCENTRACION se cruza contra CONCENTRACION de INVIMA (ver
         # _CAMPOS_DIRECTOS): el fixture "todo coincide" trae la concentracion.
         "CONCENTRACION": "500 MG",

@@ -155,59 +155,55 @@ def test_sin_columna_ium_en_la_fuente_se_marca_no_se_inventa_no_encontrado():
     assert list(resultado["ESTADO_IUM"]) == [ESTADO_NO_PUBLICADO]
 
 
-def test_la_descripcion_de_un_ium_queda_sin_comparar_y_fuera_del_porcentaje():
-    """Gemma Net guarda en DESCRIPCION el nombre oficial del IUM, que no es
-    ninguna de las dos formas validas de un CUM (reglas_negocio.md §4). Su
-    formula es la decision D4, pendiente: hasta tenerla no se compara. Caso real
-    2026-10-02: comparada igual daba "difiere" en 47 de 50 IUM comparables."""
-    nombre_oficial = "CEFAZOLINA 1000mg/1 U POLVOS PARA RECONSTITUIR INTRAMUSCULAR INTRAVENOSA"
-    gemanet = [_fila_gemanet(_IUM, DESCRIPCION=nombre_oficial)]
-    invima = [_fila_invima(_CUM, ium=_IUM)]
-    fila = _auditar(gemanet, invima).iloc[0]
-    assert fila["DESCRIPCION_VALIDACION"] == "sin comparar"
-    assert "DESCRIPCION" not in fila["CAMPOS_CON_DIFERENCIA"]
-    assert "DESCRIPCION" not in fila["CAMPOS_PENDIENTE_GYC"]
-    assert pd.isna(fila["SIMILITUD_DESCRIPCION"])
-    # El resto de los 6 campos coincide con INVIMA en el fixture: sin la
-    # descripcion en el denominador, el medicamento queda al 100 %.
-    assert fila["CAMPOS_CON_DIFERENCIA"] == ""
-    assert fila["PORCENTAJE_CALIDAD"] == 100.0
-    # Lo que se muestra sigue siendo el dato crudo de Gemma Net.
-    assert fila["DESCRIPCION_GEMANET"] == nombre_oficial
-
-
-def test_la_descripcion_al_estilo_cum_de_un_ium_si_se_compara():
-    """Caso del usuario (2026-10-02, IUM 1N1043301000100): la descripcion
-    "NIFEDIPINO 30MG CAPSULA DE LIBERACION PROLONGADA" esta escrita al estilo
-    CUM y coincide con INVIMA. Apagar la comparacion para toda la columna lo
-    mostraba "sin comparar" con los dos datos al lado."""
-    gemanet = [_fila_gemanet(_IUM, DESCRIPCION="CEFAZOLINA 1000MG POLVO PARA RECONSTITUIR")]
+def test_la_descripcion_de_un_ium_se_compara_solo_contra_la_forma_de_la_guia():
+    """D4, decision del usuario (2026-10-15): la descripcion de una fila IUM se
+    compara SOLO contra PRINCIPIO_ACTIVO + UNIDAD_REFERENCIA, como dicta la
+    guia -- "si la guia dicta que asi es asi debe ser"."""
+    gemanet = [_fila_gemanet(_IUM, DESCRIPCION="CEFAZOLINA CADA VIAL CONTIENE")]
     invima = [_fila_invima(_CUM, ium=_IUM)]
     fila = _auditar(gemanet, invima).iloc[0]
     assert fila["DESCRIPCION_VALIDACION"] == "coincide"
-    assert not pd.isna(fila["SIMILITUD_DESCRIPCION"])
+    assert fila["DESCRIPCION_INVIMA"] == "CEFAZOLINA CADA VIAL CONTIENE"
 
 
-def test_la_descripcion_al_estilo_cum_que_no_coincide_si_difiere():
-    gemanet = [_fila_gemanet(_IUM, DESCRIPCION="CEFAZOLINA")]
+def test_la_descripcion_de_un_ium_con_la_forma_de_la_plataforma_difiere():
+    """La forma de la plataforma (PA + cantidad + unidad + forma) se acepta en
+    un CUM, pero NO en un IUM: ahi manda la guia, coincida o no. Era el caso
+    del unico IUM que coincidia antes (1N1043301000100, "NIFEDIPINO 30MG
+    CAPSULA...")."""
+    gemanet = [_fila_gemanet(_IUM, DESCRIPCION="CEFAZOLINA 1000MG POLVO PARA RECONSTITUIR")]
     invima = [_fila_invima(_CUM, ium=_IUM)]
     fila = _auditar(gemanet, invima).iloc[0]
     assert fila["DESCRIPCION_VALIDACION"] == "difiere"
     assert "DESCRIPCION" in fila["CAMPOS_CON_DIFERENCIA"]
+    # Se muestra contra lo que se comparo: la forma de la guia.
+    assert fila["DESCRIPCION_INVIMA"] == "CEFAZOLINA CADA VIAL CONTIENE"
 
 
-def test_reconoce_la_convencion_del_nombre_oficial_ium():
-    from gemma_cum_loader.auditoria.coherencia_ium import sigue_convencion_nombre_ium
+def test_el_nombre_oficial_del_ium_ya_no_queda_sin_comparar():
+    """Hasta el 2026-10-14 el nombre oficial del IUM quedaba "sin comparar" (D4
+    pendiente). Con D4 decidida se compara contra la guia y entra al porcentaje."""
+    nombre_oficial = "CEFAZOLINA 1000mg/1 U POLVOS PARA RECONSTITUIR INTRAMUSCULAR INTRAVENOSA"
+    gemanet = [_fila_gemanet(_IUM, DESCRIPCION=nombre_oficial)]
+    invima = [_fila_invima(_CUM, ium=_IUM)]
+    fila = _auditar(gemanet, invima).iloc[0]
+    assert fila["DESCRIPCION_VALIDACION"] == "difiere"
+    assert not pd.isna(fila["SIMILITUD_DESCRIPCION"])
+    assert fila["PORCENTAJE_CALIDAD"] < 100.0
+    # Lo que se muestra sigue siendo el dato crudo de Gemma Net.
+    assert fila["DESCRIPCION_GEMANET"] == nombre_oficial
 
-    serie = pd.Series([
-        "MERCAPTOPURINA 50mg/1 U TABLETAS DE LIBERACION NO MODIFICADA ORAL",
-        "INSULINA HUMANA 100UI/1 ml OTRAS SOLUCIONES INTRAMUSCULAR",
-        "LEVOTIROXINA 112 µg/1 U TABLETAS DE LIBERACION NO MODIFICADA",
-        "NIFEDIPINO 30MG CAPSULA DE LIBERACION PROLONGADA",
-        "DAPSONA",
-        None,
-    ])
-    assert sigue_convencion_nombre_ium(serie).tolist() == [True, True, True, False, False, False]
+
+def test_sin_unidad_de_referencia_en_invima_la_descripcion_queda_sin_comparar():
+    """Sin UNIDAD_REFERENCIA la forma de la guia no se puede armar: comparar
+    contra el principio activo solo seria decidir a ciegas. Queda "sin
+    comparar" y fuera del porcentaje -- no "difiere"."""
+    gemanet = [_fila_gemanet(_IUM, DESCRIPCION="CEFAZOLINA 1000MG POLVO PARA RECONSTITUIR")]
+    invima = [_fila_invima(_CUM, ium=_IUM, UNIDAD_REFERENCIA=None)]
+    fila = _auditar(gemanet, invima).iloc[0]
+    assert fila["DESCRIPCION_VALIDACION"] == "sin comparar"
+    assert "DESCRIPCION" not in fila["CAMPOS_CON_DIFERENCIA"]
+    assert fila["PORCENTAJE_CALIDAD"] == 100.0
 
 
 def test_en_un_ium_los_demas_campos_se_siguen_comparando():

@@ -386,9 +386,9 @@ def test_descripcion_se_marca_como_efecto_de_principio_activo():
     """Sin esta marca "Descripcion" parece el problema mas grande cuando en
     buena parte es la consecuencia de que el principio activo este mal."""
     secciones = {s.clave: s for s in secciones_de_diferencia(_tabla_con_diferencias())}
-    # FORMA_FARMACEUTICA desde 2026-09-10: la descripcion se arma tambien con
-    # la forma (ver CAMPOS_DERIVADOS en coherencia_invima.py).
-    assert secciones["campo:DESCRIPCION"].derivado_de == ("PRINCIPIO_ACTIVO", "UNIDAD_MEDIDA", "FORMA_FARMACEUTICA")
+    # Desde 2026-10-15 la descripcion es solo la forma de la guia, PA + unidad
+    # de referencia (ver CAMPOS_DERIVADOS en coherencia_invima.py).
+    assert secciones["campo:DESCRIPCION"].derivado_de == ("PRINCIPIO_ACTIVO",)
     assert secciones["campo:CONCENTRACION"].derivado_de == ()
 
 
@@ -606,8 +606,8 @@ def test_cada_calidad_explica_sus_criterios_sin_jerga_tecnica():
 
 def test_cada_seccion_de_diferencia_explica_que_compara():
     """Quien abre "Descripcion" tiene que poder leer que INVIMA no publica ese
-    campo y que se arma con principio activo + cantidad + unidad + forma, o
-    con principio activo + unidad de referencia (la forma de la guia)."""
+    campo y que se arma con principio activo + unidad de referencia (la forma
+    de la guia), obligatoria para CUM e IUM."""
     from gemma_cum_loader.auditoria.calidades import EXPLICACION_CAMPO_DIFERENCIA
 
     secciones = secciones_de_diferencia(_tabla_con_diferencias())
@@ -617,4 +617,5 @@ def test_cada_seccion_de_diferencia_explica_que_compara():
     descripcion = EXPLICACION_CAMPO_DIFERENCIA["DESCRIPCION"].lower()
     assert "principio activo" in descripcion
     assert "unidad de referencia" in descripcion
-    assert "forma farmac" in descripcion
+    assert "guía" in descripcion
+    assert "cantidad" not in descripcion
