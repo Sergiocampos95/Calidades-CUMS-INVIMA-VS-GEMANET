@@ -18,8 +18,6 @@ las decisiones de negocio que quedaron pendientes (D2, D4, D5, D8).
 
 from __future__ import annotations
 
-import re
-
 import pandas as pd
 
 from gemma_cum_loader.armado.indice_ium import ESTADO_UN_CUM, indice_ium
@@ -54,37 +52,38 @@ _COLUMNAS_SOLO_SI_UN_CUM = ("PRIORIDAD_ACCION", "NATURALEZA_HALLAZGO", "ACCION_S
 
 COLUMNAS_IUM_AGREGADAS = ("ESTADO_IUM", "CUM_INVIMA", "N_CUM_INVIMA", "IDENTIDAD_DUPLICADA")
 
-# Nombre oficial del IUM (tabla de referencia del Ministerio): la concentracion
-# va "por unidad" con barra -- "MERCAPTOPURINA 50mg/1 U TABLETAS...",
-# "INSULINA HUMANA 100UI/1 ml...", "LEVOTIROXINA 112 ug/1 U...". Medido
-# 2026-10-02: reconoce el 98,1 % de los 34.643 nombres de la tabla oficial.
-_PATRON_NOMBRE_OFICIAL_IUM = re.compile(
-    r"\d+(?:[.,]\d+)?\s*[^\s/\d]+\s*/\s*\d+(?:[.,]\d+)?\s*(?:U|ML|G|L|MG)\b", re.IGNORECASE
-)
-
-
-def sigue_convencion_nombre_ium(descripcion: pd.Series) -> pd.Series:
-    """Si la DESCRIPCION de Gemma Net es el nombre oficial del IUM y no una
-    descripcion al estilo CUM. Las dos conviven en las filas IUM (2026-10-02,
-    50 IUM comparables: 30 con el nombre oficial, 20 al estilo CUM)."""
-    return descripcion.fillna("").astype(str).str.contains(_PATRON_NOMBRE_OFICIAL_IUM)
-
-
-# Celdas sin regla de comparacion en una fila IUM. DESCRIPCION, solo cuando
-# Gemma Net guarda ahi el nombre oficial del IUM: no es ninguna de las dos
-# formas validas de descripcion de un CUM (reglas_negocio.md §4) y la formula
-# para un IUM es la decision D4 del plan, pendiente -- queda "sin comparar" y
-# fuera del denominador. Si la descripcion esta escrita al estilo CUM se
-# compara normal (caso del usuario 2026-10-02: 1N1043301000100, "NIFEDIPINO
-# 30MG CAPSULA DE LIBERACION PROLONGADA", coincide con INVIMA; apagar la
-# comparacion para toda la columna escondia eso).
+# DESCRIPCION de una fila IUM -- decision D4 del plan, tomada por el usuario
+# el 2026-10-15: se compara SOLO contra la forma de la guia, PRINCIPIO_ACTIVO +
+# UNIDAD_REFERENCIA ("la que arma INVIMA debe ser de dos campos nomas segun la
+# guia, usar mas nos da errores ambiguos [...] no importa si coincide o no, si
+# la guia dicta que asi es asi debe ser"). Ver `descripcion_solo_guia` en
+# auditar_coherencia.
+#
+# Antes (2026-10-02) la descripcion quedaba "sin comparar" cuando Gemma Net
+# guardaba el nombre oficial del IUM ("MERCAPTOPURINA 50mg/1 U TABLETAS...",
+# la concentracion "por unidad" con barra; un patron que reconocia el 98,1 %
+# de los 34.643 nombres de la tabla oficial) y se comparaba contra las dos
+# formas de un CUM si estaba escrita al estilo CUM. Medido el 2026-10-15 sobre
+# los 56 IUM comparables: 36 nombre oficial (sin comparar), 20 estilo CUM (1
+# coincidia: 1N1043301000100, "NIFEDIPINO 30MG CAPSULA..."). Con la regla de
+# la guia, 0 de los 56 son iguales a PA + UNIDAD_REFERENCIA: es lo esperado y
+# es la decision -- la guia dicta la forma.
+#
+# Unico caso sin comparar: INVIMA no publica UNIDAD_REFERENCIA para ese
+# registro, asi que la forma de la guia no se puede armar -- aceptar el
+# principio activo solo como descripcion seria decidir a ciegas (mismo
+# criterio que `_descripcion_segun_guia_invima`).
 # CONCENTRACION, PRINCIPIO_ACTIVO y FORMA_FARMACEUTICA NO van aqui: el plan los
 # compara "con la misma funcion" y CONCENTRACION sigue la decision homonima del
 # 2026-09-09 (reglas_negocio.md §4) -- su "difiere" es comportamiento aceptado.
 CAMPOS_SIN_COMPARAR_IUM = {
-    "DESCRIPCION": lambda cruzado: sigue_convencion_nombre_ium(
-        cruzado.get("DESCRIPCION", pd.Series("", index=cruzado.index))
-    ),
+    "DESCRIPCION": lambda cruzado: cruzado.get(
+        "_DESCRIPCION_GUIA_INVIMA", pd.Series("", index=cruzado.index)
+    )
+    .fillna("")
+    .astype(str)
+    .str.strip()
+    .eq(""),
 }
 
 
@@ -207,6 +206,7 @@ def auditar_coherencia_ium(
         alias_unidad=alias_unidad,
         claves_cruce_alternas=claves_cruce_alternas,
         campos_sin_comparar=CAMPOS_SIN_COMPARAR_IUM,
+        descripcion_solo_guia=True,
     )
 
     resultado = auditoria.merge(

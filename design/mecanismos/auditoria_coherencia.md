@@ -191,6 +191,15 @@ igual a INVIMA) salía "sin comparar" con los dos datos al lado — lo señaló 
 usuario en la consulta puntual. De los 50 IUM comparables, 30 usan el nombre
 oficial y 20 la forma CUM.
 
+**Desde el 2026-10-15 (D4 decidida)** el módulo IUM ya no apaga la
+descripción por estar escrita como el nombre oficial del IUM: la compara con
+`descripcion_solo_guia=True`, que fija `sigue_la_guia` en `True` para todas las
+filas, así que la descripción oficial es siempre `_descripcion_segun_guia_invima`
+(principio activo + unidad de referencia) y la forma de la plataforma no se
+acepta aunque calce. `campos_sin_comparar` queda solo para las filas donde esa
+forma no se puede armar (INVIMA sin `UNIDAD_REFERENCIA` → `_DESCRIPCION_GUIA_INVIMA`
+vacía). Con `False` (CUM) nada cambia: siguen valiendo las dos formas (§2).
+
 Se aplica **una sola vez, justo después de restar "sin dato"** (§3), antes de
 que ninguna columna derivada lea las matrices:
 

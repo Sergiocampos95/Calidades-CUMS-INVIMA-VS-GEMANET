@@ -2146,6 +2146,7 @@ def auditar_coherencia(
     claves_cruce_alternas: dict[str, str] | None = None,
     campos_sin_comparar: dict[str, Callable[[pd.DataFrame], pd.Series]] | None = None,
     registros_a_comparar: pd.DataFrame | None = None,
+    descripcion_solo_guia: bool = False,
 ) -> pd.DataFrame:
     """Una fila por CODIGO_INTERNO del Reporte de Gemma Net, con
     ESTADO_COHERENCIA (correcto / con_diferencias / vencido_en_invima /
@@ -2232,6 +2233,16 @@ def auditar_coherencia(
     reglas_negocio.md) y a veces una descripcion al estilo CUM que SI se
     compara ("NIFEDIPINO 30MG CAPSULA..." coincide con INVIMA). `None` (el
     defecto) deja el comportamiento identico al de antes de este parametro.
+    (Desde el 2026-10-15 el modulo IUM ya no lo usa por esa razon -- ver
+    `descripcion_solo_guia` -- sino solo cuando la descripcion de la guia no
+    se puede armar.)
+    descripcion_solo_guia (opcional, `False` por defecto): la DESCRIPCION se
+    compara SOLO contra la forma de la guia (`_descripcion_segun_guia_
+    invima`: PRINCIPIO_ACTIVO + UNIDAD_REFERENCIA), sin aceptar la forma de
+    la plataforma. Decision del usuario para las filas IUM (2026-10-15, D4 del
+    plan IUM): "la que arma INVIMA debe ser de dos campos nomas segun la guia
+    [...] si la guia dicta que asi es, asi debe ser", coincida o no. Con
+    `False` (CUM) se aceptan las dos formas, como siempre.
     registros_a_comparar (opcional, solo para `registros_invima.py`): filas
     de INVIMA -- una por CODIGO_INTERNO -- contra las que se hace la
     comparacion campo a campo EN LUGAR de la primera fila de `df_invima`.
@@ -2390,6 +2401,10 @@ def auditar_coherencia(
     sigue_la_guia = _descripcion_sigue_la_guia(
         descripcion_local, descripcion_esperada_cruda, descripcion_guia_cruda
     )
+    if descripcion_solo_guia:
+        # Solo la forma de la guia (ver el parametro): la de la plataforma no
+        # se acepta aunque calce.
+        sigue_la_guia = pd.Series(True, index=sigue_la_guia.index)
     descripcion_oficial_cruda = descripcion_esperada_cruda.where(~sigue_la_guia, descripcion_guia_cruda)
     pares["DESCRIPCION"] = (descripcion_local, _normalizada(descripcion_oficial_cruda))
     # normalizar_entidad, no normalizar: "_MARCA_TEXTO" (sigla_por_codigo del

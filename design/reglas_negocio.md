@@ -663,25 +663,27 @@ en los 4 listados qué CUM tienen ese IUM, y solo si es **exactamente uno** se
 compara campo a campo, con la misma función que un CUM. Con varios CUM no se
 elige ninguno (decisión D3 pendiente; regla §2).
 
-### Qué se compara y qué no (2026-10-02)
+### Qué se compara y qué no (2026-10-02; `DESCRIPCION` cambió el 2026-10-15)
 
 | Campo | En una fila IUM | Por qué |
 |---|---|---|
-| `DESCRIPCION` | Depende de **cómo está escrita**: si es el **nombre oficial del IUM** ("MERCAPTOPURINA 50mg/1 U TABLETAS…") → **sin comparar**, fuera del denominador; si está **al estilo CUM** ("NIFEDIPINO 30MG CAPSULA…") → se compara normal contra las dos formas de §4 | El nombre oficial no es ninguna forma válida de un CUM y la fórmula para IUM es la decisión **D4**, pendiente. Conviven las dos escrituras: de 50 IUM comparables, 30 nombre oficial y 20 al estilo CUM (2026-10-02). La primera versión apagaba la columna entera y escondía coincidencias reales (caso del usuario: `1N1043301000100`) |
+| `DESCRIPCION` | Se compara **solo contra la forma de la guía**: `PRINCIPIO_ACTIVO` + `UNIDAD_REFERENCIA` de INVIMA, sin aceptar la forma de la plataforma. Queda **sin comparar** (fuera del denominador) únicamente si INVIMA no publica unidad de referencia para ese registro | **D4 decidida por el usuario el 2026-10-15**: «la que arma INVIMA debe ser de dos campos nomás según la guía, usar más nos da errores ambiguos» y «no importa si coincide o no, si la guía dicta que así es así debe ser». Medido ese día sobre los 56 IUM comparables: **0** escritos como dicta la guía (36 con el nombre oficial del IUM, 20 al estilo CUM), así que todos salen «No coincide»; el único que coincidía con la forma de la plataforma (`1N1043301000100`) también. Antes (2026-10-02) el nombre oficial quedaba sin comparar y el estilo CUM se comparaba contra las dos formas de §4 |
 | `CONCENTRACION` | se compara | Sigue la decisión homónima del 2026-09-09 (§4): su "difiere" es comportamiento aceptado |
 | `PRINCIPIO_ACTIVO`, `FORMA_FARMACEUTICA` | se comparan | Misma función que un CUM. En ~60 % de las filas IUM Gemma Net guarda el nombre completo del IUM en estos campos: el "difiere" es real (el campo no trae lo que dice) |
 | Resto (`UNIDAD_MEDIDA`, `CODIGO_ATC`, `MARCA_MEDICAMENTO`, fechas, vigencia) | se comparan | Sin cambios. Caso real: en `CODIGO_ATC` hay filas IUM con códigos de la tabla IUM (`COLFF007`) en vez de un ATC |
 
-Mecanismo: parámetro `campos_sin_comparar` de `auditar_coherencia()` (ver
-`mecanismos/auditoria_coherencia.md` §3.6), vacío por defecto. Verificado el
+Mecanismo: parámetros `descripcion_solo_guia` y `campos_sin_comparar` de
+`auditar_coherencia()` (ver `mecanismos/auditoria_coherencia.md` §3.6), ambos
+apagados por defecto: la auditoría CUM no cambia. Verificado el
 2026-10-02 sobre el snapshot real: la auditoría CUM quedó **idéntica** en sus
 199.620 filas.
 
 ### Pendiente de negocio
 
-D2 (¿una fila por IUM además de la del CUM?), D3 (IUM con varios CUM), D4
-(fórmula de `DESCRIPCION` de una fila IUM), D5 (¿`EXPEDIENTE`/`CONSECUTIVO`
-obligatorios?) y D8 (riesgo de la identidad duplicada IUM↔CUM). Hasta
+D2 (¿una fila por IUM además de la del CUM?), D3 (IUM con varios CUM), D5
+(¿`EXPEDIENTE`/`CONSECUTIVO` obligatorios?) y D8 (riesgo de la identidad
+duplicada IUM↔CUM). D4 (`DESCRIPCION` de una fila IUM) quedó decidida el
+2026-10-15: la forma de la guía, ver la tabla de arriba. Hasta
 resolverlas, lo ambiguo se reporta, no se decide (§2).
 
 ---
