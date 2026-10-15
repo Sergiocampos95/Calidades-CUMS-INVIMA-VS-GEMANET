@@ -53,38 +53,18 @@ _COLUMNAS_SOLO_SI_UN_CUM = ("PRIORIDAD_ACCION", "NATURALEZA_HALLAZGO", "ACCION_S
 COLUMNAS_IUM_AGREGADAS = ("ESTADO_IUM", "CUM_INVIMA", "N_CUM_INVIMA", "IDENTIDAD_DUPLICADA")
 
 # DESCRIPCION de una fila IUM -- decision D4 del plan, tomada por el usuario
-# el 2026-10-15: se compara SOLO contra la forma de la guia, PRINCIPIO_ACTIVO +
-# UNIDAD_REFERENCIA ("la que arma INVIMA debe ser de dos campos nomas segun la
-# guia, usar mas nos da errores ambiguos [...] no importa si coincide o no, si
-# la guia dicta que asi es asi debe ser"). Ver `descripcion_solo_guia` en
-# auditar_coherencia.
+# el 2026-10-15 y extendida a CUM el mismo dia: se compara SOLO contra la forma
+# de la guia, PRINCIPIO_ACTIVO + UNIDAD_REFERENCIA ("no importa si coincide o
+# no, si la guia dicta que asi es asi debe ser"). La regla vive en
+# `auditar_coherencia`, comun a los dos modulos -- aqui no hay nada propio.
 #
 # Antes (2026-10-02) la descripcion quedaba "sin comparar" cuando Gemma Net
 # guardaba el nombre oficial del IUM ("MERCAPTOPURINA 50mg/1 U TABLETAS...",
-# la concentracion "por unidad" con barra; un patron que reconocia el 98,1 %
-# de los 34.643 nombres de la tabla oficial) y se comparaba contra las dos
-# formas de un CUM si estaba escrita al estilo CUM. Medido el 2026-10-15 sobre
-# los 56 IUM comparables: 36 nombre oficial (sin comparar), 20 estilo CUM (1
-# coincidia: 1N1043301000100, "NIFEDIPINO 30MG CAPSULA..."). Con la regla de
-# la guia, 0 de los 56 son iguales a PA + UNIDAD_REFERENCIA: es lo esperado y
-# es la decision -- la guia dicta la forma.
-#
-# Unico caso sin comparar: INVIMA no publica UNIDAD_REFERENCIA para ese
-# registro, asi que la forma de la guia no se puede armar -- aceptar el
-# principio activo solo como descripcion seria decidir a ciegas (mismo
-# criterio que `_descripcion_segun_guia_invima`).
-# CONCENTRACION, PRINCIPIO_ACTIVO y FORMA_FARMACEUTICA NO van aqui: el plan los
-# compara "con la misma funcion" y CONCENTRACION sigue la decision homonima del
-# 2026-09-09 (reglas_negocio.md §4) -- su "difiere" es comportamiento aceptado.
-CAMPOS_SIN_COMPARAR_IUM = {
-    "DESCRIPCION": lambda cruzado: cruzado.get(
-        "_DESCRIPCION_GUIA_INVIMA", pd.Series("", index=cruzado.index)
-    )
-    .fillna("")
-    .astype(str)
-    .str.strip()
-    .eq(""),
-}
+# la concentracion "por unidad" con barra). Medido el 2026-10-15 sobre los 56
+# IUM comparables: 36 nombre oficial, 20 estilo CUM, y 0 iguales a PA +
+# UNIDAD_REFERENCIA: es lo esperado y es la decision -- la guia dicta la forma.
+# CONCENTRACION sigue la decision homonima del 2026-09-09 (reglas_negocio.md
+# §4) -- su "difiere" es comportamiento aceptado.
 
 
 def _mapa_activo_por_codigo(reporte_gemanet: pd.DataFrame) -> dict[str, list[bool]]:
@@ -205,8 +185,6 @@ def auditar_coherencia_ium(
         df_invima_renovacion=df_invima_renovacion,
         alias_unidad=alias_unidad,
         claves_cruce_alternas=claves_cruce_alternas,
-        campos_sin_comparar=CAMPOS_SIN_COMPARAR_IUM,
-        descripcion_solo_guia=True,
     )
 
     resultado = auditoria.merge(

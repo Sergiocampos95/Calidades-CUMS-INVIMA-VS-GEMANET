@@ -696,13 +696,11 @@ ETIQUETAS_CAMPO_DIFERENCIA = {
 #: el texto.
 EXPLICACION_CAMPO_DIFERENCIA = {
     "DESCRIPCION": (
-        "INVIMA no publica una descripción: se arma con principio activo + cantidad + "
-        "unidad de medida + forma farmacéutica, que es como la guarda la plataforma "
-        "(ejemplo: PREDNISOLONA 5MG TABLETA). También se acepta principio activo + "
-        "unidad de referencia, la forma que dicta la guía de actualización de CUMS "
-        "(ejemplo: ACETAMINOFEN AMPOLLA). Coincide si la descripción de Gemma Net "
-        "iguala cualquiera de las dos, sin distinguir mayúsculas, tildes, puntos ni "
-        "espacios; la columna de INVIMA muestra la forma con la que se comparó."
+        "INVIMA no publica una descripción: se arma con principio activo + unidad de "
+        "referencia, la forma que dicta la guía de actualización de CUMS (ejemplo: "
+        "ACETAMINOFEN AMPOLLA). Es obligatoria para CUM e IUM: coincide solo si la "
+        "descripción de Gemma Net la iguala, sin distinguir mayúsculas, tildes, puntos "
+        "ni espacios. Si INVIMA no publica la unidad de referencia, no se compara."
     ),
     "PRINCIPIO_ACTIVO": (
         "El principio activo de Gemma Net contra el de INVIMA, texto contra texto, sin "

@@ -216,11 +216,7 @@ def test_secciones_de_una_calidad_llegan_agrupadas_por_tipo(tmp_path):
         assert por_clave["campo:DESCRIPCION"]["medicamentos"] == 2
         # derivado_de llega ya humanizado desde el backend, para no duplicar
         # el mapa de etiquetas en el frontend.
-        assert por_clave["campo:DESCRIPCION"]["derivado_de"] == [
-            "Principio activo",
-            "Unidad de medida",
-            "Forma farmaceutica",
-        ]
+        assert por_clave["campo:DESCRIPCION"]["derivado_de"] == ["Principio activo"]
         assert por_clave["campo:CONCENTRACION"]["derivado_de"] == []
     finally:
         app.dependency_overrides.clear()

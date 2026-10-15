@@ -118,11 +118,47 @@ INVIMA. Es una feature aparte, no un cambio de mapeo.
 El nombre técnico no se toca: viaja en el snapshot, en el trío
 `CONCENTRACION_GEMANET/_INVIMA/_VALIDACION` y en el Excel de cargue.
 
-### `DESCRIPCION`: INVIMA no la publica, se arma — y hay dos formas válidas
+### `DESCRIPCION`: INVIMA no la publica, se arma — solo con la forma de la guía
 
 INVIMA no tiene un campo Descripción. La auditoría **arma** la descripción
 esperada desde los campos de INVIMA y la compara contra
-`tb_medicamento.descripcion`. Medido el **2026-09-10** contra la **base** de
+`tb_medicamento.descripcion`.
+
+**Regla vigente (2026-10-15, decisión del usuario: «para IUMs y CUMs se usa
+la forma de la guía, eso es obligatorio»):**
+
+- `DESCRIPCION` se compara **solo** contra `PRINCIPIO_ACTIVO +
+  UNIDAD_REFERENCIA` (`_descripcion_segun_guia_invima`), en CUM y en IUM. La
+  forma de la plataforma ya **no** se acepta, aunque calce.
+- El veredicto se decide **sin espacios** (`_sin_espacios`, solo este campo).
+- Si INVIMA no trae `UNIDAD_REFERENCIA` para el registro, la forma no se
+  puede armar y la descripción queda **sin comparar** (fuera de las
+  diferencias y del denominador de `PORCENTAJE_CALIDAD`): aceptar el
+  principio activo a secas sería decidir a ciegas.
+- `DESCRIPCION` es campo **derivado** solo de `PRINCIPIO_ACTIVO`
+  (`CAMPOS_DERIVADOS`): unidad de medida y forma farmacéutica ya no entran a
+  la fórmula.
+- La excepción de **combinados** (§ siguiente, pendiente de GyC) no cambia.
+
+Efecto medido el 2026-10-15 sobre el snapshot completo (199.630 filas, mismos
+listados antes y después):
+
+| `DESCRIPCION_VALIDACION` | Antes (dos formas) | Después (solo la guía) |
+|---|---|---|
+| coincide | 98.789 | 2.402 |
+| difiere | 6.085 | 102.425 |
+| sin comparar | 66.344 | 66.968 |
+| pendiente de decisión – GyC | 28.412 | 27.835 |
+
+En los CUM activos, «coincide» pasa de 39.614 a 2.387 y «difiere» de 4.325 a
+41.522; `PORCENTAJE_CALIDAD` medio baja de 71,0 a 62,6. `ESTADO_COHERENCIA`
+no se movió (las filas ya tenían otra diferencia o no tenían
+correspondencia). En el módulo IUM nada cambió: ya usaba solo la guía. Es lo
+esperado y es la decisión: la guía dicta la forma.
+
+#### Regla anterior (REVERTIDA el 2026-10-15): dos formas válidas
+
+Medido el **2026-09-10** contra la **base** de
 Gemma Net (réplica Tableros_BI, no el export) y los listados de julio 2026,
 sobre 46.002 CUMs activos con correspondencia en Vigentes:
 
@@ -137,8 +173,8 @@ la propia guía (`20055054-1`) está guardado con la forma de la plataforma
 (`INSULINA GLARGINA (RDNA) 100IU SOLUCION INYECTABLE`); la guía dicta por
 escrito la otra.
 
-**Regla (2026-09-10, pedido del usuario: la validación sigue la guía donde la
-guía lo especifica):**
+**Regla de entonces (2026-09-10 al 2026-10-15, pedido del usuario: la
+validación sigue la guía donde la guía lo especifica):**
 
 - `DESCRIPCION` **coincide si iguala cualquiera de las dos formas**, y el
   veredicto se decide **sin espacios** (`_sin_espacios`, solo para este
@@ -164,10 +200,9 @@ duplicado (`IVERMECTINA 3MG IVERMECTINA 3MG`), y **1.190 con caracteres
 corruptos guardados en la base** (`ACETAMINOFÃ‰N`: doble codificación UTF-8
 en Gemma Net, no un problema de pantalla).
 
-El flujo de **candidatos** (`armado/malla.py`) sigue armando la `DESCRIPCION`
-de los medicamentos nuevos como dicta la guía (PA + UNIDAD_REFERENCIA). No es
-una contradicción: crear sigue la guía; auditar acepta la guía y lo que la
-plataforma ya guarda.
+El flujo de **candidatos** (`armado/malla.py`) arma la `DESCRIPCION` de los
+medicamentos nuevos como dicta la guía (PA + UNIDAD_REFERENCIA). Desde el
+2026-10-15 crear y auditar siguen la misma forma.
 
 ### El mapeo completo de campos comparados
 
@@ -672,11 +707,11 @@ elige ninguno (decisión D3 pendiente; regla §2).
 | `PRINCIPIO_ACTIVO`, `FORMA_FARMACEUTICA` | se comparan | Misma función que un CUM. En ~60 % de las filas IUM Gemma Net guarda el nombre completo del IUM en estos campos: el "difiere" es real (el campo no trae lo que dice) |
 | Resto (`UNIDAD_MEDIDA`, `CODIGO_ATC`, `MARCA_MEDICAMENTO`, fechas, vigencia) | se comparan | Sin cambios. Caso real: en `CODIGO_ATC` hay filas IUM con códigos de la tabla IUM (`COLFF007`) en vez de un ATC |
 
-Mecanismo: parámetros `descripcion_solo_guia` y `campos_sin_comparar` de
-`auditar_coherencia()` (ver `mecanismos/auditoria_coherencia.md` §3.6), ambos
-apagados por defecto: la auditoría CUM no cambia. Verificado el
-2026-10-02 sobre el snapshot real: la auditoría CUM quedó **idéntica** en sus
-199.620 filas.
+Mecanismo: el mismo `auditar_coherencia()` que CUM. Desde el 2026-10-15 la
+forma de la guía es obligatoria también para CUM (§4), así que el módulo IUM
+ya no necesita parámetros propios: los que tuvo (`descripcion_solo_guia`,
+`campos_sin_comparar`) se quitaron — ver `mecanismos/auditoria_coherencia.md`
+§3.6.
 
 ### Pendiente de negocio
 

@@ -28,7 +28,7 @@ CAMPOS_COMPARADOS_COHERENCIA = [*_CAMPOS_DIRECTOS.keys(), "DESCRIPCION", "MARCA_
 
 | Campo | Cómo se arma |
 |---|---|
-| `DESCRIPCION` | INVIMA no la publica. Dos formas válidas: `_descripcion_esperada_invima()` (PA + CANTIDAD+UNIDAD + FORMA, la de la plataforma) y `_descripcion_segun_guia_invima()` (PA + UNIDAD_REFERENCIA, la de la guía del SOP). La fila se compara **y se muestra** contra la que calzó — ver §2 y `reglas_negocio.md` §4 |
+| `DESCRIPCION` | INVIMA no la publica. Una sola forma, obligatoria en CUM e IUM desde el 2026-10-15: `_descripcion_segun_guia_invima()` (PA + UNIDAD_REFERENCIA, la de la guía del SOP). Vacía si INVIMA no trae unidad de referencia → «sin comparar» (§3.6) — ver `reglas_negocio.md` §4 |
 | `MARCA_MEDICAMENTO` | Gemma Net guarda un **código numérico**; se resuelve contra el catálogo. **Dos lookups distintos**: `sigla_por_codigo` para COMPARAR y `texto_por_codigo` para MOSTRAR — ver §2 |
 | `UNIDAD_MEDIDA` | Igual: código numérico resuelto contra catálogo |
 
@@ -40,8 +40,7 @@ binario como la similitud — nunca se recalculan por separado, así que no
 pueden contradecirse.
 
 ```python
-sigue_la_guia = _descripcion_sigue_la_guia(local, _DESCRIPCION_ESPERADA_INVIMA, _DESCRIPCION_GUIA_INVIMA)
-descripcion_oficial_cruda = esperada.where(~sigue_la_guia, guia)   # la forma que calzó
+descripcion_oficial_cruda = combinado["_DESCRIPCION_GUIA_INVIMA"]    # PA + UNIDAD_REFERENCIA
 pares["DESCRIPCION"] = (_normalizada(local), _normalizada(descripcion_oficial_cruda))
 crudos_invima["DESCRIPCION"] = descripcion_oficial_cruda              # lo que ve la UI
 pares["MARCA_MEDICAMENTO"] = (combinado["_MARCA_TEXTO"], TITULAR_INVIMA.map(normalizar_entidad))
@@ -118,8 +117,7 @@ matriz_diferencias["DESCRIPCION"] = _sin_espacios(local).ne(_sin_espacios(oficia
 Solo el **veredicto** de este campo: el par conserva las palabras para que
 `token_set_ratio` (§4) siga midiendo similitud. `"100 MG TABLETA"` contra
 `"100MG TABLETA"` no es una diferencia (351 filas reales lo eran solo por ese
-espacio, 2026-09-10). `_descripcion_sigue_la_guia` usa el mismo criterio para
-decidir contra cuál de las dos formas se compara la fila.
+espacio, 2026-09-10).
 
 ### "Sin dato" se resta de la matriz, no cuenta como diferencia (línea 2168)
 
@@ -172,33 +170,26 @@ veredicto `VALIDACION_PENDIENTE_GYC` se asigna **al final** de la cascada de
 tocó (decisión del usuario: "solo los campos afectados"). Ver
 `reglas_negocio.md` §4.
 
-### 3.6. Campos sin regla de comparación: `campos_sin_comparar` (2026-10-02)
+### 3.6. `DESCRIPCION` sin forma de la guía: `matriz_no_comparable` (2026-10-15)
 
-Parámetro opcional de `auditar_coherencia()`, **`None` por defecto**: sin él
-la matriz `matriz_no_comparable` es toda `False` y el resultado de CUM es
-idéntico al de antes. Es un dict `campo -> función(tabla cruzada) -> Serie
-booleana`: decide **por fila**, no por campo entero. Lo usa el módulo IUM
-(`coherencia_ium.CAMPOS_SIN_COMPARAR_IUM`) para la `DESCRIPCION`, y solo en las
-filas donde Gemma Net guarda el **nombre oficial del IUM**
-(`sigue_convencion_nombre_ium`: concentración "por unidad" con barra,
-`50mg/1 U`). Ese nombre no es ninguna de las dos formas válidas de un CUM y la
-fórmula para IUM es la decisión D4, pendiente. Una descripción IUM escrita al
-estilo CUM se compara normal.
+Cuando INVIMA trae el registro pero no su `UNIDAD_REFERENCIA`, la forma de la
+guía no se puede armar (`_DESCRIPCION_GUIA_INVIMA` vacía) y comparar contra el
+principio activo solo sería decidir a ciegas. Esa celda queda **sin comparar**:
 
-Por qué por fila (2026-10-02): la primera versión apagaba la columna entera y
-el IUM `1N1043301000100` ("NIFEDIPINO 30MG CAPSULA DE LIBERACION PROLONGADA",
-igual a INVIMA) salía "sin comparar" con los dos datos al lado — lo señaló el
-usuario en la consulta puntual. De los 50 IUM comparables, 30 usan el nombre
-oficial y 20 la forma CUM.
+```python
+matriz_no_comparable = pd.DataFrame(False, index=..., columns=CAMPOS_COMPARADOS_COHERENCIA)
+matriz_no_comparable["DESCRIPCION"] = invima_tiene_datos & descripcion_oficial_cruda.str.strip().eq("")
+```
 
-**Desde el 2026-10-15 (D4 decidida)** el módulo IUM ya no apaga la
-descripción por estar escrita como el nombre oficial del IUM: la compara con
-`descripcion_solo_guia=True`, que fija `sigue_la_guia` en `True` para todas las
-filas, así que la descripción oficial es siempre `_descripcion_segun_guia_invima`
-(principio activo + unidad de referencia) y la forma de la plataforma no se
-acepta aunque calce. `campos_sin_comparar` queda solo para las filas donde esa
-forma no se puede armar (INVIMA sin `UNIDAD_REFERENCIA` → `_DESCRIPCION_GUIA_INVIMA`
-vacía). Con `False` (CUM) nada cambia: siguen valiendo las dos formas (§2).
+Es fija, igual para CUM e IUM, y solo toca `DESCRIPCION`. Historia: del
+2026-10-02 al 2026-10-15 existió un parámetro `campos_sin_comparar` (dict
+`campo -> función por fila`) que solo usaba el módulo IUM, primero para no
+comparar la descripción escrita como el nombre oficial del IUM y después,
+con la decisión D4, solo para este caso; y un parámetro
+`descripcion_solo_guia` que forzaba la forma de la guía en IUM mientras CUM
+aceptaba también la de la plataforma. Al volverse la guía obligatoria para
+los dos (decisión del usuario, 2026-10-15) ambos parámetros quedaron sin
+función y se quitaron.
 
 Se aplica **una sola vez, justo después de restar "sin dato"** (§3), antes de
 que ninguna columna derivada lea las matrices:
@@ -317,7 +308,7 @@ Cuatro categorías por campo:
 | `sin_dato_en_ambos` | ninguna fuente lo trae | **No** | — |
 | `sin_dato_solo_local` | Gemma Net vacío, INVIMA **sí** lo trae | Sí | **Sí, siempre** |
 | `matriz_pendiente_gyc` | medicamento combinado (ver §3.5) — solo `DESCRIPCION` / `PRINCIPIO_ACTIVO` | **No** (se le agrega a `sin_dato_en_ambos`) | — |
-| `matriz_no_comparable` | celda marcada por `campos_sin_comparar` (ver §3.6) — hoy solo `DESCRIPCION` de las filas IUM que guardan el nombre oficial del IUM | **No** (se le agrega a `sin_dato_en_ambos`) | — |
+| `matriz_no_comparable` | `DESCRIPCION` cuando INVIMA no trae unidad de referencia (ver §3.6) | **No** (se le agrega a `sin_dato_en_ambos`) | — |
 
 ```python
 campos_comparables_fila = len(matriz_diferencias.columns) - sin_dato_en_ambos.sum(axis=1)

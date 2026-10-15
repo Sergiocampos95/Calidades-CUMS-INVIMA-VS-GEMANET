@@ -9,14 +9,13 @@ import { ETIQUETA_CAMPO_COMPARADO, etiquetaCamposConDiferencia, etiquetaEstadoLi
 const CAMPOS_COMPARABLES = Object.entries(ETIQUETA_CAMPO_COMPARADO).map(([columna, etiqueta]) => ({ columna, etiqueta }));
 
 // INVIMA no publica una descripcion: la auditoria la arma (ver
-// _descripcion_esperada_invima / _descripcion_segun_guia_invima en
-// coherencia_invima.py). Sin decirlo, la fila "Descripción" se lee como si
-// INVIMA tuviera ese campo y "Difiere" como un error de cruce (pedido del
-// usuario, 2026-09-10).
+// _descripcion_segun_guia_invima en coherencia_invima.py). Sin decirlo, la
+// fila "Descripción" se lee como si INVIMA tuviera ese campo y "No coincide"
+// como un error de cruce (pedido del usuario, 2026-09-10).
 const NOTA_DESCRIPCION_INVIMA =
-  "La descripción del lado INVIMA no existe como tal en INVIMA: se arma con principio activo + cantidad + " +
-  "unidad de medida + forma farmacéutica (como la guarda la plataforma) o con principio activo + unidad de " +
-  "referencia (como dicta la guía de actualización de CUMS). Se muestra la forma con la que se comparó.";
+  "La descripción del lado INVIMA no existe como tal en INVIMA: se arma con principio activo + unidad de " +
+  "referencia, como dicta la guía de actualización de CUMS. Esa forma es obligatoria para CUM e IUM; si " +
+  "INVIMA no publica la unidad de referencia, la descripción no se compara.";
 
 interface RespuestaConsultaDetalle {
   invima: Record<string, unknown>[];
@@ -699,7 +698,9 @@ function mostrarResultado(
         : filasInvima.findIndex((f) => Number(f["REGISTRO"]) === elegido);
     const comparacion = crearComparacionEstadosHTML(gemma_net, elegido, filasInvima, filaIdx, eleccion);
     const tablaRegistros = tablaFilasInvimaHTML(filasInvima, filaAud, elegido, eleccion);
-    const cabecera = `<div class="caso-cabecera"><h1>CUM ${codigosTexto}</h1>${estadoCasoHTML(gemma_net)}</div>`;
+    // ESTADO_IUM solo viene poblado en las filas del modulo IUM (backend).
+    const tipoCodigo = filaAud && String(filaAud["ESTADO_IUM"] ?? "").trim() ? "IUM" : "CUM";
+    const cabecera = `<div class="caso-cabecera"><h1>${tipoCodigo} ${codigosTexto}</h1>${estadoCasoHTML(gemma_net)}</div>`;
     const diagnosticoHtml = `
       <div class="consulta-invima__diagnostico consulta-invima__diagnostico--${diagnostico.nivel}">
         <h3>${diagnostico.icono} ${escaparHTML(diagnostico.titulo)}</h3>

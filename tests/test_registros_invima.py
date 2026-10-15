@@ -171,7 +171,7 @@ def test_gemma_que_calza_con_el_segundo_registro_lo_ordena_primero_y_avisa():
     """El caso que motivo el pedido: el cruce normal dice "difiere" porque
     mira la primera fila, y Gemma Net calza con la segunda del mismo CUM."""
     comparacion, normal = _comparar(
-        [_fila_gemanet("20086888-11", DESCRIPCION="TIOCOLCHICOSIDO 4MG TABLETA", PRINCIPIO_ACTIVO="TIOCOLCHICOSIDO", CONCENTRACION="400 MG")],
+        [_fila_gemanet("20086888-11", DESCRIPCION="TIOCOLCHICOSIDO CADA TABLETA CONTIENE", PRINCIPIO_ACTIVO="TIOCOLCHICOSIDO", CONCENTRACION="400 MG")],
         _combinado(),
     )
 
@@ -218,7 +218,8 @@ def test_cum_que_vive_en_vencidos_no_rellena_el_registro_2_con_el_1():
     prioridad. El registro 2 de un CUM de Vencidos no debe completarse con
     el registro 1 del MISMO listado: su descripcion "segun la guia" (sin
     UNIDAD_REFERENCIA) quedaria siendo la del registro 1 y podria decir
-    "coincide" contra un dato que este registro no tiene."""
+    "coincide" contra un dato que este registro no tiene. Sin unidad de
+    referencia propia, la descripcion del registro 2 queda sin comparar."""
     gemanet = [_fila_gemanet("20012345-1", DESCRIPCION="IBUPROFENO CADA TABLETA CONTIENE", PRINCIPIO_ACTIVO="IBUPROFENO")]
     vencidos = [
         _fila_invima("20012345-1", PRINCIPIO_ACTIVO="IBUPROFENO", CANTIDAD=400),
@@ -235,7 +236,7 @@ def test_cum_que_vive_en_vencidos_no_rellena_el_registro_2_con_el_1():
     assert pd.isna(registro_1["PORCENTAJE_CALIDAD"])
     segundo = _registro(comparacion, 2)
     assert "IBUPROFENO" not in segundo["DESCRIPCION_INVIMA"]
-    assert segundo["DESCRIPCION_VALIDACION"] == VALIDACION_DIFIERE
+    assert segundo["DESCRIPCION_VALIDACION"] == "sin comparar"
     assert segundo["LISTADO_INVIMA"] == "vencido"
 
 
