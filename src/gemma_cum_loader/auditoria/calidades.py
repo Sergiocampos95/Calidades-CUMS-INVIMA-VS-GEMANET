@@ -383,7 +383,7 @@ def _definiciones(
                 "Su código es un CUM (expediente-consecutivo) y aparece en el listado de Vigentes de INVIMA.",
                 "INVIMA marca el CUM como Activo.",
             ),
-            "Nada por la vigencia. Si alguna fecha o campo difiere, se revisa en «Diferencia de estado o campos».",
+            "Nada por la vigencia. Si alguna fecha o campo no coincide, se revisa en «Diferencia de estado o campos».",
             # El listado tiene que ser EXACTAMENTE 'vigente' -- pedido
             # explicito y repetido del usuario (2026-09-02 y 2026-09-03):
             # "en este apartado meramente deben de aparecer los que
@@ -713,7 +713,7 @@ EXPLICACION_CAMPO_DIFERENCIA = {
         "tal cual vienen (decisión del negocio: comparar el campo contra su homónimo). "
         "Ojo: INVIMA guarda ahí un código de una letra y la cifra real vive en cantidad "
         "+ unidad, y Gemma Net suele guardar la presentación comercial, así que casi "
-        "todos difieren."
+        "todos salen «No coincide»."
     ),
     "FORMA_FARMACEUTICA": (
         "La forma farmacéutica de Gemma Net contra la de INVIMA, texto contra texto, "

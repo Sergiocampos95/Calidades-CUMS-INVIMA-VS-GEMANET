@@ -1,6 +1,6 @@
 import { fechaLegible } from "../fechas";
 import { ENCABEZADOS_FETCH, urlAbsoluta } from "../api";
-import { ETIQUETA_CAMPO_COMPARADO, etiquetaEstadoListadoInvima, pildoraValidacion } from "../pildoras";
+import { ETIQUETA_CAMPO_COMPARADO, etiquetaCamposConDiferencia, etiquetaEstadoListadoInvima, pildoraValidacion } from "../pildoras";
 
 // Los 7 campos que la auditoria compara lado a lado, en el orden en que se
 // leen. El vocabulario (y sus porques) vive en pildoras.ts, compartido con
@@ -261,7 +261,7 @@ const VALIDACIONES_DE_DATO: { columna: string; titulo: string; paso: (valor: str
   {
     columna: "CAMPOS_CON_DIFERENCIA",
     titulo: "hay campos distintos a INVIMA",
-    paso: (v) => `Actualizar con el dato oficial de INVIMA los campos: ${v}`,
+    paso: (v) => `Actualizar con el dato oficial de INVIMA los campos: ${etiquetaCamposConDiferencia(v)}`,
   },
   {
     columna: "INCONSISTENCIA_FECHAS_ACTIVO",
@@ -442,9 +442,11 @@ function diagnosticoDeVigencia(invima: Record<string, unknown>[], gemmaNet: Reco
           nivel: "advertencia",
           titulo: "⚠ Con diferencias frente a INVIMA",
           icono: "🔀",
-          mensaje: detalleVigencia || `Coincide con un registro de INVIMA, pero difiere en: ${camposConDiferencia || "uno o más campos"}.`,
+          // "No coincide", nunca "difiere": vocabulario del auditor (usuario, 2026-10-15);
+          // "difiere" es solo el valor interno de *_VALIDACION.
+          mensaje: detalleVigencia || `El medicamento está en INVIMA, pero no coincide en: ${etiquetaCamposConDiferencia(camposConDiferencia) || "uno o más campos"}.`,
           pasos: [
-            camposConDiferencia ? `Revisar y corregir en Gemma Net: ${camposConDiferencia}` : "Revisar los campos marcados como diferentes",
+            camposConDiferencia ? `Revisar y corregir en Gemma Net: ${etiquetaCamposConDiferencia(camposConDiferencia)}` : "Revisar los campos marcados como diferentes",
             "Actualizar con el dato oficial de INVIMA (ver la tabla de INVIMA más abajo)",
           ],
         };
