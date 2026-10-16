@@ -447,6 +447,9 @@ tbody tr:hover td { background: var(--azul-fondo); }
 .consulta-invima__tabla.registros-invima__tabla td { vertical-align: top; white-space: nowrap; word-break: normal; }
 .consulta-invima__tabla.registros-invima__tabla td.registros-invima__largo { white-space: normal; min-width: 150px; }
 .registros-invima__fila--elegida td, .registros-invima__fila--elegida th { background: var(--ok-soft); }
+/* Columnas cuyo valor cambia de un registro a otro: donde esta la diferencia. */
+.consulta-invima__tabla.registros-invima__tabla td.registros-invima__cambia { background: var(--warn-soft); color: var(--warn); font-weight: 600; }
+.registros-invima__marca-cambia { display: inline-block; margin-left: 4px; padding: 0 6px; border-radius: 8px; font-size: 11px; font-weight: 600; background: var(--warn-soft); color: var(--warn); }
 .registros-invima__elegir { font-size: 12px; padding: 3px 8px; white-space: nowrap; margin: 0 4px 4px 0; }
 .registros-invima__eleccion { margin: 0 0 10px; font-size: 13px; line-height: 1.6; }
 .registros-invima__sin-par { margin-top: 10px; }

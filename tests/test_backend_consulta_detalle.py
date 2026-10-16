@@ -482,6 +482,48 @@ def test_trae_los_registros_invima_de_la_fila_ordenados_por_coincidencia(tmp_pat
         app.dependency_overrides.clear()
 
 
+def test_un_ium_trae_los_registros_de_su_cum_para_elegir_el_cruce(tmp_path):
+    """Pedido del usuario (2026-10-16): elegir el registro del cruce tiene que
+    estar disponible tambien en un IUM. Sus registros son los del CUM que
+    INVIMA le asocia, y salen de la tabla del modulo IUM, no de la de CUM."""
+    cliente, carpeta = _cliente(tmp_path)
+    try:
+        ium = "1C1016781003102"
+        df_auditoria = pd.DataFrame({"CODIGO_INTERNO": [ium], "CUM_RECONSTRUIDO": [""]})
+        df_ium = pd.DataFrame(
+            {
+                "CODIGO_INTERNO": [ium],
+                "ESTADO_IUM": ["un_cum"],
+                "CUM_INVIMA": [["20083667-1"]],
+                "N_CUM_INVIMA": [1],
+                "IDENTIDAD_DUPLICADA": [""],
+                "REGISTROS_INVIMA_DISTINTOS": [2],
+                "REGISTRO_INVIMA_CRUZADO": [1],
+            }
+        )
+        df_registros_ium = pd.DataFrame(
+            {
+                "FILA_AUDITORIA": [0, 0],
+                "CODIGO_INTERNO": [ium, ium],
+                "REGISTRO": [1, 2],
+                "ORDEN_COINCIDENCIA": [2, 1],
+                "PORCENTAJE_COINCIDENCIA": [50.0, 100.0],
+                "MARCA_MEDICAMENTO_VALIDACION": ["difiere", "coincide"],
+            }
+        )
+        escribir_snapshot(
+            {"auditoria": df_auditoria, "auditoria_ium": df_ium, "registros_invima_ium": df_registros_ium},
+            carpeta=carpeta,
+        )
+
+        fila = cliente.get("/consulta-detalle/medicamento", params={"codigo": ium}).json()["gemma_net"][0]
+
+        assert [r["REGISTRO"] for r in fila["REGISTROS_INVIMA"]] == [2, 1]
+        assert fila["REGISTROS_INVIMA"][0]["MARCA_MEDICAMENTO_VALIDACION"] == "coincide"
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_snapshot_sin_tabla_de_registros_no_finge_un_solo_registro(tmp_path):
     """Un snapshot anterior a la tabla `registros_invima` devuelve None, no
     lista vacia: "no se sabe" no es "tiene un solo registro"."""

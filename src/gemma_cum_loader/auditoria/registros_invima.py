@@ -286,12 +286,15 @@ def comparar_contra_cada_registro_invima(
     alias_unidad: dict[str, str] | None = None,
     registro_cruzado: dict[str, int] | None = None,
     elecciones_no_encontradas: frozenset[str] = frozenset(),
+    claves_cruce_alternas: dict[str, str] | None = None,
 ) -> ComparacionPorRegistro:
     """Mismas entradas que `auditar_coherencia` -- los listados ORIGINALES,
     sin reordenar, para que la numeracion sea la del archivo de INVIMA.
     `registro_cruzado` (CUM -> numero): el registro contra el que la auditoria
-    cruzo por una eleccion guardada; el resto cruzo contra el 1. Ver el
-    docstring del modulo."""
+    cruzo por una eleccion guardada; el resto cruzo contra el 1.
+    `claves_cruce_alternas` (CODIGO_INTERNO -> CUM): la misma de
+    `auditar_coherencia`, para el modulo IUM -- un IUM se compara contra los
+    registros del CUM que INVIMA le asocia. Ver el docstring del modulo."""
     registro_cruzado = registro_cruzado or {}
     registros = registros_distintos_por_clave(
         df_invima, df_invima_vencidos, df_invima_otros_estados, df_invima_renovacion
@@ -299,6 +302,8 @@ def comparar_contra_cada_registro_invima(
     gemanet = reporte_gemanet.reset_index(drop=True)
     codigos = gemanet["CODIGO_INTERNO"].astype(str).str.strip()
     claves = clave_cruce_con_invima(codigos, clasificar_codigos(codigos))
+    if claves_cruce_alternas:
+        claves = claves.where(~codigos.isin(claves_cruce_alternas.keys()), codigos.map(claves_cruce_alternas))
 
     por_clave = registros.drop_duplicates("_CLAVE").set_index("_CLAVE")
     resumen = pd.DataFrame(
@@ -373,6 +378,7 @@ def comparar_contra_cada_registro_invima(
                 df_invima_otros_estados=menores[1],
                 df_invima_renovacion=menores[2],
                 alias_unidad=alias_unidad,
+                claves_cruce_alternas=claves_cruce_alternas,
                 registros_a_comparar=listados[listado].iloc[registros_numero["_FILA_ORIGEN"].to_numpy()],
             )
             pieza = pd.DataFrame(

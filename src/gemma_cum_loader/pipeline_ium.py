@@ -29,6 +29,7 @@ def auditar_coherencia_ium_gemanet(
     ruta_catalogo_unidad: str | Path = RUTA_CATALOGO_UNIDAD,
     ruta_catalogo_marca: str | Path = RUTA_CATALOGO_MARCA,
     fuente_catalogos: FuenteCatalogos | None = None,
+    elecciones_registro: dict[str, str] | None = None,
 ) -> pd.DataFrame:
     """Version IUM de `pipeline.auditar_coherencia_gemanet`: mismo reporte de
     Gemma Net y mismos catalogos de unidad/marca, pero filtra al subconjunto
@@ -36,6 +37,7 @@ def auditar_coherencia_ium_gemanet(
     `auditoria/coherencia_ium.py`). Los listados de INVIMA se pasan
     COMPLETOS, nunca prefiltrados -- mismo motivo que la version CUM (la
     fecha de corte de vigencia se calcula sobre el catalogo completo).
+    `elecciones_registro`: las mismas del modulo CUM (CUM -> firma).
     """
     reporte = leer_reporte_gemanet(archivo_gemma_net)
     fuente = _fuente(fuente_catalogos, ruta_catalogo_unidad, ruta_catalogo_marca)
@@ -48,4 +50,5 @@ def auditar_coherencia_ium_gemanet(
         df_invima_otros_estados=df_invima_otros_estados,
         df_invima_renovacion=df_invima_renovacion,
         alias_unidad=fuente.alias_unidad(),
+        elecciones_registro=elecciones_registro,
     )

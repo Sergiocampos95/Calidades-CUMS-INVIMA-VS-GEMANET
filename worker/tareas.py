@@ -404,6 +404,9 @@ def ejecutar_refresco(
             df_invima_otros_estados=df_invima_otros_estados,
             df_invima_renovacion=df_invima_renovacion,
             fuente_catalogos=fuente,
+            # Las mismas elecciones que el modulo CUM: se guardan a nombre del
+            # CUM, y el IUM cruza contra el registro elegido para su CUM.
+            elecciones_registro=firmas_elegidas(ruta_elecciones),
             ruta_estado=ruta_estado,
         )
         # Universo COMPLETO de INVIMA clasificado (los 101.183 registros del
@@ -431,6 +434,9 @@ def ejecutar_refresco(
             df_invima, df_invima_vencidos, df_invima_otros_estados, df_invima_renovacion
         )
         tabla_ium = {"auditoria_ium": auditoria_ium} if auditoria_ium is not None else {}
+        registros_ium = auditoria_ium.attrs.pop("registros_invima", None) if auditoria_ium is not None else None
+        if registros_ium is not None:
+            tabla_ium["registros_invima_ium"] = registros_ium
         # La comparacion contra cada registro distinto de INVIMA (ver
         # auditoria/registros_invima.py) llega en attrs de la auditoria y se
         # guarda como tabla propia. Un auditor que no la trae (las pruebas

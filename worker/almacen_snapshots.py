@@ -72,8 +72,18 @@ COLUMNAS_ESPERADAS: dict[str, tuple[str, ...]] = {
     # ::_paso_opcional) -- `desfases_de_esquema` ya trata "tabla ausente"
     # distinto de "tabla con columnas viejas" (ver su docstring), asi que
     # listar esto aca no genera un falso desfase cuando la tabla no existe.
-    "auditoria_ium": ("ESTADO_IUM", "CUM_INVIMA", "N_CUM_INVIMA", "IDENTIDAD_DUPLICADA"),
+    # REGISTROS_INVIMA_DISTINTOS / REGISTRO_INVIMA_CRUZADO desde 2026-10-16:
+    # sin ellas la consulta de un IUM no ofrece elegir el registro del cruce.
+    "auditoria_ium": (
+        "ESTADO_IUM",
+        "CUM_INVIMA",
+        "N_CUM_INVIMA",
+        "IDENTIDAD_DUPLICADA",
+        "REGISTROS_INVIMA_DISTINTOS",
+        "REGISTRO_INVIMA_CRUZADO",
+    ),
     "registros_invima": ("FILA_AUDITORIA", "REGISTRO", "ORDEN_COINCIDENCIA", "PORCENTAJE_COINCIDENCIA"),
+    "registros_invima_ium": ("CODIGO_INTERNO", "REGISTRO", "ORDEN_COINCIDENCIA", "PORCENTAJE_COINCIDENCIA"),
 }
 
 

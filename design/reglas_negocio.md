@@ -341,6 +341,28 @@ criterio son ~30.000 CUM, casi todos combinados.
   otra se permite, y la pantalla dice que el resultado es el mismo. Lo que se
   guarda sigue siendo el registro (la firma), no la fila: dos filas del mismo
   registro dan el mismo cruce.
+- **El selector está disponible SIEMPRE que INVIMA tenga 2 filas o más, en
+  CUM e IUM** (2026-10-16, pedido del usuario: la opción «ya estaba
+  implementada» y se había quitado sin su autorización — fue un fallo). El
+  2026-10-14 una revisión de reglas la escondió en dos casos, ya revertidos:
+  - **Actualización de datos sin la comparación por registro** (tabla
+    `registros_invima` ausente): el CUM se quedaba sin desplegable. Ahora se
+    elige y se guarda igual, y una línea dice que el resultado se verá al
+    actualizar.
+  - **IUM:** un IUM se cruza contra el CUM que INVIMA le asocia, y el selector
+    no salía. Ahora sale, con su comparación contra cada registro de ese CUM
+    (tabla `registros_invima_ium`, misma `comparar_contra_cada_registro_invima`
+    con la clave alterna IUM → CUM). **La elección se guarda a nombre del
+    CUM** —como antes del 2026-10-14— y el módulo IUM la aplica también: el
+    IUM y su CUM cruzan contra el mismo registro, y la pantalla del IUM lo
+    dice. Un IUM con **varios** CUM sigue sin selector: elegir entre CUM es la
+    decisión D3, pendiente.
+- **Dónde está la diferencia entre registros** (2026-10-16, pedido del
+  usuario): en la tabla «Registros de INVIMA de este CUM» se resaltan las
+  columnas cuyo valor cambia de un registro a otro (principio activo,
+  concentración, cantidad, unidad de referencia, forma farmacéutica, ATC,
+  titular), con la marca «cambia» en el encabezado. Es solo una marca visual
+  sobre el dato crudo.
 - **Pantalla (Consultar INVIMA):** tarjeta corta encima de la comparación,
   con un desplegable de los registros ordenados, y debajo la tabla
   **«Registros de INVIMA de este CUM»**: todas las filas que INVIMA publica
@@ -712,6 +734,11 @@ forma de la guía es obligatoria también para CUM (§4), así que el módulo IU
 ya no necesita parámetros propios: los que tuvo (`descripcion_solo_guia`,
 `campos_sin_comparar`) se quitaron — ver `mecanismos/auditoria_coherencia.md`
 §3.6.
+
+**Varios registros de INVIMA (2026-10-16):** un IUM con un solo CUM se compara
+también contra cada registro de ese CUM y se puede elegir contra cuál cruza;
+la elección se guarda a nombre del CUM y vale para los dos. Ver §4, «Varios
+registros de INVIMA para el mismo CUM».
 
 ### Pendiente de negocio
 
