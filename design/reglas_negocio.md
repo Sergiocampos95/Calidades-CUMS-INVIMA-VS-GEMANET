@@ -364,12 +364,21 @@ criterio son ~30.000 CUM, casi todos combinados.
   titular), con la marca «cambia» en el encabezado. Es solo una marca visual
   sobre el dato crudo.
 - **Pantalla (Consultar INVIMA):** tarjeta corta encima de la comparación,
-  con un desplegable de los registros ordenados, y debajo la tabla
+  con un desplegable de los registros ordenados, y la tabla
   **«Registros de INVIMA de este CUM»**: todas las filas que INVIMA publica
   para el CUM, agrupadas por registro, con su coincidencia y los botones
   «Ver comparación» (sin guardar) y «Usar para el cruce» (guarda). Sale también para un CUM que no está en Gemma Net
   (sin coincidencia ni botón). La numeración la da
   `filas_invima_con_registro`, la misma función que numera la auditoría.
+  - **Dónde va (2026-10-16, pedido del usuario):** en la columna derecha del
+    caso, bajo «Qué hacer» —ese espacio quedaba vacío—; a todo el ancho si
+    no hay fila de Gemma Net. Por debajo de 1100 px las dos columnas se
+    apilan.
+  - **Forma compacta:** lo que es igual en todas las filas va una vez, arriba
+    («Igual en todas las filas»). Los datos comparados, que son iguales
+    dentro de un registro, van una vez dentro de la celda del registro, con
+    «cambia» en lo que difiere de otro registro. Por fila solo quedan la
+    fila, la vía (si varía) y el rol.
 - **Elegir un registro cambia el caso entero** (2026-10-14, «pedí más que
   una simple alerta»): la tabla campo a campo, el diagnóstico y «Qué hacer».
   Por registro la auditoría entrega `CAMPOS_CON_DIFERENCIA` y, si el registro

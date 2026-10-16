@@ -713,10 +713,13 @@ function mostrarResultado(
           ${diagnostico.pasos.map((paso) => `<li>${escaparHTML(paso)}</li>`).join("")}
         </ol>
       </div>`;
-    let html = comparacion
-      ? `${cabecera}<div class="caso-grid"><div class="panel"><h3>Gemma Net contra INVIMA, campo a campo</h3><div data-comparacion>${comparacion}</div></div><div>${diagnosticoHtml}${pasosHtml}</div></div>`
-      : `${cabecera}${diagnosticoHtml}${pasosHtml}`;
-    html += tablaRegistros;
+    // La tabla de registros de INVIMA va en la columna derecha, bajo "Que
+    // hacer" (pedido del usuario, 2026-10-16): ese espacio quedaba vacio
+    // mientras la tabla iba abajo, a todo el ancho. En pantallas angostas las
+    // dos columnas se apilan (ver .caso-grid en estilo.css).
+    const html = comparacion
+      ? `${cabecera}<div class="caso-grid"><div class="panel"><h3>Gemma Net contra INVIMA, campo a campo</h3><div data-comparacion>${comparacion}</div></div><div class="caso-lateral">${diagnosticoHtml}${pasosHtml}${tablaRegistros}</div></div>`
+      : `${cabecera}${diagnosticoHtml}${pasosHtml}${tablaRegistros}`;
 
     // Ya NO se dibujan las dos tablas horizontales (una por fuente) que iban
     // debajo -- pedido del usuario (2026-09-02): "esas dos tablas las vamos a
@@ -898,31 +901,60 @@ function tablaFilasInvimaHTML(
   };
   const cantidadDe = (f: Record<string, unknown>) =>
     [f["CANTIDAD"], f["UNIDAD_MEDIDA"]].map((v) => String(v ?? "").trim()).filter(Boolean).join(" ");
-  // Donde estan las diferencias entre registros (pedido del usuario,
-  // 2026-10-16): se resaltan las columnas cuyo valor cambia de un registro a
-  // otro, comparando la primera fila de cada uno. Es solo una marca visual
-  // sobre el dato crudo; el veredicto sigue siendo el de la auditoria.
-  const valorPorColumna: Record<string, (f: Record<string, unknown>) => string> = {
-    PRINCIPIO_ACTIVO: (f) => String(f["PRINCIPIO_ACTIVO"] ?? "").trim(),
-    CONCENTRACION: (f) => String(f["CONCENTRACION"] ?? "").trim(),
-    CANTIDAD: cantidadDe,
-    UNIDAD_REFERENCIA: (f) => String(f["UNIDAD_REFERENCIA"] ?? "").trim(),
-    FORMA_FARMACEUTICA: (f) => String(f["FORMA_FARMACEUTICA"] ?? "").trim(),
-    ATC: (f) => String(f["ATC"] ?? "").trim(),
-    TITULAR: (f) => String(f["TITULAR"] ?? "").trim(),
-  };
+  const campo = (nombre: string) => (f: Record<string, unknown>) => String(f[nombre] ?? "").trim();
+  // Las columnas de INVIMA que se muestran por fila. `comparada`: entra en la
+  // comparacion con Gemma Net, asi que puede distinguir un registro de otro
+  // (la via no: solo cambia entre filas de un mismo registro).
+  const columnas: { clave: string; etiqueta: string; valor: (f: Record<string, unknown>) => string; comparada: boolean }[] = [
+    { clave: "PRINCIPIO_ACTIVO", etiqueta: "Principio activo", valor: campo("PRINCIPIO_ACTIVO"), comparada: true },
+    { clave: "CONCENTRACION", etiqueta: "Concentración", valor: campo("CONCENTRACION"), comparada: true },
+    { clave: "CANTIDAD", etiqueta: "Cantidad", valor: cantidadDe, comparada: true },
+    { clave: "UNIDAD_REFERENCIA", etiqueta: "Unidad de referencia", valor: campo("UNIDAD_REFERENCIA"), comparada: true },
+    { clave: "FORMA_FARMACEUTICA", etiqueta: "Forma farmacéutica", valor: campo("FORMA_FARMACEUTICA"), comparada: true },
+    { clave: "VIA_ADMINISTRACION", etiqueta: "Vía", valor: campo("VIA_ADMINISTRACION"), comparada: false },
+    { clave: "ATC", etiqueta: "ATC", valor: campo("ATC"), comparada: true },
+    { clave: "TITULAR", etiqueta: "Titular", valor: campo("TITULAR"), comparada: true },
+  ];
+  // La tabla vive en la columna angosta del caso (pedido del usuario,
+  // 2026-10-16): solo lleva columna lo que CAMBIA entre filas; lo que es igual
+  // en todas va una vez, en una linea arriba. Asi tambien se ve de un vistazo
+  // donde esta la diferencia.
+  const varian = new Set(columnas.filter((c) => new Set(filas.map(c.valor)).size > 1).map((c) => c.clave));
+  const visibles = columnas.filter((c) => varian.has(c.clave));
+  const iguales = columnas.filter((c) => !varian.has(c.clave) && c.valor(filas[0]) !== "");
+  // Donde estan las diferencias entre REGISTROS (no entre filas de uno
+  // mismo): se resaltan comparando la primera fila de cada registro. Es solo
+  // una marca visual sobre el dato crudo; el veredicto es el de la auditoria.
   const primerasDeCadaRegistro = [...grupos.values()].map((g) => g[0]);
   const cambia = new Set(
     grupos.size > 1
-      ? Object.entries(valorPorColumna)
-          .filter(([, valor]) => new Set(primerasDeCadaRegistro.map(valor)).size > 1)
-          .map(([columna]) => columna)
+      ? columnas
+          .filter((c) => c.comparada && new Set(primerasDeCadaRegistro.map(c.valor)).size > 1)
+          .map((c) => c.clave)
       : [],
   );
-  const clase = (columna: string, base = "") =>
-    [base, cambia.has(columna) ? "registros-invima__cambia" : ""].filter(Boolean).join(" ");
-  const encabezado = (columna: string, etiqueta: string) =>
-    `<th class="${clase(columna)}">${etiqueta}${cambia.has(columna) ? ` <span class="registros-invima__marca-cambia">cambia</span>` : ""}</th>`;
+  // Las columnas comparadas son iguales en todas las filas de un registro (es
+  // la definicion de registro): van UNA vez, dentro de la celda del registro,
+  // como etiqueta y valor -- como columnas no cabian en la columna angosta
+  // (medido 2026-10-16: hasta 781 px de tabla en 528 px). Por fila solo
+  // cambia lo que no se compara (via, rol).
+  const porRegistro = visibles.filter((c) => c.comparada);
+  const porFila = visibles.filter((c) => !c.comparada);
+  const datosDelRegistro = (f: Record<string, unknown>) =>
+    porRegistro.length
+      ? `<dl class="registros-invima__datos">${porRegistro
+          .map(
+            (c) =>
+              `<div class="${cambia.has(c.clave) ? "registros-invima__cambia" : ""}"><dt>${c.etiqueta}${cambia.has(c.clave) ? ` <span class="registros-invima__marca-cambia">cambia</span>` : ""}</dt><dd>${texto(c.valor(f))}</dd></div>`,
+          )
+          .join("")}</dl>`
+      : "";
+  const encabezados = `<th>Fila</th>${porFila.map((c) => `<th>${c.etiqueta}</th>`).join("")}`;
+  const resumenIguales = iguales.length
+    ? `<dl class="registros-invima__iguales">${iguales
+        .map((c) => `<div><dt>${c.etiqueta}</dt><dd>${escaparHTML(c.valor(filas[0]))}</dd></div>`)
+        .join("")}</dl>`
+    : "";
 
   const cuerpo = orden
     .map((numero) => {
@@ -947,33 +979,29 @@ function tablaFilasInvimaHTML(
         : "";
       return grupo
         .map((f, i) => {
+          // Coincidencia y botones van DENTRO de la celda del registro: en la
+          // columna angosta, dos columnas mas empujaban los datos fuera de la
+          // vista.
           const comunes =
             i === 0
-              ? `<th scope="row" rowspan="${grupo.length}">Registro ${numero}<br/>${marcas}</th>` +
-                (conCoincidencia ? `<td rowspan="${grupo.length}" class="registros-invima__comun">${info ? escaparHTML(textoCoincidencia(info)) : "—"}</td>` : "") +
-                // Los botones junto a la coincidencia, que es donde se decide:
-                // al final de la fila quedaban fuera de la vista (tabla ancha).
-                (conCoincidencia ? `<td rowspan="${grupo.length}" class="registros-invima__comun">${accion}</td>` : "")
+              ? `<th scope="row" rowspan="${grupo.length}" class="registros-invima__comun registros-invima__registro">
+                  <span class="registros-invima__numero">Registro ${numero}</span>${marcas.trim() ? `<span class="registros-invima__marcas">${marcas}</span>` : ""}
+                  ${conCoincidencia ? `<span class="registros-invima__coincidencia">${info ? escaparHTML(textoCoincidencia(info)) : "—"}</span>` : ""}
+                  ${datosDelRegistro(f)}
+                  ${accion.trim() ? `<span class="registros-invima__acciones">${accion}</span>` : ""}
+                </th>`
               : "";
-          const cantidad = cantidadDe(f);
           const rol = [f["TIPO_ROL"], f["NOMBRE_ROL"]].map((v) => String(v ?? "").trim()).filter(Boolean).join(": ");
           // data-* para el filtro (conectarFiltroFilasInvima): el texto de la
-          // fila y su rol, ya en minusculas.
-          const textoFila = [numero, filas.indexOf(f) + 1, f["PRINCIPIO_ACTIVO"], f["CONCENTRACION"], cantidad, f["UNIDAD_REFERENCIA"], f["FORMA_FARMACEUTICA"], f["VIA_ADMINISTRACION"], f["ATC"], f["TITULAR"], rol]
+          // fila -- todas sus columnas, se vean o no -- y su rol, en minusculas.
+          const textoFila = [numero, filas.indexOf(f) + 1, ...columnas.map((c) => c.valor(f)), rol]
             .map((v) => String(v ?? ""))
             .join(" ")
             .toLowerCase();
           return `<tr data-grupo="${numero}" data-rol="${escaparHTML(String(f["TIPO_ROL"] ?? "").trim())}" data-texto="${escaparHTML(textoFila)}" class="${numero === elegido && conCoincidencia ? "registros-invima__fila--elegida" : ""}">
             ${comunes}
             <td>${filas.indexOf(f) + 1}</td>
-            <td class="${clase("PRINCIPIO_ACTIVO", "registros-invima__largo")}">${texto(f["PRINCIPIO_ACTIVO"])}</td>
-            <td class="${clase("CONCENTRACION")}">${texto(f["CONCENTRACION"])}</td>
-            <td class="${clase("CANTIDAD")}">${texto(cantidad)}</td>
-            <td class="${clase("UNIDAD_REFERENCIA", "registros-invima__largo")}">${texto(f["UNIDAD_REFERENCIA"])}</td>
-            <td class="${clase("FORMA_FARMACEUTICA", "registros-invima__largo")}">${texto(f["FORMA_FARMACEUTICA"])}</td>
-            <td>${texto(f["VIA_ADMINISTRACION"])}</td>
-            <td class="${clase("ATC")}">${texto(f["ATC"])}</td>
-            <td class="${clase("TITULAR", "registros-invima__largo")}">${texto(f["TITULAR"])}</td>
+            ${porFila.map((c) => `<td>${texto(c.valor(f))}</td>`).join("")}
             <td class="registros-invima__largo">${texto(rol)}</td>
           </tr>`;
         })
@@ -985,15 +1013,12 @@ function tablaFilasInvimaHTML(
   return `
     <div class="panel registros-invima__panel">
       <h3>Registros de INVIMA de este CUM</h3>
-      <p class="consulta-invima__nota">INVIMA publica <strong>${filas.length} filas</strong> para este CUM en el listado de ${escaparHTML(listado)}: <strong>${cuantos}</strong>. Las filas de un mismo registro solo cambian datos que no se comparan (el rol, la vía).${conCoincidencia ? " Ordenados de mayor a menor coincidencia con Gemma Net." : ""}${cambia.size > 0 ? " Las columnas resaltadas son las que cambian de un registro a otro." : ""}</p>
+      <p class="consulta-invima__nota">INVIMA publica <strong>${filas.length} filas</strong> en el listado de ${escaparHTML(listado)}: <strong>${cuantos}</strong>. Las filas de un mismo registro solo cambian lo que no se compara (el rol, la vía).${conCoincidencia ? " Ordenados de mayor a menor coincidencia con Gemma Net." : ""}${cambia.size > 0 ? " Lo resaltado cambia de un registro a otro." : ""}</p>
+      ${resumenIguales ? `<p class="registros-invima__subtitulo">Igual en todas las filas</p>${resumenIguales}` : ""}
       ${filtrosFilasInvimaHTML(filas)}
       <div class="consulta-invima__envoltorio">
         <table class="consulta-invima__tabla registros-invima__tabla">
-          <thead><tr>
-            <th>Registro</th>${conCoincidencia ? "<th>Coincidencia con Gemma Net</th><th>Cruce</th>" : ""}
-            <th>Fila</th>${encabezado("PRINCIPIO_ACTIVO", "Principio activo")}${encabezado("CONCENTRACION", "Concentración")}${encabezado("CANTIDAD", "Cantidad")}${encabezado("UNIDAD_REFERENCIA", "Unidad de referencia")}
-            ${encabezado("FORMA_FARMACEUTICA", "Forma farmacéutica")}<th>Vía</th>${encabezado("ATC", "ATC")}${encabezado("TITULAR", "Titular")}<th>Rol</th>
-          </tr></thead>
+          <thead><tr><th>Registro</th>${encabezados}<th>Rol</th></tr></thead>
           <tbody>${cuerpo}</tbody>
         </table>
       </div>
@@ -1442,9 +1467,9 @@ function crearComparacionEstadosHTML(
       const falta = (!g || esComodin(par.gemma)) && i && !esComodin(par.invima);
       return `<tr class="${difiere || falta ? "consulta-invima__par--difiere" : ""}">
         <th scope="row">${escaparHTML(par.etiqueta)}</th>
-        <td>${celda(par.gemma)}</td>
-        <td>${celda(par.invima)}</td>
-        <td>${difiere ? '<span class="pildora pildora--warn">No coincide / Actualizar campo</span>' : falta ? '<span class="pildora pildora--warn">Falta / Actualizar campo</span>' : comparable ? '<span class="pildora pildora--ok">Coincide</span>' : `<span class="celda-muda" title="${escaparHTML(motivoSinComparar(par.gemma, par.invima))}">Sin comparar</span>`}</td>
+        <td data-etiqueta="Gemma Net">${celda(par.gemma)}</td>
+        <td data-etiqueta="INVIMA">${celda(par.invima)}</td>
+        <td data-etiqueta="Veredicto">${difiere ? '<span class="pildora pildora--warn">No coincide / Actualizar campo</span>' : falta ? '<span class="pildora pildora--warn">Falta / Actualizar campo</span>' : comparable ? '<span class="pildora pildora--ok">Coincide</span>' : `<span class="celda-muda" title="${escaparHTML(motivoSinComparar(par.gemma, par.invima))}">Sin comparar</span>`}</td>
       </tr>`;
     })
     .join("");
@@ -1464,9 +1489,9 @@ function crearComparacionEstadosHTML(
     if (!String(g ?? "").trim() && !String(i ?? "").trim()) return "";
     return `<tr class="${veredicto === "difiere" ? "consulta-invima__par--difiere" : ""}">
       <th scope="row">${escaparHTML(etiqueta)}</th>
-      <td>${texto(g)}</td>
-      <td>${texto(i)}</td>
-      <td>${veredicto ? pildoraValidacion(veredicto) : `<span class="celda-muda">—</span>`}</td>
+      <td data-etiqueta="Gemma Net">${texto(g)}</td>
+      <td data-etiqueta="INVIMA">${texto(i)}</td>
+      <td data-etiqueta="Veredicto">${veredicto ? pildoraValidacion(veredicto) : `<span class="celda-muda">—</span>`}</td>
     </tr>`;
   }).join("");
 
