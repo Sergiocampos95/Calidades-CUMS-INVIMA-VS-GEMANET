@@ -95,6 +95,22 @@ button, select, input, textarea { font-family: inherit; }
   border-radius: 4px; padding: 5px 10px; cursor: pointer; font-size: 13px; font-weight: 400;
 }
 .topbar .usuario .btn:hover, .topbar button.salir:hover { background: var(--azul-medio); color: var(--blanco); }
+/* Ventanas angostas: el menu baja a su propia linea y se desliza en horizontal
+   (antes se apilaba en vertical y tapaba media pantalla, y el usuario con
+   "Salir" quedaba fuera de la vista a 390 px). */
+@media (max-width: 960px) {
+  .topbar { flex-wrap: wrap; row-gap: 6px; padding: 6px 12px; }
+  .topbar .usuario { margin-left: auto; min-width: 0; }
+  .topbar nav { order: 3; flex: 1 0 100%; margin-left: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
+}
+@media (max-width: 600px) {
+  .topbar { gap: 10px; }
+  .topbar .logo { height: 34px; width: 34px; }
+  .topbar .titulo { font-size: 15px; }
+  .topbar .titulo small { display: none; }
+  .usuario__nombre { max-width: 120px; }
+  .contenido { padding: 0 10px; margin-top: 12px; }
+}
 
 /* ============================= CONTENIDO ============================= */
 .col-principal { display: block; }
@@ -371,7 +387,7 @@ tbody tr:hover td { background: var(--azul-fondo); }
 
 /* ============================= VARIOS ============================= */
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-@media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .grid-2 { grid-template-columns: minmax(0, 1fr); } }
 .selector-fila { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; margin-bottom: 14px; }
 .selector-fila .cadena-paso { margin-bottom: 0; }
 .grid-lateral { display: grid; grid-template-columns: minmax(190px, 230px) 1fr; gap: 14px; align-items: start; }
@@ -412,7 +428,9 @@ tbody tr:hover td { background: var(--azul-fondo); }
 
 .caso-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 14px; align-items: start; }
 /* minmax(0, ...): sin el 0, el texto largo de la lista de registros (el selector del cruce) ensanchaba la columna izquierda y apretaba el diagnostico. */
-@media (max-width: 900px) { .caso-grid { grid-template-columns: 1fr; } }
+/* minmax(0, 1fr) y no 1fr tambien al apilar: con 1fr el desplegable del cruce (opciones de cientos de caracteres) estiraba la columna a 1.800 px. */
+/* 1100 y no 900: con la tabla de registros en la columna derecha, a 1024 px esa columna quedaba en 372 px. */
+@media (max-width: 1100px) { .caso-grid { grid-template-columns: minmax(0, 1fr); } }
 .caso-cabecera { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 12px; }
 .caso-cabecera h1 { color: var(--azul-oscuro); font-size: 19px; font-weight: 600; margin: 0; }
 
@@ -440,12 +458,36 @@ tbody tr:hover td { background: var(--azul-fondo); }
 /* Varios registros de INVIMA para el mismo CUM: tarjeta corta + desplegable pequeno. */
 .registros-invima__titulo { margin: 0 0 6px; line-height: 1.4; }
 /* Tabla "Registros de INVIMA de este CUM": todas las filas, agrupadas por registro. */
-.registros-invima__panel { margin-top: 16px; }
-.consulta-invima__tabla.registros-invima__tabla tbody th[scope="row"] { vertical-align: top; white-space: nowrap; background: var(--fondo); color: var(--texto); font-weight: 600; }
+/* Vive en la columna derecha del caso, bajo "Que hacer" (o a todo el ancho si no hay fila de Gemma Net). */
+.registros-invima__panel h3 { margin: 0 0 6px; font-size: 15px; color: var(--azul-oscuro); font-weight: 600; }
+.consulta-invima__tabla.registros-invima__tabla tbody th[scope="row"] { vertical-align: top; background: var(--fondo); color: var(--texto); font-weight: 600; }
+/* Celda del registro: numero, marcas, coincidencia y botones, apilados (en la columna angosta no caben como columnas). */
+.registros-invima__registro { min-width: 130px; white-space: normal; }
+.registros-invima__registro > span { display: block; }
+.registros-invima__marcas { margin-top: 3px; }
+.registros-invima__marcas .pildora { white-space: normal; }
+.registros-invima__coincidencia { margin-top: 4px; font-size: 12px; font-weight: 400; color: var(--texto-2); }
+.registros-invima__acciones { margin-top: 6px; }
+/* Los datos que distinguen al registro, dentro de su celda: lo que cambia entre registros, resaltado. */
+.registros-invima__datos { margin: 6px 0 0; display: grid; gap: 4px; font-weight: 400; }
+.registros-invima__datos > div { padding: 3px 6px; border-radius: 4px; }
+.registros-invima__datos dt { font-size: 11px; color: var(--muted); }
+.registros-invima__datos dd { margin: 0; color: var(--texto); overflow-wrap: anywhere; }
+.registros-invima__datos .registros-invima__cambia { background: var(--warn-soft); }
+.registros-invima__datos .registros-invima__cambia dd { color: var(--warn); font-weight: 600; }
+/* Lo que es igual en todas las filas: una vez, arriba de la tabla. */
+.registros-invima__subtitulo { margin: 8px 0 4px; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.registros-invima__iguales { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px 14px; margin: 0 0 10px; padding: 8px 10px; background: var(--fondo); border-radius: 4px; font-size: 12.5px; }
+.registros-invima__iguales div { min-width: 0; }
+.registros-invima__iguales dt { font-size: 11px; color: var(--muted); }
+.registros-invima__iguales dd { margin: 0; color: var(--texto); overflow-wrap: anywhere; }
 /* Doble clase: `.consulta-invima__tabla td` (mas abajo en este archivo) parte
    palabras y si no se le gana en especificidad la via y el ATC salen "IN TR AV". */
 .consulta-invima__tabla.registros-invima__tabla td { vertical-align: top; white-space: nowrap; word-break: normal; }
-.consulta-invima__tabla.registros-invima__tabla td.registros-invima__largo { white-space: normal; min-width: 150px; }
+.consulta-invima__tabla.registros-invima__tabla td.registros-invima__largo { white-space: normal; min-width: 110px; }
+/* Mas compacta que las demas tablas: vive en la columna angosta del caso. */
+.consulta-invima__tabla.registros-invima__tabla th, .consulta-invima__tabla.registros-invima__tabla td { padding: 6px 8px; font-size: 12.5px; }
+.consulta-invima__tabla.registros-invima__tabla .registros-invima__registro { min-width: 150px; width: 55%; }
 .registros-invima__fila--elegida td, .registros-invima__fila--elegida th { background: var(--ok-soft); }
 /* Columnas cuyo valor cambia de un registro a otro: donde esta la diferencia. */
 .consulta-invima__tabla.registros-invima__tabla td.registros-invima__cambia { background: var(--warn-soft); color: var(--warn); font-weight: 600; }
@@ -474,6 +516,21 @@ tbody tr:hover td { background: var(--azul-fondo); }
 .consulta-invima__tabla td { border-top: 1px solid var(--borde); padding: 8px 10px; color: var(--texto); background: var(--blanco); max-width: 320px; white-space: normal; word-break: break-word; font-variant-numeric: tabular-nums; }
 .consulta-invima__par--difiere td { background: #fff4f4; }
 .consulta-invima__tabla-td--vacio { color: var(--muted); }
+/* Celular: la comparacion campo a campo de 4 columnas partia las palabras letra
+   por letra a 390 px. Cada campo pasa a un bloque: el nombre arriba y Gemma Net,
+   INVIMA y el veredicto debajo, cada uno con su rotulo (data-etiqueta). */
+@media (max-width: 600px) {
+  .consulta-invima__form { flex-wrap: wrap; }
+  .consulta-invima__form .consulta-invima__input { flex: 1 0 100%; }
+  .consulta-invima__pares thead { display: none; }
+  .consulta-invima__pares, .consulta-invima__pares tbody, .consulta-invima__pares tr { display: block; width: 100%; }
+  .consulta-invima__pares tr { border-top: 1px solid var(--borde); }
+  .consulta-invima__pares th[scope="row"] { display: block; border-top: 0; white-space: normal; }
+  .consulta-invima__pares td { display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 8px; max-width: none; border-top: 0; padding: 4px 10px; }
+  .consulta-invima__pares td::before { content: attr(data-etiqueta); font-size: 11px; color: var(--muted); }
+  .consulta-invima__pares td > * { justify-self: start; }
+  .consulta-invima__pares td:last-child { padding-bottom: 10px; }
+}
 .consulta-invima__error { background: var(--rojo); border-left: 4px solid #d64545; padding: 14px 16px; border-radius: 4px; }
 .consulta-invima__error p:first-child { margin: 0; font-weight: 600; color: var(--rojo-texto); }
 .consulta-invima__error p { margin: 8px 0 0; font-size: 13px; color: var(--rojo-texto); }
