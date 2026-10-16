@@ -101,6 +101,61 @@ def test_no_encontrado_deja_porcentaje_vacio_no_cero():
     assert pd.isna(fila["PORCENTAJE_CALIDAD"])
 
 
+def _invima_con_dos_titulares():
+    # El mismo CUM e IUM en dos registros distintos: solo cambia el titular.
+    return [
+        _fila_invima(_CUM, ium=_IUM),
+        _fila_invima(_CUM, ium=_IUM, TITULAR="OTRO LABORATORIO SAS"),
+    ]
+
+
+def test_ium_con_varios_registros_trae_la_comparacion_contra_cada_uno():
+    """Pedido del usuario (2026-10-16): en un IUM tambien se elige contra que
+    registro de INVIMA se cruza. El IUM se compara contra cada registro del CUM
+    que INVIMA le asocia, y el registro 1 reproduce el cruce normal."""
+    resultado = _auditar([_fila_gemanet(_IUM)], _invima_con_dos_titulares())
+    fila = resultado.iloc[0]
+    assert fila["REGISTROS_INVIMA_DISTINTOS"] == 2
+    assert fila["REGISTRO_INVIMA_CRUZADO"] == 1
+
+    registros = resultado.attrs["registros_invima"]
+    assert sorted(registros["REGISTRO"]) == [1, 2]
+    assert set(registros["CODIGO_INTERNO"]) == {_IUM}
+    por_registro = registros.set_index("REGISTRO")
+    assert por_registro.loc[1, "MARCA_MEDICAMENTO_VALIDACION"] == fila["MARCA_MEDICAMENTO_VALIDACION"] == "coincide"
+    assert por_registro.loc[2, "MARCA_MEDICAMENTO_VALIDACION"] == "difiere"
+
+
+def test_la_eleccion_guardada_para_el_cum_cambia_el_cruce_del_ium():
+    """La eleccion se guarda a nombre del CUM (mismo almacen que el modulo
+    CUM): el IUM cruza contra el registro elegido para su CUM."""
+    from gemma_cum_loader.auditoria.registros_invima import filas_invima_con_registro
+
+    invima = pd.DataFrame(_invima_con_dos_titulares())
+    filas = filas_invima_con_registro(invima)
+    firma_registro_2 = filas.loc[filas["REGISTRO"] == 2, "_FIRMA"].iloc[0]
+
+    resultado = auditar_coherencia_ium(
+        pd.DataFrame([_fila_gemanet(_IUM)]),
+        invima,
+        _CATALOGO_UNIDAD,
+        _CATALOGO_MARCA,
+        elecciones_registro={_CUM: firma_registro_2},
+    )
+    fila = resultado.iloc[0]
+    assert fila["REGISTRO_INVIMA_CRUZADO"] == 2
+    assert fila["ELECCION_REGISTRO_INVIMA"] == "elegido"
+    assert fila["MARCA_MEDICAMENTO_VALIDACION"] == "difiere"
+
+
+def test_ium_con_varios_cum_no_ofrece_registros_para_elegir():
+    """Con varios CUM no hay uno contra el cual cruzar (D3): nada que elegir."""
+    invima = [_fila_invima("20083667-1", ium=_IUM), _fila_invima("20083667-2", ium=_IUM)]
+    resultado = _auditar([_fila_gemanet(_IUM)], invima)
+    assert resultado.iloc[0]["REGISTROS_INVIMA_DISTINTOS"] == 0
+    assert resultado.attrs["registros_invima"].empty
+
+
 def test_no_dice_codigo_legado():
     gemanet = [_fila_gemanet(_IUM)]
     invima = [_fila_invima(_CUM, ium="9X9999999999999")]

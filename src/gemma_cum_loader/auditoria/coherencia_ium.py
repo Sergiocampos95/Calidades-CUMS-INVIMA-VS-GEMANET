@@ -25,6 +25,10 @@ from gemma_cum_loader.auditoria.coherencia_invima import (
     EntradaCatalogo,
     auditar_coherencia,
 )
+from gemma_cum_loader.auditoria.registros_invima import (
+    aplicar_elecciones_registro,
+    comparar_contra_cada_registro_invima,
+)
 from gemma_cum_loader.normaliza.codigos import clasificar_codigos
 
 # IUM que Gemma Net carga pero que no aparece en ningun listado de INVIMA
@@ -100,6 +104,7 @@ def auditar_coherencia_ium(
     df_invima_otros_estados: pd.DataFrame | None = None,
     df_invima_renovacion: pd.DataFrame | None = None,
     alias_unidad: dict[str, str] | None = None,
+    elecciones_registro: dict[str, str] | None = None,
 ) -> pd.DataFrame:
     """Una fila por CODIGO_INTERNO de Gemma Net cuyo tipo (ver
     `normaliza/codigos.py::clasificar_codigos`) es "ium", con las mismas
@@ -127,6 +132,15 @@ def auditar_coherencia_ium(
     Los listados de INVIMA se pasan COMPLETOS, nunca prefiltrados: la fecha
     de corte de vigencia (`_corte_catalogo_invima`) se calcula sobre el
     catalogo completo, y recortarlo antes moveria esa fecha en silencio.
+
+    Varios registros de INVIMA (pedido del usuario, 2026-10-16: la opcion de
+    elegir contra que registro se cruza "ya estaba implementada" y tiene que
+    estar tambien en los IUM): igual que en CUM, el resultado lleva
+    REGISTROS_INVIMA_DISTINTOS, REGISTRO_INVIMA_CRUZADO, etc., y en
+    `attrs["registros_invima"]` la comparacion contra cada registro del CUM
+    asociado. `elecciones_registro` (CUM -> firma) es el mismo almacen de
+    elecciones del modulo CUM: la eleccion se guarda a nombre del CUM, asi que
+    el IUM y su CUM cruzan contra el mismo registro.
     """
     tipo = clasificar_codigos(reporte_gemanet["CODIGO_INTERNO"])
     reporte_ium = reporte_gemanet.loc[tipo == "ium"].reset_index(drop=True).copy()
@@ -175,7 +189,25 @@ def auditar_coherencia_ium(
         if un_cum
     }
 
+    # Mismo mecanismo que pipeline.auditar_coherencia_gemanet: la fila elegida
+    # va primero en su listado y el cruce normal la toma. La comparacion por
+    # registro usa los listados ORIGINALES, para numerar como el archivo.
+    aplicadas = aplicar_elecciones_registro(
+        df_invima, df_invima_vencidos, df_invima_otros_estados, df_invima_renovacion, elecciones_registro or {}
+    )
+    invima_cruce, vencidos_cruce, otros_cruce, renovacion_cruce = aplicadas.listados
     auditoria = auditar_coherencia(
+        reporte_ium,
+        invima_cruce,
+        catalogo_unidad,
+        catalogo_marca,
+        df_invima_vencidos=vencidos_cruce,
+        df_invima_otros_estados=otros_cruce,
+        df_invima_renovacion=renovacion_cruce,
+        alias_unidad=alias_unidad,
+        claves_cruce_alternas=claves_cruce_alternas,
+    )
+    comparacion = comparar_contra_cada_registro_invima(
         reporte_ium,
         df_invima,
         catalogo_unidad,
@@ -184,8 +216,14 @@ def auditar_coherencia_ium(
         df_invima_otros_estados=df_invima_otros_estados,
         df_invima_renovacion=df_invima_renovacion,
         alias_unidad=alias_unidad,
+        registro_cruzado=aplicadas.registro_por_clave,
+        elecciones_no_encontradas=aplicadas.no_encontradas,
         claves_cruce_alternas=claves_cruce_alternas,
     )
+    # Alineadas por posicion: una fila por fila de `reporte_ium`, como
+    # `auditoria` (mismo criterio que el modulo CUM).
+    for columna in comparacion.resumen.columns:
+        auditoria[columna] = comparacion.resumen[columna].array
 
     resultado = auditoria.merge(
         fusion[["CODIGO_INTERNO", "ESTADO_IUM", "CUM_INVIMA", "N_CUM_INVIMA"]],
@@ -208,4 +246,5 @@ def auditar_coherencia_ium(
         if columna in resultado.columns:
             resultado.loc[no_es_un_cum, columna] = ""
 
+    resultado.attrs["registros_invima"] = comparacion.registros
     return resultado

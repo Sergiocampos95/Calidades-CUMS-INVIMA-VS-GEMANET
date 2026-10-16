@@ -896,6 +896,33 @@ function tablaFilasInvimaHTML(
     const t = String(v ?? "").trim();
     return t ? escaparHTML(t) : `<span class="celda-muda">—</span>`;
   };
+  const cantidadDe = (f: Record<string, unknown>) =>
+    [f["CANTIDAD"], f["UNIDAD_MEDIDA"]].map((v) => String(v ?? "").trim()).filter(Boolean).join(" ");
+  // Donde estan las diferencias entre registros (pedido del usuario,
+  // 2026-10-16): se resaltan las columnas cuyo valor cambia de un registro a
+  // otro, comparando la primera fila de cada uno. Es solo una marca visual
+  // sobre el dato crudo; el veredicto sigue siendo el de la auditoria.
+  const valorPorColumna: Record<string, (f: Record<string, unknown>) => string> = {
+    PRINCIPIO_ACTIVO: (f) => String(f["PRINCIPIO_ACTIVO"] ?? "").trim(),
+    CONCENTRACION: (f) => String(f["CONCENTRACION"] ?? "").trim(),
+    CANTIDAD: cantidadDe,
+    UNIDAD_REFERENCIA: (f) => String(f["UNIDAD_REFERENCIA"] ?? "").trim(),
+    FORMA_FARMACEUTICA: (f) => String(f["FORMA_FARMACEUTICA"] ?? "").trim(),
+    ATC: (f) => String(f["ATC"] ?? "").trim(),
+    TITULAR: (f) => String(f["TITULAR"] ?? "").trim(),
+  };
+  const primerasDeCadaRegistro = [...grupos.values()].map((g) => g[0]);
+  const cambia = new Set(
+    grupos.size > 1
+      ? Object.entries(valorPorColumna)
+          .filter(([, valor]) => new Set(primerasDeCadaRegistro.map(valor)).size > 1)
+          .map(([columna]) => columna)
+      : [],
+  );
+  const clase = (columna: string, base = "") =>
+    [base, cambia.has(columna) ? "registros-invima__cambia" : ""].filter(Boolean).join(" ");
+  const encabezado = (columna: string, etiqueta: string) =>
+    `<th class="${clase(columna)}">${etiqueta}${cambia.has(columna) ? ` <span class="registros-invima__marca-cambia">cambia</span>` : ""}</th>`;
 
   const cuerpo = orden
     .map((numero) => {
@@ -928,7 +955,7 @@ function tablaFilasInvimaHTML(
                 // al final de la fila quedaban fuera de la vista (tabla ancha).
                 (conCoincidencia ? `<td rowspan="${grupo.length}" class="registros-invima__comun">${accion}</td>` : "")
               : "";
-          const cantidad = [f["CANTIDAD"], f["UNIDAD_MEDIDA"]].map((v) => String(v ?? "").trim()).filter(Boolean).join(" ");
+          const cantidad = cantidadDe(f);
           const rol = [f["TIPO_ROL"], f["NOMBRE_ROL"]].map((v) => String(v ?? "").trim()).filter(Boolean).join(": ");
           // data-* para el filtro (conectarFiltroFilasInvima): el texto de la
           // fila y su rol, ya en minusculas.
@@ -939,14 +966,14 @@ function tablaFilasInvimaHTML(
           return `<tr data-grupo="${numero}" data-rol="${escaparHTML(String(f["TIPO_ROL"] ?? "").trim())}" data-texto="${escaparHTML(textoFila)}" class="${numero === elegido && conCoincidencia ? "registros-invima__fila--elegida" : ""}">
             ${comunes}
             <td>${filas.indexOf(f) + 1}</td>
-            <td class="registros-invima__largo">${texto(f["PRINCIPIO_ACTIVO"])}</td>
-            <td>${texto(f["CONCENTRACION"])}</td>
-            <td>${texto(cantidad)}</td>
-            <td class="registros-invima__largo">${texto(f["UNIDAD_REFERENCIA"])}</td>
-            <td class="registros-invima__largo">${texto(f["FORMA_FARMACEUTICA"])}</td>
+            <td class="${clase("PRINCIPIO_ACTIVO", "registros-invima__largo")}">${texto(f["PRINCIPIO_ACTIVO"])}</td>
+            <td class="${clase("CONCENTRACION")}">${texto(f["CONCENTRACION"])}</td>
+            <td class="${clase("CANTIDAD")}">${texto(cantidad)}</td>
+            <td class="${clase("UNIDAD_REFERENCIA", "registros-invima__largo")}">${texto(f["UNIDAD_REFERENCIA"])}</td>
+            <td class="${clase("FORMA_FARMACEUTICA", "registros-invima__largo")}">${texto(f["FORMA_FARMACEUTICA"])}</td>
             <td>${texto(f["VIA_ADMINISTRACION"])}</td>
-            <td>${texto(f["ATC"])}</td>
-            <td class="registros-invima__largo">${texto(f["TITULAR"])}</td>
+            <td class="${clase("ATC")}">${texto(f["ATC"])}</td>
+            <td class="${clase("TITULAR", "registros-invima__largo")}">${texto(f["TITULAR"])}</td>
             <td class="registros-invima__largo">${texto(rol)}</td>
           </tr>`;
         })
@@ -958,14 +985,14 @@ function tablaFilasInvimaHTML(
   return `
     <div class="panel registros-invima__panel">
       <h3>Registros de INVIMA de este CUM</h3>
-      <p class="consulta-invima__nota">INVIMA publica <strong>${filas.length} filas</strong> para este CUM en el listado de ${escaparHTML(listado)}: <strong>${cuantos}</strong>. Las filas de un mismo registro solo cambian datos que no se comparan (el rol, la vía).${conCoincidencia ? " Ordenados de mayor a menor coincidencia con Gemma Net." : ""}</p>
+      <p class="consulta-invima__nota">INVIMA publica <strong>${filas.length} filas</strong> para este CUM en el listado de ${escaparHTML(listado)}: <strong>${cuantos}</strong>. Las filas de un mismo registro solo cambian datos que no se comparan (el rol, la vía).${conCoincidencia ? " Ordenados de mayor a menor coincidencia con Gemma Net." : ""}${cambia.size > 0 ? " Las columnas resaltadas son las que cambian de un registro a otro." : ""}</p>
       ${filtrosFilasInvimaHTML(filas)}
       <div class="consulta-invima__envoltorio">
         <table class="consulta-invima__tabla registros-invima__tabla">
           <thead><tr>
             <th>Registro</th>${conCoincidencia ? "<th>Coincidencia con Gemma Net</th><th>Cruce</th>" : ""}
-            <th>Fila</th><th>Principio activo</th><th>Concentración</th><th>Cantidad</th><th>Unidad de referencia</th>
-            <th>Forma farmacéutica</th><th>Vía</th><th>ATC</th><th>Titular</th><th>Rol</th>
+            <th>Fila</th>${encabezado("PRINCIPIO_ACTIVO", "Principio activo")}${encabezado("CONCENTRACION", "Concentración")}${encabezado("CANTIDAD", "Cantidad")}${encabezado("UNIDAD_REFERENCIA", "Unidad de referencia")}
+            ${encabezado("FORMA_FARMACEUTICA", "Forma farmacéutica")}<th>Vía</th>${encabezado("ATC", "ATC")}${encabezado("TITULAR", "Titular")}<th>Rol</th>
           </tr></thead>
           <tbody>${cuerpo}</tbody>
         </table>
@@ -1043,19 +1070,28 @@ function avisoRegistrosHTML(
   const cruzado = registroCruzado(fila);
   const distintos = Number(fila["REGISTROS_INVIMA_DISTINTOS"] ?? 0);
   if (filasInvima.length < 2) return "";
-  const registrosDeLaFila = registrosInvima(fila);
-  if (registrosDeLaFila === null) {
-    // La fila no trae la comparacion por registro: es un IUM (se cruzo contra
-    // el CUM que INVIMA le asocia, en su propio modulo) o un snapshot anterior.
-    // Sin selector: guardar desde aca cambiaria el cruce de OTRO medicamento
-    // -- el del CUM -- y el modulo IUM no usa elecciones (revision de reglas,
-    // 2026-10-14).
-    const cumDelIum = [fila["CUM_INVIMA"]].flat().map((c) => String(c ?? "").trim()).filter(Boolean).join(", ");
-    return String(fila["ESTADO_IUM"] ?? "").trim()
-      ? `<p class="consulta-invima__nota">Este IUM se compara contra el CUM que INVIMA le asocia${cumDelIum ? ` (${escaparHTML(cumDelIum)})` : ""}, que tiene ${filasInvima.length} filas en INVIMA. La fila contra la que se cruza se elige consultando ese CUM.</p>`
-      : `<p class="consulta-invima__nota">INVIMA tiene ${filasInvima.length} filas para este CUM. La comparación contra cada una no está disponible en la última actualización de datos; vuelva a actualizar para elegir contra cuál cruzar.</p>`;
+  // El selector esta disponible para CUM e IUM (pedido del usuario,
+  // 2026-10-16: la opcion "ya estaba implementada" y se habia quitado). Un IUM
+  // se cruza contra el CUM que INVIMA le asocia: la eleccion se guarda a
+  // nombre de ese CUM y los dos cruzan contra ella. Solo un IUM con VARIOS
+  // CUM se queda sin selector: elegir entre CUM distintos es la decision D3,
+  // pendiente (regla 1: no se decide a ciegas).
+  const estadoIum = String(fila["ESTADO_IUM"] ?? "").trim();
+  const cumDelIum = [fila["CUM_INVIMA"]].flat().map((c) => String(c ?? "").trim()).filter(Boolean).join(", ");
+  if (estadoIum && estadoIum !== "un_cum") {
+    return `<p class="consulta-invima__nota">INVIMA asocia este IUM a varios CUM${cumDelIum ? ` (${escaparHTML(cumDelIum)})` : ""}: no se puede elegir una fila sin decidir antes contra cuál CUM se cruza.</p>`;
   }
-  const registros = registrosDeLaFila;
+  const registrosDeLaFila = registrosInvima(fila);
+  // null = la actualizacion de datos no trae la comparacion por registro: se
+  // puede elegir y guardar igual; lo que cambia se ve al actualizar.
+  const registros = registrosDeLaFila ?? [];
+  const notaSinComparacion =
+    registrosDeLaFila === null
+      ? `<p class="registros-invima__estado">La comparación contra cada fila no está en la última actualización de datos: puede elegir y guardar la fila, y el resultado se verá al actualizar.</p>`
+      : "";
+  const notaIum = estadoIum
+    ? `<p class="registros-invima__estado">Este IUM se cruza contra el CUM ${escaparHTML(cumDelIum)}, que INVIMA le asocia: la fila elegida se guarda para ese CUM, y el IUM y el CUM cruzan contra ella.</p>`
+    : "";
 
   // Guardado pero todavia no aplicado: la auditoria la corre el worker.
   const pendiente =
@@ -1133,7 +1169,7 @@ function avisoRegistrosHTML(
 
   return `
     <div class="aviso ${otroMejor ? "aviso--warn" : "aviso--info"} registros-invima">
-      <p class="registros-invima__titulo">${otroMejor ? "⚠️" : "ℹ️"} INVIMA tiene <strong>${filasInvima.length} filas</strong> para este CUM.${resumen}</p>
+      <p class="registros-invima__titulo">${otroMejor ? "⚠️" : "ℹ️"} INVIMA tiene <strong>${filasInvima.length} filas</strong> para ${estadoIum ? `el CUM ${escaparHTML(cumDelIum)} de este IUM` : "este CUM"}.${resumen}</p>
       <div class="registros-invima__control">
         <label class="registros-invima__etiqueta">Cruzar contra
           <select class="registros-invima__selector" aria-label="Fila de INVIMA contra la que se cruza">${opciones}</select>
@@ -1142,6 +1178,8 @@ function avisoRegistrosHTML(
         ${volver}
       </div>
       <p class="registros-invima__estado">${estadoCruce}</p>
+      ${notaIum}
+      ${notaSinComparacion}
       ${notaVista}
     </div>`;
 }
